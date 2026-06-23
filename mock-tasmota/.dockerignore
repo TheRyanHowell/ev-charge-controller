@@ -1,0 +1,11 @@
+node_modules/
+.git/
+.gitignore
+*.db
+coverage.out
+coverage/
+data/
+.env
+.env.local
+*.log
+mock-tasmota-server

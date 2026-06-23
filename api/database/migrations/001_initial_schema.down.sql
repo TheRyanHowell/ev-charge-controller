@@ -1,0 +1,12 @@
+DROP INDEX IF EXISTS idx_soc_snapshots_session_id;
+DROP INDEX IF EXISTS idx_power_readings_session_id;
+DROP INDEX IF EXISTS idx_charge_sessions_created_at;
+DROP INDEX IF EXISTS idx_charge_sessions_vehicle_created;
+DROP INDEX IF EXISTS idx_charge_sessions_vehicle_id;
+DROP INDEX IF EXISTS idx_charge_sessions_status;
+DROP TABLE IF EXISTS push_subscriptions;
+DROP TABLE IF EXISTS schedules;
+DROP TABLE IF EXISTS soc_snapshots;
+DROP TABLE IF EXISTS power_readings;
+DROP TABLE IF EXISTS charge_sessions;
+DROP TABLE IF EXISTS vehicles;

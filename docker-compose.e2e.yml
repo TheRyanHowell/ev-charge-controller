@@ -1,0 +1,113 @@
+services:
+  api:
+    build:
+      target: run
+    volumes:
+      - ./data:/data:z
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - APP_ENV=dev
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  ui:
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      - COOKIE_SECURE=false
+
+  mock-tasmota:
+    build:
+      context: ./mock-tasmota
+      dockerfile: Dockerfile
+      target: ci
+    networks:
+      - internal
+    ports:
+      - "8081:8081"
+    environment:
+      - PORT=${MOCK_TASMOTA_PORT}
+      - POWER_WATTS=${MOCK_TASMOTA_POWER_WATTS}
+      - VOLTAGE=${MOCK_TASMOTA_VOLTAGE}
+      - FREQUENCY=${MOCK_TASMOTA_FREQUENCY}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  mock-tasmota-2:
+    build:
+      context: ./mock-tasmota
+      dockerfile: Dockerfile
+      target: ci
+    networks:
+      - internal
+    ports:
+      - "8082:8082"
+    environment:
+      - PORT=8082
+      - POWER_WATTS=${MOCK_TASMOTA_2_POWER_WATTS:-2200}
+      - VOLTAGE=${MOCK_TASMOTA_VOLTAGE}
+      - FREQUENCY=${MOCK_TASMOTA_FREQUENCY}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8082/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  mock-tasmota-3:
+    build:
+      context: ./mock-tasmota
+      dockerfile: Dockerfile
+      target: ci
+    networks:
+      - internal
+    ports:
+      - "8083:8083"
+    environment:
+      - PORT=8083
+      - POWER_WATTS=${MOCK_TASMOTA_3_POWER_WATTS:-50}
+      - VOLTAGE=${MOCK_TASMOTA_VOLTAGE}
+      - FREQUENCY=${MOCK_TASMOTA_FREQUENCY}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8083/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  e2e:
+    build:
+      context: ./e2e
+      dockerfile: Dockerfile
+      target: ci
+    networks:
+      - internal
+    environment:
+      - PLAYWRIGHT_BASE_URL=http://ui:3000
+      - E2E_API_URL=http://api:8080
+      - E2E_TEST_EMAIL=${E2E_TEST_EMAIL:-test@example.com}
+      - E2E_TEST_PASSWORD=${E2E_TEST_PASSWORD:-password123}
+    depends_on:
+      api:
+        condition: service_healthy
+      ui:
+        condition: service_started
+      mock-tasmota:
+        condition: service_healthy
+      mock-tasmota-2:
+        condition: service_healthy
+      mock-tasmota-3:
+        condition: service_healthy
+
+networks:
+  internal:
+    driver: bridge

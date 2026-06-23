@@ -1,0 +1,9 @@
+tmp_dir = "/tmp/air-mock-tasmota"
+
+[build]
+  entrypoint = ["/tmp/mock-tasmota-server"]
+  cmd = "cd /app && CGO_ENABLED=0 GOARCH=amd64 go build -o /tmp/mock-tasmota-server ."
+  delay = 1000
+  exclude_dir = ["tmp", "vendor"]
+  include_ext = ["go", "sql"]
+  stop_on_error = true

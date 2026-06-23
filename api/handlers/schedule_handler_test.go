@@ -1,0 +1,274 @@
+package handlers
+
+import (
+	"bytes"
+	"context"
+	"database/sql"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"ev-charge-controller/api/internal"
+	"ev-charge-controller/api/models"
+	"ev-charge-controller/api/repository"
+	"ev-charge-controller/api/services"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+const (
+	testSchedulePlugID = "test-plug-schedule"
+	testScheduleUserID = "test-user-schedule"
+)
+
+func setupScheduleHandlerTest(t *testing.T) (*ScheduleHandler, *sql.DB) {
+	db := setupHandlerTestDB(t)
+
+	_, err := db.Exec(`INSERT OR IGNORE INTO users (id, email, password_hash) VALUES (?, ?, ?)`,
+		testScheduleUserID, "schedule-handler-test@example.com", "")
+	require.NoError(t, err)
+	_, err = db.Exec(`INSERT OR IGNORE INTO plugs (id, user_id, name, namespace, mqtt_topic) VALUES (?, ?, ?, ?, ?)`,
+		testSchedulePlugID, testScheduleUserID, "Schedule Test Plug", "ns-scheduletest", "schedule-topic")
+	require.NoError(t, err)
+
+	chargeService := services.NewChargeSessionService(
+		context.Background(),
+		repository.NewChargeSessionRepository(db),
+		repository.NewVehicleRepository(db),
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	t.Cleanup(func() { chargeService.Shutdown() })
+
+	scheduleService := services.NewScheduleService(
+		repository.NewScheduleRepository(db),
+		repository.NewPlugRepository(db),
+		repository.NewVehicleRepository(db),
+		chargeService,
+	)
+	return NewScheduleHandler(scheduleService), db
+}
+
+func TestScheduleHandler_UpsertByPlug(t *testing.T) {
+	handler, db := setupScheduleHandlerTest(t)
+	defer db.Close()
+
+	reqBody := `{"time": "03:00", "enabled": true}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/plugs/"+testSchedulePlugID+"/schedule", bytes.NewReader([]byte(reqBody)))
+	req.Header.Set("Content-Type", "application/json")
+	req = withPathValue(req, "id", testSchedulePlugID)
+	req = req.WithContext(internal.WithUserID(req.Context(), testScheduleUserID))
+	rr := httptest.NewRecorder()
+
+	handler.UpsertByPlug(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	var schedule models.Schedule
+	err := json.NewDecoder(rr.Body).Decode(&schedule)
+	assert.NoError(t, err)
+	assert.Equal(t, "03:00", schedule.Time)
+	assert.True(t, schedule.Enabled)
+}
+
+func TestScheduleHandler_UpsertByPlug_InvalidID(t *testing.T) {
+	handler, db := setupScheduleHandlerTest(t)
+	defer db.Close()
+
+	reqBody := `{"time": "03:00", "enabled": true}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/plugs//schedule", bytes.NewReader([]byte(reqBody)))
+	req.Header.Set("Content-Type", "application/json")
+	req = withPathValue(req, "id", "")
+	rr := httptest.NewRecorder()
+
+	handler.UpsertByPlug(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+func TestScheduleHandler_UpsertByPlug_InvalidBody(t *testing.T) {
+	handler, db := setupScheduleHandlerTest(t)
+	defer db.Close()
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/plugs/"+testSchedulePlugID+"/schedule", bytes.NewReader([]byte("invalid")))
+	req.Header.Set("Content-Type", "application/json")
+	req = withPathValue(req, "id", testSchedulePlugID)
+	rr := httptest.NewRecorder()
+
+	handler.UpsertByPlug(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+func TestScheduleHandler_UpsertByPlug_InvalidTime(t *testing.T) {
+	handler, db := setupScheduleHandlerTest(t)
+	defer db.Close()
+
+	reqBody := `{"time": "25:00", "enabled": true}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/plugs/"+testSchedulePlugID+"/schedule", bytes.NewReader([]byte(reqBody)))
+	req.Header.Set("Content-Type", "application/json")
+	req = withPathValue(req, "id", testSchedulePlugID)
+	rr := httptest.NewRecorder()
+
+	handler.UpsertByPlug(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+func TestScheduleHandler_GetByPlug(t *testing.T) {
+	handler, db := setupScheduleHandlerTest(t)
+	defer db.Close()
+
+	// Create a schedule first
+	reqBody := `{"time": "03:00", "enabled": true}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/plugs/"+testSchedulePlugID+"/schedule", bytes.NewReader([]byte(reqBody)))
+	req.Header.Set("Content-Type", "application/json")
+	req = withPathValue(req, "id", testSchedulePlugID)
+	req = req.WithContext(internal.WithUserID(req.Context(), testScheduleUserID))
+	rr := httptest.NewRecorder()
+	handler.UpsertByPlug(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	// Now retrieve it
+	req = httptest.NewRequest(http.MethodGet, "/api/plugs/"+testSchedulePlugID+"/schedule", nil)
+	req = withPathValue(req, "id", testSchedulePlugID)
+	rr = httptest.NewRecorder()
+	handler.GetByPlug(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	var schedule models.Schedule
+	err := json.NewDecoder(rr.Body).Decode(&schedule)
+	assert.NoError(t, err)
+	assert.Equal(t, "03:00", schedule.Time)
+}
+
+func TestScheduleHandler_GetByPlug_InvalidID(t *testing.T) {
+	handler, db := setupScheduleHandlerTest(t)
+	defer db.Close()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/plugs//schedule", nil)
+	req = withPathValue(req, "id", "")
+	rr := httptest.NewRecorder()
+	handler.GetByPlug(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+func TestScheduleHandler_GetByPlug_NotFound(t *testing.T) {
+	handler, db := setupScheduleHandlerTest(t)
+	defer db.Close()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/plugs/"+testSchedulePlugID+"/schedule", nil)
+	req = withPathValue(req, "id", testSchedulePlugID)
+	rr := httptest.NewRecorder()
+	handler.GetByPlug(rr, req)
+
+	assert.Equal(t, http.StatusNotFound, rr.Code)
+}
+
+func TestScheduleHandler_GetByPlug_DBError(t *testing.T) {
+	handler, db := setupScheduleHandlerTest(t)
+	defer db.Close()
+
+	db.Close()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/plugs/"+testSchedulePlugID+"/schedule", nil)
+	req = withPathValue(req, "id", testSchedulePlugID)
+	rr := httptest.NewRecorder()
+	handler.GetByPlug(rr, req)
+
+	assert.Equal(t, http.StatusInternalServerError, rr.Code)
+}
+
+func TestScheduleHandler_Service(t *testing.T) {
+	handler, db := setupScheduleHandlerTest(t)
+	defer db.Close()
+
+	service := handler.Service()
+	require.NotNil(t, service)
+}
+
+func TestScheduleHandler_UpsertByPlug_CarbonAware(t *testing.T) {
+	handler, db := setupScheduleHandlerTest(t)
+	defer db.Close()
+
+	reqBody := `{"type":"carbon_aware","windowStart":"22:00","windowEnd":"06:00","enabled":true}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/plugs/"+testSchedulePlugID+"/schedule", bytes.NewReader([]byte(reqBody)))
+	req.Header.Set("Content-Type", "application/json")
+	req = withPathValue(req, "id", testSchedulePlugID)
+	req = req.WithContext(internal.WithUserID(req.Context(), testScheduleUserID))
+	rr := httptest.NewRecorder()
+
+	handler.UpsertByPlug(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	var schedule models.Schedule
+	err := json.NewDecoder(rr.Body).Decode(&schedule)
+	assert.NoError(t, err)
+	assert.Equal(t, models.ScheduleTypeCarbonAware, schedule.Type)
+	require.NotNil(t, schedule.WindowStart)
+	require.NotNil(t, schedule.WindowEnd)
+	assert.Equal(t, "22:00", *schedule.WindowStart)
+	assert.Equal(t, "06:00", *schedule.WindowEnd)
+	assert.True(t, schedule.Enabled)
+}
+
+func TestScheduleHandler_UpsertByPlug_CarbonAware_MissingWindow(t *testing.T) {
+	handler, db := setupScheduleHandlerTest(t)
+	defer db.Close()
+
+	reqBody := `{"type":"carbon_aware","enabled":true}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/plugs/"+testSchedulePlugID+"/schedule", bytes.NewReader([]byte(reqBody)))
+	req.Header.Set("Content-Type", "application/json")
+	req = withPathValue(req, "id", testSchedulePlugID)
+	req = req.WithContext(internal.WithUserID(req.Context(), testScheduleUserID))
+	rr := httptest.NewRecorder()
+
+	handler.UpsertByPlug(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+func TestScheduleHandler_UpsertByPlug_CarbonAware_EqualWindows(t *testing.T) {
+	handler, db := setupScheduleHandlerTest(t)
+	defer db.Close()
+
+	reqBody := `{"type":"carbon_aware","windowStart":"09:00","windowEnd":"09:00","enabled":true}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/plugs/"+testSchedulePlugID+"/schedule", bytes.NewReader([]byte(reqBody)))
+	req.Header.Set("Content-Type", "application/json")
+	req = withPathValue(req, "id", testSchedulePlugID)
+	req = req.WithContext(internal.WithUserID(req.Context(), testScheduleUserID))
+	rr := httptest.NewRecorder()
+
+	handler.UpsertByPlug(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+func TestScheduleHandler_UpsertByPlug_InvalidType(t *testing.T) {
+	handler, db := setupScheduleHandlerTest(t)
+	defer db.Close()
+
+	reqBody := `{"type":"solar_powered","time":"09:00","enabled":true}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/plugs/"+testSchedulePlugID+"/schedule", bytes.NewReader([]byte(reqBody)))
+	req.Header.Set("Content-Type", "application/json")
+	req = withPathValue(req, "id", testSchedulePlugID)
+	req = req.WithContext(internal.WithUserID(req.Context(), testScheduleUserID))
+	rr := httptest.NewRecorder()
+
+	handler.UpsertByPlug(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+// withPathValue sets a URL path value on the request (Go 1.22+ pattern matching).
+func withPathValue(r *http.Request, key, value string) *http.Request {
+	r.SetPathValue(key, value)
+	return r
+}

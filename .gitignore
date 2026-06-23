@@ -1,0 +1,71 @@
+# Dependencies
+node_modules/
+go.sum
+!api/go.sum
+!mock-tasmota/go.sum
+*.db
+*.db-shm
+*.db-wal
+
+# Build outputs
+api/ev-charge-controller
+api/ev-charge-api-server
+api/seed
+api/tmp/
+api/cmd/seed/seed
+mock-tasmota/mock-tasmota-server
+mock-tasmota/mock-tasmota
+mock-tasmota/ev-charge-api-server
+mock-tasmota/tmp/
+ui/.next/
+ui/out/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+.claude/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local data
+data/
+
+# Debug screenshots
+screenshot-*.png
+
+# Caddy data (certificates, config)
+caddy-data/
+
+.opencode/
+/api/createuser
+
+coverage.out
+*/coverage.out
+
+# E2E test artifacts
+e2e/playwright-report/
+e2e/test-results/
+e2e/storage-states/
+e2e/*.zip
+
+api/vendor
+mock-tasmota/vendor
+
+AGENTS.md
+CLAUDE.md
+*/AGENTS.md
+*/CLAUDE.md

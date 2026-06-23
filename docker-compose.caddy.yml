@@ -1,0 +1,42 @@
+services:
+  mosquitto:
+    mac_address: ${MQTT_MAC}
+    networks:
+      macvlan:
+        ipv4_address: ${MQTT_IP}
+      internal:
+  caddy:
+    build:
+      context: ./caddy
+      dockerfile: Dockerfile
+    mac_address: ${CADDY_MAC}
+    networks:
+      macvlan:
+        ipv4_address: ${CADDY_IP}
+      internal:
+    environment:
+      - ENABLE_HTTPS=${ENABLE_HTTPS}
+      - CADDY_DOMAIN=${CADDY_DOMAIN}
+      - CLOUDFLARE_API_KEY=${CLOUDFLARE_API_KEY}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:z
+      - caddy-data:/data
+    depends_on:
+      ui:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:2019/config"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  caddy-data:
+
+networks:
+  macvlan:
+    external: true
+    name: docker-macvlan
+  internal:

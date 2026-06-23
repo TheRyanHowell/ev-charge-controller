@@ -1,0 +1,202 @@
+import { useGaugeStore } from "@/stores/gaugeStore";
+import { render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { GaugeOverlay } from "./GaugeOverlay";
+
+beforeEach(() => {
+  useGaugeStore.setState({ currentPercent: 50, targetPercent: 80 });
+});
+
+afterEach(() => {
+  useGaugeStore.setState({
+    currentPercent: 20,
+    targetPercent: 80,
+    isDragging: "none",
+  });
+});
+
+describe("GaugeOverlay", () => {
+  it("displays current percent from store", () => {
+    render(
+      <GaugeOverlay
+        status="idle"
+        currentPercent={50}
+        targetPercent={80}
+        onStartStop={() => {}}
+      />,
+    );
+    expect(screen.getByText("50%")).toBeInTheDocument();
+  });
+
+  it("displays Ready status when idle", () => {
+    render(
+      <GaugeOverlay
+        status="idle"
+        currentPercent={50}
+        targetPercent={80}
+        onStartStop={() => {}}
+      />,
+    );
+    expect(screen.getByText("Ready")).toBeInTheDocument();
+  });
+
+  it("displays Charging status when charging", () => {
+    render(
+      <GaugeOverlay
+        status="charging"
+        currentPercent={50}
+        targetPercent={80}
+        onStartStop={() => {}}
+      />,
+    );
+    expect(screen.getByText("Charging")).toBeInTheDocument();
+  });
+
+  it("shows START button when idle", () => {
+    render(
+      <GaugeOverlay
+        status="idle"
+        currentPercent={50}
+        targetPercent={80}
+        onStartStop={() => {}}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Start charging" }),
+    ).toHaveTextContent("START");
+  });
+
+  it("shows STOP button when charging", () => {
+    render(
+      <GaugeOverlay
+        status="charging"
+        currentPercent={50}
+        targetPercent={80}
+        onStartStop={() => {}}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Stop charging" }),
+    ).toHaveTextContent("STOP");
+  });
+
+  it("calls onStartStop when button clicked", () => {
+    const onStartStop = vi.fn();
+    render(
+      <GaugeOverlay
+        status="idle"
+        currentPercent={50}
+        targetPercent={80}
+        onStartStop={onStartStop}
+      />,
+    );
+    screen.getByRole("button", { name: "Start charging" }).click();
+    expect(onStartStop).toHaveBeenCalled();
+  });
+
+  it("disables button when charged", () => {
+    render(
+      <GaugeOverlay
+        status="idle"
+        currentPercent={80}
+        targetPercent={80}
+        onStartStop={() => {}}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Charged" })).toBeDisabled();
+  });
+
+  it("disables button when disconnected", () => {
+    render(
+      <GaugeOverlay
+        status="idle"
+        currentPercent={50}
+        targetPercent={80}
+        onStartStop={() => {}}
+        tasmotaConnected={false}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Start charging" }),
+    ).toBeDisabled();
+  });
+
+  it("does not render 12V circle when maintenance is null", () => {
+    render(
+      <GaugeOverlay
+        status="idle"
+        currentPercent={50}
+        targetPercent={80}
+        onStartStop={() => {}}
+      />,
+    );
+    expect(screen.queryByTestId("maintenance-circle")).not.toBeInTheDocument();
+  });
+
+  it("renders 12V circle when maintenance plug is present and on", () => {
+    render(
+      <GaugeOverlay
+        status="idle"
+        currentPercent={50}
+        targetPercent={80}
+        onStartStop={() => {}}
+        maintenance={{ powerOn: true, online: true }}
+        onToggleMaintenance={() => {}}
+      />,
+    );
+    const btn = screen.getByTestId("maintenance-circle");
+    expect(btn).toBeInTheDocument();
+    expect(btn).toHaveAttribute("aria-checked", "true");
+    expect(btn).toHaveAttribute(
+      "aria-label",
+      "12V charger on - tap to turn off",
+    );
+  });
+
+  it("renders 12V circle with offline label when offline", () => {
+    render(
+      <GaugeOverlay
+        status="idle"
+        currentPercent={50}
+        targetPercent={80}
+        onStartStop={() => {}}
+        maintenance={{ powerOn: false, online: false }}
+        onToggleMaintenance={() => {}}
+      />,
+    );
+    const btn = screen.getByTestId("maintenance-circle");
+    expect(btn).toHaveAttribute("aria-label", "12V charger offline");
+  });
+
+  it("calls onToggleMaintenance when 12V circle clicked", () => {
+    const onToggle = vi.fn();
+    render(
+      <GaugeOverlay
+        status="idle"
+        currentPercent={50}
+        targetPercent={80}
+        onStartStop={() => {}}
+        maintenance={{ powerOn: false, online: true }}
+        onToggleMaintenance={onToggle}
+      />,
+    );
+    screen.getByTestId("maintenance-circle").click();
+    expect(onToggle).toHaveBeenCalled();
+  });
+
+  it("disables 12V circle when maintenance toggle is pending", () => {
+    render(
+      <GaugeOverlay
+        status="idle"
+        currentPercent={50}
+        targetPercent={80}
+        onStartStop={() => {}}
+        maintenance={{ powerOn: true, online: true }}
+        onToggleMaintenance={() => {}}
+        isMaintenancePending={true}
+      />,
+    );
+    expect(screen.getByTestId("maintenance-circle")).toBeDisabled();
+  });
+});

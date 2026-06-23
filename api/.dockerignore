@@ -1,0 +1,13 @@
+node_modules/
+.git/
+.gitignore
+*.db
+coverage.out
+coverage/
+data/
+.env
+.env.local
+*.log
+tmp/
+air
+ev-charge-api-server

@@ -1,0 +1,1033 @@
+package services
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"ev-charge-controller/api/carbonintensity"
+	"ev-charge-controller/api/models"
+	"ev-charge-controller/api/repository"
+	"ev-charge-controller/api/tasmota"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestSessionMonitoringService_GetEnergy_ReturnsNilWhenNoActiveSession(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	energy, err := service.GetEnergy(context.Background())
+	require.NoError(t, err)
+	assert.Nil(t, energy)
+}
+
+func TestSessionMonitoringService_GetEnergy_ReturnsEnergyForActivePlug(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+
+	session := &models.ChargeSession{
+
+		VehicleID:     testVehicleID,
+		UserID:       testUserIDPtr,
+		PlugID:       testPlugIDPtr,
+		StartPercent:  20,
+		StartKwh:      0.38,
+		TargetPercent: 80,
+		TargetKwh:     1.52,
+		Status:        models.SessionStatusActive,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+
+	ctrl.SetEnergy(testPlugID, &tasmota.EnergyData{Total: 1.0, Power: 600})
+
+	energy, err := service.GetEnergy(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, energy)
+	assert.Greater(t, energy.Power, float64(0))
+}
+
+func TestSessionMonitoringService_SetPowerState(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	// No active session - no-op, no error
+	err := service.SetPowerState(context.Background(), true)
+	require.NoError(t, err)
+
+	err = service.SetPowerState(context.Background(), false)
+	require.NoError(t, err)
+}
+
+func TestSessionMonitoringService_AddPowerReading(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	session := &models.ChargeSession{
+		VehicleID:     testVehicleID,
+		UserID:       testUserIDPtr,
+		PlugID:       testPlugIDPtr,
+		StartPercent:  20,
+		StartKwh:      0.38,
+		TargetPercent: 80,
+		TargetKwh:     1.52,
+		Status:        models.SessionStatusPending,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+
+	reading := &models.PowerReading{
+		SessionID: session.ID,
+		EnergyKwh: 100.0,
+		Power:     600.0,
+		Voltage:   230.0,
+		Current:   2.6,
+		Timestamp: time.Now(),
+	}
+
+	err := service.AddPowerReading(context.Background(), reading)
+	require.NoError(t, err)
+}
+
+func TestSessionMonitoringService_GetLastCompleted(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	completed, err := service.GetLastCompleted(context.Background())
+	require.NoError(t, err)
+	assert.Nil(t, completed)
+
+	session := &models.ChargeSession{
+		VehicleID:     testVehicleID,
+		UserID:       testUserIDPtr,
+		PlugID:       testPlugIDPtr,
+		StartPercent:  20,
+		StartKwh:      0.38,
+		TargetPercent: 80,
+		TargetKwh:     1.52,
+		Status:        models.SessionStatusCompleted,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+
+	completed, err = service.GetLastCompleted(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, completed)
+	assert.Equal(t, session.ID, completed.ID)
+}
+
+func TestSessionMonitoringService_StoreSOCSnapshot_NoVehicle(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	session := &models.ChargeSession{
+		VehicleID: "nonexistent",
+		StartKwh:  0.38,
+	}
+	energy := &tasmota.EnergyData{
+		Total: 1000,
+		Power: 600,
+	}
+
+	err := service.StoreSOCSnapshot(context.Background(), session, energy)
+	require.NoError(t, err)
+}
+
+func TestSessionMonitoringService_SaveEnergyReadings_NoActiveSession(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	energy := &tasmota.EnergyData{Total: 1000, Power: 600}
+	service.SaveEnergyReadings(context.Background(), energy)
+}
+
+func TestSessionMonitoringService_SaveEnergyReadings_ActiveSession(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	session := &models.ChargeSession{
+		VehicleID:     testVehicleID,
+		UserID:       testUserIDPtr,
+		PlugID:       testPlugIDPtr,
+		StartPercent:  20,
+		StartKwh:      0.38,
+		TargetPercent: 80,
+		TargetKwh:     1.52,
+		Status:        models.SessionStatusActive,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+
+	energy := &tasmota.EnergyData{Total: 1000, Power: 600}
+	service.SaveEnergyReadings(context.Background(), energy)
+
+	readings, err := sessRepo.GetPowerReadings(context.Background(), session.ID)
+	require.NoError(t, err)
+	assert.Len(t, readings, 1)
+}
+
+func TestSessionMonitoringService_CheckAndAutoStopReachingSession_NoActive(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	stopper := &mockSessionStopper{}
+	service.CheckAndAutoStopReachingSession(context.Background(), stopper)
+	assert.False(t, stopper.stopped)
+}
+
+func TestSessionMonitoringService_CheckAndAutoStopReachingSession_PendingSession(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	session := &models.ChargeSession{
+		VehicleID:     testVehicleID,
+		UserID:       testUserIDPtr,
+		PlugID:       testPlugIDPtr,
+		StartPercent:  20,
+		StartKwh:      0.38,
+		TargetPercent: 80,
+		TargetKwh:     1.52,
+		Status:        models.SessionStatusPending,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+
+	stopper := &mockSessionStopper{}
+	service.CheckAndAutoStopReachingSession(context.Background(), stopper)
+	assert.False(t, stopper.stopped)
+}
+
+func TestSessionMonitoringService_CheckAndAutoStopReachingSession_NilEnergy(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	// Active session with no MQTT energy cached
+	session := &models.ChargeSession{
+		VehicleID:     testVehicleID,
+		UserID:       testUserIDPtr,
+		PlugID:       testPlugIDPtr,
+		StartPercent:  20,
+		StartKwh:      0.38,
+		TargetPercent: 80,
+		TargetKwh:     1.52,
+		Status:        models.SessionStatusActive,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+
+	stopper := &mockSessionStopper{}
+	service.CheckAndAutoStopReachingSession(context.Background(), stopper)
+	assert.False(t, stopper.stopped)
+}
+
+func TestSessionMonitoringService_SaveEnergyReadings_AttachesCarbonIntensity(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+	ciClient := &mockCarbonIntensityFetcher{value: 220}
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, ciClient, socWorker, lock)
+
+	session := &models.ChargeSession{
+		VehicleID:     testVehicleID,
+		UserID:       testUserIDPtr,
+		PlugID:       testPlugIDPtr,
+		StartPercent:  20,
+		StartKwh:      0.38,
+		TargetPercent: 80,
+		TargetKwh:     1.52,
+		Status:        models.SessionStatusActive,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+
+	energy := &tasmota.EnergyData{Total: 1000, Power: 600}
+	service.SaveEnergyReadings(context.Background(), energy)
+
+	readings, err := sessRepo.GetPowerReadings(context.Background(), session.ID)
+	require.NoError(t, err)
+	require.Len(t, readings, 1)
+	require.NotNil(t, readings[0].CarbonIntensityGCo2PerKwh)
+	assert.InDelta(t, 220, *readings[0].CarbonIntensityGCo2PerKwh, 0.001)
+}
+
+func TestSessionMonitoringService_SaveEnergyReadings_ConditioningSession(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	session := &models.ChargeSession{
+		VehicleID:     testVehicleID,
+		UserID:       testUserIDPtr,
+		PlugID:       testPlugIDPtr,
+		StartPercent:  20,
+		StartKwh:      0.38,
+		TargetPercent: 100,
+		TargetKwh:     1.9,
+		Status:        models.SessionStatusConditioning,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+
+	energy := &tasmota.EnergyData{Total: 1000, Power: 600}
+	service.SaveEnergyReadings(context.Background(), energy)
+
+	readings, err := sessRepo.GetPowerReadings(context.Background(), session.ID)
+	require.NoError(t, err)
+	assert.Len(t, readings, 1)
+}
+
+func TestSessionMonitoringService_SaveEnergyReadings_SkipsDuplicate(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	session := &models.ChargeSession{
+		VehicleID:     testVehicleID,
+		UserID:       testUserIDPtr,
+		PlugID:       testPlugIDPtr,
+		StartPercent:  20,
+		StartKwh:      0.38,
+		TargetPercent: 80,
+		TargetKwh:     1.52,
+		Status:        models.SessionStatusActive,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+
+	energy := &tasmota.EnergyData{Total: 1000, Power: 600, Voltage: 230, Current: 2.6}
+	service.SaveEnergyReadings(context.Background(), energy)
+	service.SaveEnergyReadings(context.Background(), energy)
+
+	readings, err := sessRepo.GetPowerReadings(context.Background(), session.ID)
+	require.NoError(t, err)
+	assert.Len(t, readings, 1, "duplicate readings with same values should be deduplicated")
+}
+
+func TestSessionMonitoringService_SaveEnergyReadings_StoresWhenValueChanges(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	session := &models.ChargeSession{
+		VehicleID:     testVehicleID,
+		UserID:       testUserIDPtr,
+		PlugID:       testPlugIDPtr,
+		StartPercent:  20,
+		StartKwh:      0.38,
+		TargetPercent: 80,
+		TargetKwh:     1.52,
+		Status:        models.SessionStatusActive,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+
+	energy1 := &tasmota.EnergyData{Total: 1000, Power: 600, Voltage: 230, Current: 2.6}
+	energy2 := &tasmota.EnergyData{Total: 1001, Power: 650, Voltage: 230, Current: 2.8}
+	service.SaveEnergyReadings(context.Background(), energy1)
+	service.SaveEnergyReadings(context.Background(), energy2)
+
+	readings, err := sessRepo.GetPowerReadings(context.Background(), session.ID)
+	require.NoError(t, err)
+	assert.Len(t, readings, 2, "changed values should always be stored")
+}
+
+func TestSessionMonitoringService_SaveEnergyReadings_StoresWhenStale(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	session := &models.ChargeSession{
+		VehicleID:     testVehicleID,
+		UserID:       testUserIDPtr,
+		PlugID:       testPlugIDPtr,
+		StartPercent:  20,
+		StartKwh:      0.38,
+		TargetPercent: 80,
+		TargetKwh:     1.52,
+		Status:        models.SessionStatusActive,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+
+	staleReading := &models.PowerReading{
+		ID:        "stale-id",
+		SessionID: session.ID,
+		Timestamp: time.Now().Add(-31 * time.Minute),
+		Power:     600,
+		Voltage:   230,
+		Current:   2.6,
+		EnergyKwh: 1000,
+	}
+	require.NoError(t, sessRepo.CreatePowerReading(context.Background(), staleReading))
+
+	energy := &tasmota.EnergyData{Total: 1000, Power: 600, Voltage: 230, Current: 2.6}
+	service.SaveEnergyReadings(context.Background(), energy)
+
+	readings, err := sessRepo.GetPowerReadings(context.Background(), session.ID)
+	require.NoError(t, err)
+	assert.Len(t, readings, 2, "stale readings should be refreshed regardless of value")
+}
+
+func TestSessionMonitoringService_CheckAndAutoStopReachingSession_TransitionsToConditioning(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	startTotal := 0.0
+
+	session := &models.ChargeSession{
+
+		VehicleID:     testVehicleID,
+		UserID:       testUserIDPtr,
+		PlugID:       testPlugIDPtr,
+		StartPercent:  20,
+		StartKwh:      0.38,
+		TargetPercent: models.MaxPercent,
+		TargetKwh:     1.9,
+		Status:        models.SessionStatusActive,
+		StartTotalKwh: &startTotal,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+
+	ctrl.SetEnergy(testPlugID, &tasmota.EnergyData{Total: 2000.0, Power: 600})
+
+	stopper := &mockSessionStopper{}
+	service.CheckAndAutoStopReachingSession(context.Background(), stopper)
+
+	updated, err := sessRepo.FindByID(context.Background(), session.ID)
+	require.NoError(t, err)
+	assert.Equal(t, models.SessionStatusConditioning, updated.Status)
+	assert.False(t, stopper.stopped)
+}
+
+func TestSessionMonitoringService_CheckAndStopConditioningSession_BelowThreshold(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+
+	session := &models.ChargeSession{
+
+		VehicleID:     testVehicleID,
+		UserID:       testUserIDPtr,
+		PlugID:       testPlugIDPtr,
+		StartPercent:  20,
+		StartKwh:      0.38,
+		TargetPercent: 100,
+		TargetKwh:     1.9,
+		Status:        models.SessionStatusConditioning,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+
+	// rm1 vehicle has ChargerOutputW=600W; threshold=60W. Power=0 → below threshold.
+	ctrl.SetEnergy(testPlugID, &tasmota.EnergyData{Total: 1.0, Power: 0})
+
+	stopper := &mockSessionStopper{}
+	service.CheckAndStopConditioningSession(context.Background(), stopper)
+	assert.True(t, stopper.stopped)
+}
+
+func TestSessionMonitoringService_CheckAndStopConditioningSession_AboveThreshold(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+
+	session := &models.ChargeSession{
+
+		VehicleID:     testVehicleID,
+		UserID:       testUserIDPtr,
+		PlugID:       testPlugIDPtr,
+		StartPercent:  20,
+		StartKwh:      0.38,
+		TargetPercent: 100,
+		TargetKwh:     1.9,
+		Status:        models.SessionStatusConditioning,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+
+	// rm1 vehicle ChargerOutputW=600W; threshold=60W. Power=580W → above threshold.
+	ctrl.SetEnergy(testPlugID, &tasmota.EnergyData{Total: 1.0, Power: 580})
+
+	stopper := &mockSessionStopper{}
+	service.CheckAndStopConditioningSession(context.Background(), stopper)
+	assert.False(t, stopper.stopped)
+}
+
+func TestSessionMonitoringService_StoreSOCSnapshot_SkipsDuplicate(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	startTotal := 0.0
+	session := &models.ChargeSession{
+		VehicleID:     testVehicleID,
+		UserID:       testUserIDPtr,
+		PlugID:       testPlugIDPtr,
+		StartPercent:  20,
+		StartKwh:      0.38,
+		TargetPercent: 80,
+		TargetKwh:     1.52,
+		Status:        models.SessionStatusActive,
+		StartTotalKwh: &startTotal,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+
+	energy := &tasmota.EnergyData{Total: 0.5, Power: 600}
+	require.NoError(t, service.StoreSOCSnapshot(context.Background(), session, energy))
+	require.NoError(t, service.StoreSOCSnapshot(context.Background(), session, energy))
+
+	snapshots, err := sessRepo.GetSOCSnapshots(context.Background(), session.ID)
+	require.NoError(t, err)
+	assert.Len(t, snapshots, 1, "duplicate SOC snapshots with same value should be deduplicated")
+}
+
+func TestSessionMonitoringService_StoreSOCSnapshot_StoresWhenValueChanges(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	startTotal := 0.0
+	session := &models.ChargeSession{
+		VehicleID:     testVehicleID,
+		UserID:       testUserIDPtr,
+		PlugID:       testPlugIDPtr,
+		StartPercent:  20,
+		StartKwh:      0.38,
+		TargetPercent: 80,
+		TargetKwh:     1.52,
+		Status:        models.SessionStatusActive,
+		StartTotalKwh: &startTotal,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+
+	energy1 := &tasmota.EnergyData{Total: 0.5, Power: 600}
+	energy2 := &tasmota.EnergyData{Total: 1.0, Power: 600}
+	require.NoError(t, service.StoreSOCSnapshot(context.Background(), session, energy1))
+	require.NoError(t, service.StoreSOCSnapshot(context.Background(), session, energy2))
+
+	snapshots, err := sessRepo.GetSOCSnapshots(context.Background(), session.ID)
+	require.NoError(t, err)
+	assert.Len(t, snapshots, 2, "changed SOC value should always be stored")
+}
+
+func TestSessionMonitoringService_StoreSOCSnapshot_StoresWhenStale(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	startTotal := 0.0
+	session := &models.ChargeSession{
+		VehicleID:     testVehicleID,
+		UserID:       testUserIDPtr,
+		PlugID:       testPlugIDPtr,
+		StartPercent:  20,
+		StartKwh:      0.38,
+		TargetPercent: 80,
+		TargetKwh:     1.52,
+		Status:        models.SessionStatusActive,
+		StartTotalKwh: &startTotal,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+
+	staleSnapshot := &models.SOCSnapshot{
+		ID:         "stale-snap",
+		SessionID:  session.ID,
+		SocPercent: 45.0,
+		Timestamp:  time.Now().Add(-31 * time.Minute),
+	}
+	require.NoError(t, sessRepo.CreateSOCSnapshot(context.Background(), staleSnapshot))
+
+	energy := &tasmota.EnergyData{Total: startTotal + 0.6647, Power: 600}
+	require.NoError(t, service.StoreSOCSnapshot(context.Background(), session, energy))
+
+	snapshots, err := sessRepo.GetSOCSnapshots(context.Background(), session.ID)
+	require.NoError(t, err)
+	assert.Len(t, snapshots, 2, "stale SOC snapshot should be refreshed regardless of value")
+}
+
+type mockSessionStopper struct {
+	stopped bool
+}
+
+func (m *mockSessionStopper) stopWithPercent(_ context.Context, _ *models.ChargeSession, _ float64, _ ...models.StopReason) (*StopResult, error) {
+	m.stopped = true
+	return &StopResult{Stopped: true}, nil
+}
+
+type mockCarbonIntensityFetcher struct {
+	value int
+}
+
+func (m *mockCarbonIntensityFetcher) GetCurrent(_ context.Context) (*carbonintensity.CarbonIntensity, error) {
+	return &carbonintensity.CarbonIntensity{Actual: m.value}, nil
+}
+
+func TestCarbonIntensityDiffers(t *testing.T) {
+	a := float64(220)
+	b := float64(220)
+	c := float64(250)
+
+	assert.True(t, carbonIntensityDiffers(nil, &a))
+	assert.True(t, carbonIntensityDiffers(&a, nil))
+	assert.False(t, carbonIntensityDiffers(nil, nil))
+	assert.False(t, carbonIntensityDiffers(&a, &b))
+	assert.True(t, carbonIntensityDiffers(&a, &c))
+}
+
+func TestCheckAndStopConditioningSession_NoActiveSession(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	stopper := &mockSessionStopper{}
+	service.CheckAndStopConditioningSession(context.Background(), stopper)
+	assert.False(t, stopper.stopped)
+}
+
+func TestCheckAndStopConditioningSession_NotConditioning(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	session := &models.ChargeSession{
+		VehicleID:     testVehicleID,
+		UserID:        testUserIDPtr,
+		PlugID:        testPlugIDPtr,
+		StartPercent:  20,
+		StartKwh:      0.38,
+		TargetPercent: 80,
+		TargetKwh:     1.52,
+		Status:        models.SessionStatusActive,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+
+	stopper := &mockSessionStopper{}
+	service.CheckAndStopConditioningSession(context.Background(), stopper)
+	assert.False(t, stopper.stopped)
+}
+
+func TestCheckAndStopConditioningSession_NoEnergy(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	session := &models.ChargeSession{
+		VehicleID:     testVehicleID,
+		UserID:        testUserIDPtr,
+		PlugID:        testPlugIDPtr,
+		StartPercent:  20,
+		StartKwh:      0.38,
+		TargetPercent: 100,
+		TargetKwh:     1.9,
+		Status:        models.SessionStatusConditioning,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+
+	// No energy set on controller - should skip
+	stopper := &mockSessionStopper{}
+	service.CheckAndStopConditioningSession(context.Background(), stopper)
+	assert.False(t, stopper.stopped)
+}
+
+func TestCheckAndStopConditioningSession_NoPlugController(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	// nil plug controller
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, nil, nil, socWorker, lock)
+
+	session := &models.ChargeSession{
+		VehicleID:     testVehicleID,
+		UserID:        testUserIDPtr,
+		PlugID:        testPlugIDPtr,
+		StartPercent:  20,
+		StartKwh:      0.38,
+		TargetPercent: 100,
+		TargetKwh:     1.9,
+		Status:        models.SessionStatusConditioning,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+
+	stopper := &mockSessionStopper{}
+	service.CheckAndStopConditioningSession(context.Background(), stopper)
+	assert.False(t, stopper.stopped)
+}
+
+func TestSetPowerState_WithActiveSession(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	session := &models.ChargeSession{
+		VehicleID:     testVehicleID,
+		UserID:        testUserIDPtr,
+		PlugID:        testPlugIDPtr,
+		StartPercent:  20,
+		StartKwh:      0.38,
+		TargetPercent: 80,
+		TargetKwh:     1.52,
+		Status:        models.SessionStatusActive,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+
+	err := service.SetPowerState(context.Background(), false)
+	require.NoError(t, err)
+
+	ctrl.mu.RLock()
+	defer ctrl.mu.RUnlock()
+	assert.Equal(t, false, ctrl.powerOn[testPlugID])
+}
+
+func TestSetPowerState_NilPlugController(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, nil, nil, socWorker, lock)
+
+	session := &models.ChargeSession{
+		VehicleID:     testVehicleID,
+		UserID:        testUserIDPtr,
+		PlugID:        testPlugIDPtr,
+		StartPercent:  20,
+		StartKwh:      0.38,
+		TargetPercent: 80,
+		TargetKwh:     1.52,
+		Status:        models.SessionStatusActive,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+
+	err := service.SetPowerState(context.Background(), true)
+	require.NoError(t, err)
+}
+
+func TestSaveEnergyReadings_ConditioningNoSOCOffload(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	session := &models.ChargeSession{
+		VehicleID:     testVehicleID,
+		UserID:        testUserIDPtr,
+		PlugID:        testPlugIDPtr,
+		StartPercent:  20,
+		StartKwh:      0.38,
+		TargetPercent: 100,
+		TargetKwh:     1.9,
+		Status:        models.SessionStatusConditioning,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+
+	energy := &tasmota.EnergyData{Total: 1000, Power: 600}
+	service.SaveEnergyReadings(context.Background(), energy)
+
+	// Power reading should be saved
+	readings, err := sessRepo.GetPowerReadings(context.Background(), session.ID)
+	require.NoError(t, err)
+	assert.Len(t, readings, 1)
+}
+
+func TestSaveEnergyReadings_DBError_LogsAndContinues(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	session := &models.ChargeSession{
+		VehicleID:     testVehicleID,
+		UserID:        testUserIDPtr,
+		PlugID:        testPlugIDPtr,
+		StartPercent:  20,
+		StartKwh:      0.38,
+		TargetPercent: 80,
+		TargetKwh:     1.52,
+		Status:        models.SessionStatusActive,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+
+	// First read succeeds
+	energy := &tasmota.EnergyData{Total: 1000, Power: 600}
+	service.SaveEnergyReadings(context.Background(), energy)
+
+	// Close DB to force error on second call
+	require.NoError(t, db.Close())
+
+	// Should not panic
+	service.SaveEnergyReadings(context.Background(), energy)
+}
+
+func TestSessionMonitoringService_SetPowerState_GetActiveError(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	// Close DB to force GetActive error
+	require.NoError(t, db.Close())
+
+	err := service.SetPowerState(context.Background(), true)
+	assert.Error(t, err)
+}
+
+func TestSessionMonitoringService_StoreSOCSnapshot_VehicleError(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	session := &models.ChargeSession{
+		VehicleID: testVehicleID,
+		StartKwh:  0.38,
+	}
+	energy := &tasmota.EnergyData{Total: 1000, Power: 600}
+
+	// Close DB to force FindByID error
+	require.NoError(t, db.Close())
+
+	err := service.StoreSOCSnapshot(context.Background(), session, energy)
+	assert.Error(t, err)
+}
+
+func TestSessionMonitoringService_CurrentCarbonIntensity_Error(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	// Mock carbon intensity that returns an error
+	ciClient := &mockCarbonIntensityFetcherError{}
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, ciClient, socWorker, lock)
+
+	ci := service.currentCarbonIntensity(context.Background())
+	assert.Nil(t, ci) // Error should be swallowed, nil returned
+}
+
+func TestSessionMonitoringService_CheckAndStopConditioningSession_VehicleError(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	session := &models.ChargeSession{
+		VehicleID:     testVehicleID,
+		UserID:        testUserIDPtr,
+		PlugID:        testPlugIDPtr,
+		StartPercent:  20,
+		StartKwh:      0.38,
+		TargetPercent: 100,
+		TargetKwh:     1.9,
+		Status:        models.SessionStatusConditioning,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+
+	// Close DB to force FindByID error
+	require.NoError(t, db.Close())
+
+	stopper := &mockSessionStopper{}
+	service.CheckAndStopConditioningSession(context.Background(), stopper)
+	assert.False(t, stopper.stopped) // Error path should not stop
+}
+
+func TestSessionMonitoringService_CheckAndAutoStopReachingSession_GetActiveError(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	// Close DB to force GetActive error
+	require.NoError(t, db.Close())
+
+	stopper := &mockSessionStopper{}
+	service.CheckAndAutoStopReachingSession(context.Background(), stopper)
+	assert.False(t, stopper.stopped)
+}
+
+func TestSessionMonitoringService_GetEnergy_GetActiveError(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	// Close DB to force GetActive error
+	require.NoError(t, db.Close())
+
+	energy, err := service.GetEnergy(context.Background())
+	// GetEnergy swallows errors and returns nil
+	require.NoError(t, err)
+	assert.Nil(t, energy)
+}
+
+type mockCarbonIntensityFetcherError struct{}
+
+func (m *mockCarbonIntensityFetcherError) GetCurrent(_ context.Context) (*carbonintensity.CarbonIntensity, error) {
+	return nil, assert.AnError
+}

@@ -1,0 +1,10 @@
+# Production overlay: gives mosquitto its own MAC/IP on the physical LAN via macvlan.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.macvlan.yml up -d
+# Requires the docker-macvlan network to pre-exist and MQTT_MAC/MQTT_IP to be set in .env.
+services:
+  mosquitto:
+    mac_address: ${MQTT_MAC}
+    networks:
+      macvlan:
+        ipv4_address: ${MQTT_IP}
+      internal:

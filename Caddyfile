@@ -1,0 +1,25 @@
+{
+    order rate_limit before basic_auth
+}
+
+{env.CADDY_DOMAIN}:443 {
+    tls {
+        dns cloudflare {env.CLOUDFLARE_API_KEY}
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    }
+
+    @api path /api/*
+
+    rate_limit @api {
+        zone ev-charge-api {
+            key {http.request.remote.host}
+            events 120
+            window 1m
+        }
+    }
+
+    reverse_proxy ui:3000
+}

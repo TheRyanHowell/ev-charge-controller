@@ -1,0 +1,4 @@
+DROP TABLE IF EXISTS plugs;
+DROP TABLE IF EXISTS mqtt_credentials;
+DROP TABLE IF EXISTS refresh_tokens;
+DROP TABLE IF EXISTS users;

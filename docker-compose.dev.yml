@@ -1,0 +1,172 @@
+services:
+  mosquitto:
+    # In dev, expose MQTT port for local testing with MQTT clients
+    ports:
+      - "${MQTT_PORT:-1883}:1883"
+
+  api:
+    build:
+      target: dev
+      args:
+        - UID=${UID:-1000}
+        - GID=${GID:-1000}
+    networks:
+      - internal
+    ports:
+      - "8080:8080"
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-debug}
+      - APP_ENV=dev
+      - MQTT_IP=mosquitto
+      - MQTT_EXTERNAL_PORT=1883
+    volumes:
+      - ./api:/app:z
+    command: ["air", "-c", "/app/air.toml"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  ui:
+    build:
+      target: dev
+      args:
+        - UID=${UID:-1000}
+        - GID=${GID:-1000}
+    networks:
+      - internal
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./ui:/app:z
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      api:
+        condition: service_healthy
+
+  mock-tasmota:
+    build:
+      context: ./mock-tasmota
+      dockerfile: Dockerfile
+      target: dev
+      args:
+        - UID=${UID:-1000}
+        - GID=${GID:-1000}
+    networks:
+      - internal
+    volumes:
+      - ./mock-tasmota:/app:z
+      - ./data:/data:z
+    command: ["air", "-c", "/app/air.toml"]
+    ports:
+      - "8081:8081"
+    environment:
+      - PORT=${MOCK_TASMOTA_PORT}
+      - POWER_WATTS=${MOCK_TASMOTA_POWER_WATTS}
+      - VOLTAGE=${MOCK_TASMOTA_VOLTAGE}
+      - FREQUENCY=${MOCK_TASMOTA_FREQUENCY}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  mock-tasmota-2:
+    build:
+      context: ./mock-tasmota
+      dockerfile: Dockerfile
+      target: dev
+      args:
+        - UID=${UID:-1000}
+        - GID=${GID:-1000}
+    networks:
+      - internal
+    volumes:
+      - ./mock-tasmota:/app:z
+      - ./data:/data:z
+    command: ["air", "-c", "/app/air.toml"]
+    ports:
+      - "8082:8082"
+    environment:
+      - PORT=8082
+      - POWER_WATTS=${MOCK_TASMOTA_2_POWER_WATTS:-2200}
+      - VOLTAGE=${MOCK_TASMOTA_VOLTAGE}
+      - FREQUENCY=${MOCK_TASMOTA_FREQUENCY}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8082/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  mock-tasmota-3:
+    build:
+      context: ./mock-tasmota
+      dockerfile: Dockerfile
+      target: dev
+      args:
+        - UID=${UID:-1000}
+        - GID=${GID:-1000}
+    networks:
+      - internal
+    volumes:
+      - ./mock-tasmota:/app:z
+      - ./data:/data:z
+    command: ["air", "-c", "/app/air.toml"]
+    ports:
+      - "8083:8083"
+    environment:
+      - PORT=8083
+      - POWER_WATTS=${MOCK_TASMOTA_3_POWER_WATTS:-50}
+      - VOLTAGE=${MOCK_TASMOTA_VOLTAGE}
+      - FREQUENCY=${MOCK_TASMOTA_FREQUENCY}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8083/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  e2e:
+    profiles:
+      - e2e
+    build:
+      context: ./e2e
+      dockerfile: Dockerfile
+      target: dev
+      args:
+        - UID=${UID:-1000}
+        - GID=${GID:-1000}
+    networks:
+      - internal
+    volumes:
+      - ./e2e:/app:z
+      - /app/node_modules
+    environment:
+      - PLAYWRIGHT_BASE_URL=http://ui:3000
+      - E2E_API_URL=http://api:8080
+      - E2E_TEST_EMAIL=${E2E_TEST_EMAIL:-test@example.com}
+      - E2E_TEST_PASSWORD=${E2E_TEST_PASSWORD:-password123}
+    depends_on:
+      api:
+        condition: service_healthy
+      ui:
+        condition: service_started
+      mock-tasmota:
+        condition: service_healthy
+      mock-tasmota-2:
+        condition: service_healthy
+      mock-tasmota-3:
+        condition: service_healthy
+
+
+networks:
+  internal:
+    driver: bridge

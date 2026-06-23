@@ -1,0 +1,99 @@
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    - errcheck
+    - gofmt
+    - goimports
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - typecheck
+    - unused
+    # Additional modern linters
+    - copyloopvar
+    - dupword
+    - exptostd
+    - godot
+    - intrange
+    - nilnesserr
+    - nlreturn
+    - misspell
+    - nosprintfhostport
+    - predeclared
+    - unconvert
+    - usestdlibvars
+    - whitespace
+    - usetesting
+    - wrapcheck
+
+  disable:
+    - depguard
+    - lll
+    - wsl
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: false
+  staticcheck:
+    checks: ["all", "-ST1000"]
+  goimports:
+    local-prefixes: "ev-charge-controller/api"
+  misspell:
+    ignore-words: []
+  unconvert:
+    keep-type-assertions: true
+  usestdlibvars:
+    time-weekday: true
+    time-month: true
+    time-layout: true
+    crypto-hash: true
+    default-storage: true
+  dupword:
+    ignore-case: true
+  godot:
+    scope: toplevel
+    capital: true
+  nlreturn:
+    block-size: 2
+    style: around
+  whitespace:
+    multi-if: false
+    multi-func: false
+  copyloopvar:
+    ignore-aliases: false
+  intrange:
+    style: range
+  nilnesserr:
+    query: true
+  usetesting:
+    testing-os: false
+
+issues:
+  max-same-issues: 0
+  max-per-linter: 0
+  exclude-rules:
+    # Map key existence checks in test files are intentional
+    - path: _test\.go
+      linters:
+        - errcheck
+    # Test files may have longer functions and more setup
+    - path: _test\.go
+      linters:
+        - dupl
+    - path: _test\.go
+      linters:
+        - funlen
+    - path: _test\.go
+      linters:
+        - gocognit
+    - path: _test\.go
+      linters:
+        - varnamelen
+    - path: _test\.go
+      linters:
+        - exhaustruct

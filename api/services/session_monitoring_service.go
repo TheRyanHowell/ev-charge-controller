@@ -1,0 +1,383 @@
+package services
+
+import (
+	"context"
+	"log/slog"
+	"time"
+
+	"github.com/google/uuid"
+
+	"ev-charge-controller/api/internal"
+	"ev-charge-controller/api/models"
+	"ev-charge-controller/api/tasmota"
+)
+
+// staleReadingThreshold is the max age of a reading before it must be stored
+// again regardless of whether the value changed - ensures periodic data points.
+const staleReadingThreshold = 30 * time.Minute
+
+// SessionMonitoringService handles energy monitoring: power readings,
+// SOC snapshots, and auto-stop when target is reached.
+type SessionMonitoringService struct {
+	sessionReader    internal.SessionReader
+	sessionWriter    internal.SessionWriter
+	snapshotRepo     internal.SnapshotReader
+	powerReadingRepo internal.PowerReadingReader
+	vehicleRepo      internal.VehicleRepo
+	plugCtrl         internal.PlugController
+	carbonIntensity  internal.CarbonIntensityFetcher
+	socGenerator     *SOCGenerator
+	socWorker        *SOCWorker
+	lock             *sessionLock
+}
+
+// NewSessionMonitoringService creates a new SessionMonitoringService.
+// The session lock is shared with ChargeSessionService to serialize monitoring
+// operations with lifecycle mutations (Stop, StartSession, etc.).
+func NewSessionMonitoringService(
+	sessionReader internal.SessionReader,
+	sessionWriter internal.SessionWriter,
+	snapshotRepo internal.SnapshotReader,
+	powerReadingRepo internal.PowerReadingReader,
+	vehicleRepo internal.VehicleRepo,
+	plugCtrl internal.PlugController,
+	carbonIntensity internal.CarbonIntensityFetcher,
+	socWorker *SOCWorker,
+	lock *sessionLock,
+) *SessionMonitoringService {
+	return &SessionMonitoringService{
+		sessionReader:    sessionReader,
+		sessionWriter:    sessionWriter,
+		snapshotRepo:     snapshotRepo,
+		powerReadingRepo: powerReadingRepo,
+		vehicleRepo:      vehicleRepo,
+		plugCtrl:         plugCtrl,
+		carbonIntensity:  carbonIntensity,
+		socGenerator:     NewSOCGenerator(),
+		socWorker:        socWorker,
+		lock:             lock,
+	}
+}
+
+// GetEnergy returns the last cached MQTT energy reading for the active session's plug.
+// Returns (nil, nil) when no active session exists or no MQTT data is available yet.
+func (s *SessionMonitoringService) GetEnergy(ctx context.Context) (*tasmota.EnergyData, error) {
+	if s.plugCtrl == nil {
+		return nil, nil
+	}
+	session, err := s.sessionReader.GetActive(ctx)
+	if err != nil || session == nil || session.PlugID == nil {
+		return nil, nil
+	}
+	return s.plugCtrl.LastEnergy(*session.PlugID), nil
+}
+
+// SetPowerState controls the active session's plug power outlet.
+// No-op when no active session or no plug assigned.
+func (s *SessionMonitoringService) SetPowerState(ctx context.Context, powerOn bool) error {
+	if s.plugCtrl == nil {
+		return nil
+	}
+	session, err := s.sessionReader.GetActive(ctx)
+	if err != nil {
+		return err
+	}
+	if session == nil || session.PlugID == nil {
+		return nil
+	}
+	return s.plugCtrl.SetPower(ctx, *session.PlugID, powerOn)
+}
+
+// AddPowerReading saves a power reading to the database.
+func (s *SessionMonitoringService) AddPowerReading(ctx context.Context, reading *models.PowerReading) error {
+	return s.powerReadingRepo.CreatePowerReading(ctx, reading)
+}
+
+// GetLastCompleted returns the last completed charge session.
+func (s *SessionMonitoringService) GetLastCompleted(ctx context.Context) (*models.ChargeSession, error) {
+	return s.sessionReader.GetLastCompleted(ctx)
+}
+
+// StoreSOCSnapshot calculates the SOC from Tasmota energy readings and persists it.
+func (s *SessionMonitoringService) StoreSOCSnapshot(ctx context.Context, session *models.ChargeSession, energy *tasmota.EnergyData) error {
+	vehicle, err := s.vehicleRepo.FindByID(ctx, session.VehicleID)
+	if err != nil {
+		return err
+	}
+	if vehicle == nil || vehicle.CapacityKwh <= 0 {
+		return nil
+	}
+
+	socPercent, lastBlendedKwh, err := s.socGenerator.CalculateSOC(session, energy, vehicle)
+	if err != nil {
+		return err
+	}
+
+	snapshot := s.socGenerator.BuildSnapshot(session.ID, socPercent)
+
+	lastSnapshot, lastErr := s.snapshotRepo.GetLastSOCSnapshot(ctx, session.ID)
+	if lastErr != nil {
+		slog.Warn("Error fetching last SOC snapshot for dedup check", "err", lastErr)
+	}
+	if shouldStoreSOCSnapshot(lastSnapshot, snapshot) {
+		if err := s.snapshotRepo.CreateSOCSnapshot(ctx, snapshot); err != nil {
+			return err
+		}
+	}
+
+	return s.sessionWriter.UpdateLastBlendedKwh(ctx, session.ID, lastBlendedKwh)
+}
+
+// SaveEnergyReadings atomically checks session status and saves a power reading.
+// SOC snapshot is offloaded to an async worker to avoid blocking the poll cycle.
+// The mutex ensures the session status check and power reading write are serialised
+// with Stop, StartSession, and other session lifecycle mutations.
+func (s *SessionMonitoringService) SaveEnergyReadings(ctx context.Context, energy *tasmota.EnergyData) {
+	// Grid carbon intensity is an external HTTP call and is independent of
+	// session state, so fetch it BEFORE acquiring the lock. Holding the shared
+	// session lock across network I/O would block every lifecycle mutation
+	// (Stop, StartSession, …) for the duration of the request.
+	carbonIntensity := s.currentCarbonIntensity(ctx)
+
+	session := s.saveReadingLocked(ctx, energy, carbonIntensity)
+	if session == nil {
+		return
+	}
+
+	// Offload SOC snapshot to async worker
+	if session.Status != models.SessionStatusPending && session.StartTotalKwh != nil {
+		s.socWorker.Send(socRequest{
+			sessionID:      session.ID,
+			vehicleID:      session.VehicleID,
+			startKwh:       session.StartKwh,
+			startTotalKwh:  *session.StartTotalKwh,
+			targetKwh:      session.TargetKwh,
+			createdAt:      session.CreatedAt,
+			startedAt:      session.StartedAt,
+			lastBlendedKwh: session.LastBlendedKwh,
+			energy:         energy,
+		})
+	}
+}
+
+// currentCarbonIntensity returns the current grid carbon intensity in
+// gCO2/kWh, or nil if unavailable. A nil client, fetch error, or nil reading
+// are all non-fatal - the power reading is simply stored without it.
+func (s *SessionMonitoringService) currentCarbonIntensity(ctx context.Context) *float64 {
+	if s.carbonIntensity == nil {
+		return nil
+	}
+	ci, err := s.carbonIntensity.GetCurrent(ctx)
+	if err != nil || ci == nil {
+		return nil
+	}
+	v := float64(ci.Actual)
+	return &v
+}
+
+// saveReadingLocked performs the check-then-act under the shared session lock:
+// it confirms a charging/conditioning session is active and persists the power
+// reading, serialising with lifecycle mutations (Stop, StartSession, …). It
+// returns the active session for follow-up work (SOC offload) outside the lock,
+// or nil if there was nothing to record. No network I/O happens under the lock.
+func (s *SessionMonitoringService) saveReadingLocked(ctx context.Context, energy *tasmota.EnergyData, carbonIntensity *float64) *models.ChargeSession {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	session, err := s.sessionReader.GetActive(ctx)
+	if err != nil {
+		slog.Error("Error getting active session for energy save", "err", err)
+		return nil
+	}
+	if session == nil || (session.Status != models.SessionStatusActive && session.Status != models.SessionStatusConditioning) {
+		return nil
+	}
+
+	reading := &models.PowerReading{
+		ID:                        uuid.New().String(),
+		SessionID:                 session.ID,
+		EnergyKwh:                 energy.Total,
+		Power:                     energy.Power,
+		Voltage:                   energy.Voltage,
+		Current:                   energy.Current,
+		Timestamp:                 time.Now(),
+		CarbonIntensityGCo2PerKwh: carbonIntensity,
+	}
+
+	lastReading, lastErr := s.powerReadingRepo.GetLastPowerReading(ctx, session.ID)
+	if lastErr != nil {
+		slog.Warn("Error fetching last power reading for dedup check", "err", lastErr)
+	}
+	if shouldStorePowerReading(lastReading, reading) {
+		if err := s.powerReadingRepo.CreatePowerReading(ctx, reading); err != nil {
+			slog.Error("Error saving power reading", "err", err)
+		}
+	}
+
+	return session
+}
+
+// CheckAndStopConditioningSession checks whether a conditioning session has
+// tapered to the stop threshold and completes it if so.
+func (s *SessionMonitoringService) CheckAndStopConditioningSession(ctx context.Context, stopper sessionStopper) {
+	activeSession, err := s.sessionReader.GetActive(ctx)
+	if err != nil || activeSession == nil {
+		return
+	}
+	if activeSession.Status != models.SessionStatusConditioning {
+		return
+	}
+
+	vehicle, err := s.vehicleRepo.FindByID(ctx, activeSession.VehicleID)
+	if err != nil || vehicle == nil || vehicle.ChargerOutputW <= 0 {
+		slog.Warn("[CONDITIONING] Cannot check threshold: vehicle missing or no charger output", "err", err)
+		return
+	}
+
+	var energy *tasmota.EnergyData
+	if s.plugCtrl != nil && activeSession.PlugID != nil {
+		energy = s.plugCtrl.LastEnergy(*activeSession.PlugID)
+	}
+	if energy == nil {
+		slog.Info("[CONDITIONING] Cannot check: no MQTT energy data")
+		return
+	}
+
+	thresholdW := vehicle.ChargerOutputW * models.ConditioningStopThresholdFraction
+	slog.Info("[CONDITIONING] Check", "sessionID", activeSession.ID, "powerW", energy.Power, "thresholdW", thresholdW)
+
+	if energy.Power < thresholdW {
+		slog.Info("[CONDITIONING] Power below threshold, completing session", "sessionID", activeSession.ID)
+		result, err := stopper.stopWithPercent(ctx, activeSession, activeSession.TargetPercent, models.StopAutoComplete)
+		if err != nil {
+			slog.Error("[CONDITIONING] Error completing session", "err", err)
+		} else if !result.Stopped {
+			slog.Error("[CONDITIONING] Tasmota stop failed", "tasmotaErr", result.TasmotaErr)
+		} else {
+			slog.Info("[CONDITIONING] Session completed", "sessionID", activeSession.ID)
+		}
+	}
+}
+
+// CheckAndAutoStopReachingSession checks if the active session has reached its
+// target and automatically stops it if so.
+type sessionStopper interface {
+	stopWithPercent(ctx context.Context, session *models.ChargeSession, endPercent float64, reason ...models.StopReason) (*StopResult, error)
+}
+
+func (s *SessionMonitoringService) CheckAndAutoStopReachingSession(ctx context.Context, stopper sessionStopper) {
+	activeSession, err := s.sessionReader.GetActive(ctx)
+	if err != nil || activeSession == nil {
+		slog.Info("[AUTO-STOP] No active session", "err", err, "session", activeSession != nil)
+		return
+	}
+
+	slog.Info("[AUTO-STOP] Session", "sessionID", activeSession.ID, "status", activeSession.Status, "target", activeSession.TargetPercent, "startKwh", activeSession.StartKwh, "targetKwh", activeSession.TargetKwh, "startTotalKwh", activeSession.StartTotalKwh)
+
+	// Skip pending sessions - they haven't started charging yet
+	if activeSession.Status != models.SessionStatusActive {
+		slog.Info("[AUTO-STOP] Skip: session status not active", "status", activeSession.Status)
+		return
+	}
+
+	var energy *tasmota.EnergyData
+	if s.plugCtrl != nil && activeSession.PlugID != nil {
+		energy = s.plugCtrl.LastEnergy(*activeSession.PlugID)
+	}
+	if energy == nil || energy.Total == 0 || activeSession.StartTotalKwh == nil {
+		if energy == nil {
+			slog.Info("[AUTO-STOP] Skip: no MQTT energy data")
+		} else if energy.Total == 0 {
+			slog.Info("[AUTO-STOP] Skip: energy.Total=0")
+		} else {
+			slog.Info("[AUTO-STOP] Skip: StartTotalKwh=nil")
+		}
+
+		return
+	}
+
+	slog.Info("[AUTO-STOP] MQTT energy", "total", energy.Total, "power", energy.Power)
+
+	vehicle, err := s.vehicleRepo.FindByID(ctx, activeSession.VehicleID)
+	if err != nil || vehicle == nil || vehicle.CapacityKwh <= 0 {
+		slog.Info("[AUTO-STOP] Skip: vehicle lookup failed", "err", err, "vehicle", vehicle != nil, "capacity", vehicle.CapacityKwh)
+		return
+	}
+
+	slog.Info("[AUTO-STOP] Vehicle", "id", vehicle.ID, "capacity", vehicle.CapacityKwh, "efficiency", vehicle.ChargingEfficiency)
+
+	progress := CalculateProgress(activeSession, energy, vehicle)
+
+	slog.Info("[AUTO-STOP] Progress", "blendedKwh", progress.BlendedKwh, "targetKwh", activeSession.TargetKwh, "currentPercent", progress.CurrentPercent, "targetPercent", activeSession.TargetPercent, "remainingKwh", activeSession.TargetKwh-progress.BlendedKwh, "hasTick", progress.HasTick)
+
+	s.lock.Lock()
+	err = s.sessionWriter.UpdateLastBlendedKwh(ctx, activeSession.ID, progress.LastBlendedKwh)
+	s.lock.Unlock()
+	if err != nil {
+		slog.Warn("failed to update last blended kWh for session", "sessionID", activeSession.ID, "err", err)
+	}
+
+	if progress.BlendedKwh >= activeSession.TargetKwh {
+		slog.Info("[AUTO-STOP] TRIGGERED", "sessionID", activeSession.ID, "blendedKwh", progress.BlendedKwh, "targetKwh", activeSession.TargetKwh, "currentPercent", progress.CurrentPercent, "targetPercent", activeSession.TargetPercent)
+		// 100% target: enter conditioning phase instead of stopping immediately.
+		// The charger stays on until the CV tail current tapers below the threshold.
+		if activeSession.TargetPercent == models.MaxPercent {
+			s.lock.Lock()
+			condErr := s.sessionWriter.UpdateStatus(ctx, activeSession.ID, models.SessionStatusConditioning)
+			s.lock.Unlock()
+			if condErr != nil {
+				slog.Error("[AUTO-STOP] Error transitioning to conditioning", "err", condErr)
+			} else {
+				slog.Info("[AUTO-STOP] Session transitioned to conditioning", "sessionID", activeSession.ID)
+			}
+		} else {
+			result, err := stopper.stopWithPercent(ctx, activeSession, progress.CurrentPercent, models.StopAutoComplete)
+			if err != nil {
+				slog.Error("[AUTO-STOP] Error stopping session", "err", err)
+			} else if !result.Stopped {
+				slog.Error("[AUTO-STOP] Tasmota stop failed", "tasmotaErr", result.TasmotaErr)
+			} else {
+				slog.Info("[AUTO-STOP] Session stopped successfully", "sessionID", activeSession.ID)
+			}
+		}
+	} else {
+		slog.Info("[AUTO-STOP] Not yet at target", "blendedKwh", progress.BlendedKwh, "targetKwh", activeSession.TargetKwh, "gap", activeSession.TargetKwh-progress.BlendedKwh, "currentPercent", progress.CurrentPercent, "targetPercent", activeSession.TargetPercent)
+	}
+}
+
+// shouldStorePowerReading returns true when the reading differs from the last
+// stored reading or the last reading is older than staleReadingThreshold.
+func shouldStorePowerReading(last *models.PowerReading, next *models.PowerReading) bool {
+	if last == nil {
+		return true
+	}
+	if time.Since(last.Timestamp) >= staleReadingThreshold {
+		return true
+	}
+	if last.Power != next.Power || last.Voltage != next.Voltage || last.Current != next.Current {
+		return true
+	}
+	return carbonIntensityDiffers(last.CarbonIntensityGCo2PerKwh, next.CarbonIntensityGCo2PerKwh)
+}
+
+// shouldStoreSOCSnapshot returns true when the snapshot SOC differs from the
+// last stored snapshot or the last snapshot is older than staleReadingThreshold.
+func shouldStoreSOCSnapshot(last *models.SOCSnapshot, next *models.SOCSnapshot) bool {
+	if last == nil {
+		return true
+	}
+	if time.Since(last.Timestamp) >= staleReadingThreshold {
+		return true
+	}
+	return last.SocPercent != next.SocPercent
+}
+
+func carbonIntensityDiffers(a, b *float64) bool {
+	if (a == nil) != (b == nil) {
+		return true
+	}
+	if a == nil {
+		return false
+	}
+	return *a != *b
+}

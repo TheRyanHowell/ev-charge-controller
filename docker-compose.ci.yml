@@ -1,0 +1,47 @@
+services:
+  api-test:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+      target: test
+    command: go test ./...
+
+  ui-test:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+      target: test
+    command: ./node_modules/.bin/vitest run
+
+  mock-test:
+    build:
+      context: ./mock-tasmota
+      dockerfile: Dockerfile
+      target: test
+    command: go test -v ./...
+
+  api-lint:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+      target: lint
+    command: ["golangci-lint", "run", "--timeout=10m", "./..."]
+
+  ui-lint:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+      target: lint
+
+  mock-lint:
+    build:
+      context: ./mock-tasmota
+      dockerfile: Dockerfile
+      target: lint
+    command: ["golangci-lint", "run", "--timeout=10m", "./..."]
+
+  e2e-lint:
+    build:
+      context: ./e2e
+      dockerfile: Dockerfile
+      target: lint

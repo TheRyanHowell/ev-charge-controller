@@ -1,0 +1,289 @@
+name: CI
+
+on:
+  push:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOCKER_BUILDKIT: 1
+
+# =====================================================================
+# TIER 1 — Build shared base layers (parallelized per Dockerfile)
+# All tier-2 jobs depend on this and read from GHA cache.
+# =====================================================================
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - context: ./api
+            cache: api
+            target: test
+          - context: ./ui
+            cache: ui
+            target: run
+          - context: ./mock-tasmota
+            cache: mock
+            target: test
+          - context: ./e2e
+            cache: e2e
+            target: ci
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build image (pre-populate cache)
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.context }}
+          target: ${{ matrix.target }}
+          cache-from: type=gha,scope=${{ matrix.cache }}
+          cache-to: type=gha,scope=${{ matrix.cache }},mode=max
+
+# =====================================================================
+# TIER 2 — Unit tests, race detector, dead code (depend on build)
+# Each job builds its own target (test) from cached base layers.
+# =====================================================================
+
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: api-test
+            context: ./api
+            cache: api
+            target: test
+            cmd: go test ./...
+          - service: ui-test
+            context: ./ui
+            cache: ui
+            target: test
+            cmd: ./node_modules/.bin/vitest run
+          - service: mock-test
+            context: ./mock-tasmota
+            cache: mock
+            target: test
+            cmd: go test -v ./...
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build test image
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.context }}
+          target: ${{ matrix.target }}
+          load: true
+          tags: ${{ matrix.service }}:ci
+          cache-from: type=gha,scope=${{ matrix.cache }}
+          cache-to: type=gha,scope=${{ matrix.cache }},mode=max
+
+      - name: Run tests
+        run: docker run --rm ${{ matrix.service }}:ci ${{ matrix.cmd }}
+
+  race:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: api-test
+            context: ./api
+            cache: api
+          - service: mock-test
+            context: ./mock-tasmota
+            cache: mock
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build test image
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.context }}
+          target: test
+          load: true
+          tags: ${{ matrix.service }}:ci
+          cache-from: type=gha,scope=${{ matrix.cache }}
+          cache-to: type=gha,scope=${{ matrix.cache }},mode=max
+
+      - name: Run race detector
+        run: docker run --rm ${{ matrix.service }}:ci go test -race ./...
+
+  deadcode:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: api-test
+            context: ./api
+            cache: api
+          - service: mock-test
+            context: ./mock-tasmota
+            cache: mock
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build test image
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.context }}
+          target: test
+          load: true
+          tags: ${{ matrix.service }}:ci
+          cache-from: type=gha,scope=${{ matrix.cache }}
+          cache-to: type=gha,scope=${{ matrix.cache }},mode=max
+
+      - name: Detect dead code
+        run: |
+          docker run --rm ${{ matrix.service }}:ci \
+            sh -c 'out=$(go run golang.org/x/tools/cmd/deadcode@v0.46.0 -test ./...); [ -z "$out" ] || { echo "Dead code:"; echo "$out"; exit 1; }'
+
+# =====================================================================
+# TIER 2 — Linting (depends on build)
+# Builds lint target from cached base layers.
+# =====================================================================
+
+  lint:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: api-lint
+            context: ./api
+            cache: api
+            cmd: golangci-lint run --timeout=10m ./...
+          - service: ui-lint
+            context: ./ui
+            cache: ui
+            cmd: ""
+          - service: mock-lint
+            context: ./mock-tasmota
+            cache: mock
+            cmd: golangci-lint run --timeout=10m ./...
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build lint image
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.context }}
+          target: lint
+          load: true
+          tags: ${{ matrix.service }}:ci
+          cache-from: type=gha,scope=${{ matrix.cache }}
+          cache-to: type=gha,scope=${{ matrix.cache }},mode=max
+
+      - name: Run linters
+        run: docker run --rm ${{ matrix.service }}:ci ${{ matrix.cmd }}
+
+# =====================================================================
+# TIER 2 — E2E tests (depend on build)
+# Rebuilds compose stack from cached layers, starts services, runs Playwright.
+# =====================================================================
+
+  e2e:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: chromium-stateless
+            project: chromium-stateless
+            workers: 0
+          - name: firefox-stateless
+            project: firefox-stateless
+            workers: 0
+          - name: chromium-stateful
+            project: chromium-stateful
+            workers: 1
+          - name: firefox-stateful
+            project: firefox-stateful
+            workers: 1
+    env:
+      COMPOSE_PROJECT_NAME: e2e-${{ matrix.name }}
+      COMPOSE: docker compose --env-file .env -f docker-compose.yml -f docker-compose.e2e.yml
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Create .env for E2E
+        run: |
+          cp .env.example .env
+          sed -i "s/^JWT_SECRET=.*/JWT_SECRET=$(openssl rand -hex 32)/" .env
+          sed -i "s/^MQTT_PASSWORD=.*/MQTT_PASSWORD=$(openssl rand -hex 32)/" .env
+          mkdir -p data && chmod 777 data
+
+      - name: Build e2e stack images (cached)
+        uses: docker/bake-action@v7
+        with:
+          source: .
+          files: docker-compose.yml,docker-compose.e2e.yml
+          load: true
+          targets: api,ui,mock-tasmota,e2e
+          set: |
+            api.cache-from=type=gha,scope=api
+            api.cache-to=type=gha,scope=api,mode=max
+            ui.cache-from=type=gha,scope=ui
+            ui.cache-to=type=gha,scope=ui,mode=max
+            mock-tasmota.cache-from=type=gha,scope=mock
+            mock-tasmota.cache-to=type=gha,scope=mock,mode=max
+            e2e.cache-from=type=gha,scope=e2e
+            e2e.cache-to=type=gha,scope=e2e,mode=max
+
+      - name: Start e2e stack
+        run: $COMPOSE up -d --wait --wait-timeout 120 api ui mock-tasmota mock-tasmota-2 mock-tasmota-3
+
+      - name: Seed test data
+        run: $COMPOSE exec -T api /seed
+
+      - name: Run E2E tests (${{ matrix.name }})
+        run: $COMPOSE run --rm e2e npx playwright test --project=${{ matrix.project }} ${{ matrix.workers > 0 && format('--workers={0}', matrix.workers) || '' }} --reporter=list
+
+      - name: Dump stack logs on failure
+        if: failure()
+        run: $COMPOSE logs
+
+      - name: Upload E2E artifacts (${{ matrix.name }})
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts-${{ matrix.name }}
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
+          retention-days: 14
+
+      - name: Stop e2e stack
+        if: always()
+        run: $COMPOSE down

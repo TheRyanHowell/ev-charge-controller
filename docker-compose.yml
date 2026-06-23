@@ -1,0 +1,88 @@
+services:
+  mosquitto:
+    build:
+      context: ./mosquitto
+      dockerfile: Dockerfile
+    networks:
+      - internal
+    environment:
+      - MQTT_USERNAME=${MQTT_USERNAME:-api-backend}
+      - MQTT_PASSWORD=${MQTT_PASSWORD}
+    volumes:
+      - mosquitto-data:/mosquitto/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_pub -h localhost -t health -m ping --quiet -u \"$MQTT_USERNAME\" -P \"$MQTT_PASSWORD\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+      target: run
+      args:
+        - UID=${UID:-1000}
+        - GID=${GID:-1000}
+    networks:
+      - internal
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    environment:
+      - PORT=${PORT}
+      - DB_PATH=${DB_PATH}
+      - CORS_ORIGIN=${CORS_ORIGIN}
+      - TZ=${TZ}
+      - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY}
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-warn}
+      - JWT_SECRET=${JWT_SECRET}
+      - MQTT_BROKER_URL=${MQTT_BROKER_URL:-mqtt://mosquitto:1883}
+      - MQTT_IP=${MQTT_IP:-mosquitto}
+      - MQTT_USERNAME=${MQTT_USERNAME:-api-backend}
+      - MQTT_PASSWORD=${MQTT_PASSWORD}
+    volumes:
+      - ./data:/data:z
+      - /etc/localtime:/etc/localtime:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+      target: run
+      args:
+        - NEXT_PUBLIC_VAPID_PUBLIC_KEY=${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
+    networks:
+      - internal
+    environment:
+      - API_URL=${API_URL}
+      - NEXT_PUBLIC_VAPID_PUBLIC_KEY=${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  mosquitto-data:
+
+networks:
+  internal:
+    driver: bridge
