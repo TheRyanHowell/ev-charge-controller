@@ -10,6 +10,7 @@ export interface SchedulePayload {
   time?: string;
   windowStart?: string;
   windowEnd?: string;
+  readyBy?: string;
   enabled: boolean;
 }
 

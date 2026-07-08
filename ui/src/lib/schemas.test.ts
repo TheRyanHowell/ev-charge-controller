@@ -242,6 +242,36 @@ describe("ScheduleSchema", () => {
     expect(schedule.windowEnd).toBeUndefined();
   });
 
+  it("parses daily schedule with readyBy", () => {
+    const schedule = ScheduleSchema.parse({
+      id: "plug",
+      time: "01:00",
+      readyBy: "07:00",
+      enabled: true,
+    });
+    expect(schedule.readyBy).toBe("07:00");
+  });
+
+  it("parses daily schedule without readyBy", () => {
+    const schedule = ScheduleSchema.parse({
+      id: "plug",
+      time: "01:00",
+      enabled: true,
+    });
+    expect(schedule.readyBy).toBeUndefined();
+  });
+
+  it("rejects malformed readyBy", () => {
+    expect(() =>
+      ScheduleSchema.parse({
+        id: "plug",
+        time: "01:00",
+        readyBy: "not-a-time",
+        enabled: true,
+      }),
+    ).toThrow();
+  });
+
   it("rejects invalid schedule type", () => {
     expect(() =>
       ScheduleSchema.parse({

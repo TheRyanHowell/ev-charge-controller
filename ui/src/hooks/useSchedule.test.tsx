@@ -328,4 +328,48 @@ describe("useSchedule", () => {
       }),
     });
   });
+
+  it("saveSchedule daily payload includes readyBy when set", async () => {
+    const mockSchedule = {
+      id: "plug",
+      type: "daily",
+      time: "01:00",
+      readyBy: "07:00",
+      enabled: true,
+    };
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(createResponse({ ok: false, status: 404 }))
+      .mockResolvedValueOnce(createResponse({ data: mockSchedule }));
+    vi.stubGlobal("fetch", mockFetch);
+
+    const { result } = renderHook(() => useSchedule(TEST_PLUG_ID));
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.saveSchedule({
+        type: "daily",
+        time: "01:00",
+        readyBy: "07:00",
+        enabled: true,
+      });
+    });
+
+    const patchCall = mockFetch.mock.calls[1] as [string, RequestInit];
+    expect(patchCall[1]).toMatchObject({
+      body: JSON.stringify({
+        type: "daily",
+        time: "01:00",
+        readyBy: "07:00",
+        enabled: true,
+      }),
+    });
+
+    await waitFor(() => {
+      expect(result.current.schedule).toEqual(mockSchedule);
+    });
+  });
 });
