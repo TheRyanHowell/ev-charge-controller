@@ -656,7 +656,7 @@ func TestScheduleService_UpsertCarbonAware_Success(t *testing.T) {
 	svc, db, _ := setupScheduleServiceTest(t)
 	defer db.Close()
 
-	sch, err := svc.UpsertCarbonAware(t.Context(), testPlugID, testUserID, "22:00", "06:00", true)
+	sch, err := svc.UpsertCarbonAware(t.Context(), testPlugID, testUserID, "22:00", "06:00", false, true)
 	require.NoError(t, err)
 	require.NotNil(t, sch)
 	assert.Equal(t, models.ScheduleTypeCarbonAware, sch.Type)
@@ -665,11 +665,26 @@ func TestScheduleService_UpsertCarbonAware_Success(t *testing.T) {
 	assert.True(t, sch.Enabled)
 }
 
+func TestScheduleService_UpsertCarbonAware_TwoStage(t *testing.T) {
+	svc, db, _ := setupScheduleServiceTest(t)
+	defer db.Close()
+
+	sch, err := svc.UpsertCarbonAware(t.Context(), testPlugID, testUserID, "22:00", "06:00", true, true)
+	require.NoError(t, err)
+	require.NotNil(t, sch)
+	assert.True(t, sch.TwoStage)
+
+	// Upsert again with two-stage off - must clear the flag.
+	sch, err = svc.UpsertCarbonAware(t.Context(), testPlugID, testUserID, "22:00", "06:00", false, true)
+	require.NoError(t, err)
+	assert.False(t, sch.TwoStage)
+}
+
 func TestScheduleService_UpsertCarbonAware_EmptyUserID(t *testing.T) {
 	svc, db, _ := setupScheduleServiceTest(t)
 	defer db.Close()
 
-	_, err := svc.UpsertCarbonAware(t.Context(), testPlugID, "", "09:00", "13:00", true)
+	_, err := svc.UpsertCarbonAware(t.Context(), testPlugID, "", "09:00", "13:00", false, true)
 	assert.ErrorIs(t, err, ErrUserIDRequired)
 }
 
@@ -677,10 +692,10 @@ func TestScheduleService_UpsertCarbonAware_MissingWindow(t *testing.T) {
 	svc, db, _ := setupScheduleServiceTest(t)
 	defer db.Close()
 
-	_, err := svc.UpsertCarbonAware(t.Context(), testPlugID, testUserID, "", "13:00", true)
+	_, err := svc.UpsertCarbonAware(t.Context(), testPlugID, testUserID, "", "13:00", false, true)
 	assert.ErrorIs(t, err, ErrWindowRequired)
 
-	_, err = svc.UpsertCarbonAware(t.Context(), testPlugID, testUserID, "09:00", "", true)
+	_, err = svc.UpsertCarbonAware(t.Context(), testPlugID, testUserID, "09:00", "", false, true)
 	assert.ErrorIs(t, err, ErrWindowRequired)
 }
 
@@ -688,7 +703,7 @@ func TestScheduleService_UpsertCarbonAware_EqualWindows(t *testing.T) {
 	svc, db, _ := setupScheduleServiceTest(t)
 	defer db.Close()
 
-	_, err := svc.UpsertCarbonAware(t.Context(), testPlugID, testUserID, "09:00", "09:00", true)
+	_, err := svc.UpsertCarbonAware(t.Context(), testPlugID, testUserID, "09:00", "09:00", false, true)
 	assert.ErrorIs(t, err, ErrWindowEqual)
 }
 
@@ -696,11 +711,11 @@ func TestScheduleService_UpsertCarbonAware_UpdateExisting(t *testing.T) {
 	svc, db, _ := setupScheduleServiceTest(t)
 	defer db.Close()
 
-	_, err := svc.UpsertCarbonAware(t.Context(), testPlugID, testUserID, "22:00", "06:00", true)
+	_, err := svc.UpsertCarbonAware(t.Context(), testPlugID, testUserID, "22:00", "06:00", false, true)
 	require.NoError(t, err)
 
 	// Update with different window
-	sch, err := svc.UpsertCarbonAware(t.Context(), testPlugID, testUserID, "20:00", "05:00", false)
+	sch, err := svc.UpsertCarbonAware(t.Context(), testPlugID, testUserID, "20:00", "05:00", false, false)
 	require.NoError(t, err)
 	assert.Equal(t, "20:00", *sch.WindowStart)
 	assert.Equal(t, "05:00", *sch.WindowEnd)

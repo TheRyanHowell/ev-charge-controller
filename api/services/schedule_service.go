@@ -181,7 +181,7 @@ func (s *ScheduleService) UpsertByPlugID(ctx context.Context, plugID, userID, sc
 }
 
 // UpsertCarbonAware creates or updates a carbon-aware schedule for a specific plug.
-func (s *ScheduleService) UpsertCarbonAware(ctx context.Context, plugID, userID, windowStart, windowEnd string, enabled bool) (*models.Schedule, error) {
+func (s *ScheduleService) UpsertCarbonAware(ctx context.Context, plugID, userID, windowStart, windowEnd string, twoStage, enabled bool) (*models.Schedule, error) {
 	if userID == "" {
 		return nil, ErrUserIDRequired
 	}
@@ -204,6 +204,7 @@ func (s *ScheduleService) UpsertCarbonAware(ctx context.Context, plugID, userID,
 		Time:        windowStart, // stored in time column for schema compat
 		WindowStart: &windowStart,
 		WindowEnd:   &windowEnd,
+		TwoStage:    twoStage,
 		Enabled:     enabled,
 		UserID:      &userID,
 	}

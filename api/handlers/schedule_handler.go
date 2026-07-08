@@ -53,6 +53,7 @@ func (h *ScheduleHandler) UpsertByPlug(w http.ResponseWriter, r *http.Request) {
 		WindowStart string  `json:"windowStart"`
 		WindowEnd   string  `json:"windowEnd"`
 		ReadyBy     *string `json:"readyBy"`
+		TwoStage    bool    `json:"twoStage"`
 		Enabled     bool    `json:"enabled"`
 	}
 	if !decodeJSONStrict(w, r, &req) {
@@ -73,7 +74,7 @@ func (h *ScheduleHandler) UpsertByPlug(w http.ResponseWriter, r *http.Request) {
 	case models.ScheduleTypeDaily:
 		schedule, err = h.service.UpsertByPlugID(r.Context(), plugID, userID, req.Time, req.ReadyBy, req.Enabled)
 	case models.ScheduleTypeCarbonAware:
-		schedule, err = h.service.UpsertCarbonAware(r.Context(), plugID, userID, req.WindowStart, req.WindowEnd, req.Enabled)
+		schedule, err = h.service.UpsertCarbonAware(r.Context(), plugID, userID, req.WindowStart, req.WindowEnd, req.TwoStage, req.Enabled)
 	default:
 		problemJSON(w, http.StatusBadRequest, "about:blank#invalid-schedule-type", "Bad Request", "Schedule type must be 'daily' or 'carbon_aware'.")
 		return

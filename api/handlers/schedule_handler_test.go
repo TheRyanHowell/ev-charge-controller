@@ -276,6 +276,65 @@ func TestScheduleHandler_UpsertByPlug_CarbonAware(t *testing.T) {
 	assert.True(t, schedule.Enabled)
 }
 
+func TestScheduleHandler_UpsertByPlug_CarbonAware_TwoStage(t *testing.T) {
+	handler, db := setupScheduleHandlerTest(t)
+	defer db.Close()
+
+	reqBody := `{"type":"carbon_aware","windowStart":"22:00","windowEnd":"06:00","twoStage":true,"enabled":true}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/plugs/"+testSchedulePlugID+"/schedule", bytes.NewReader([]byte(reqBody)))
+	req.Header.Set("Content-Type", "application/json")
+	req = withPathValue(req, "id", testSchedulePlugID)
+	req = req.WithContext(internal.WithUserID(req.Context(), testScheduleUserID))
+	rr := httptest.NewRecorder()
+
+	handler.UpsertByPlug(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	var schedule models.Schedule
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&schedule))
+	assert.True(t, schedule.TwoStage)
+}
+
+func TestScheduleHandler_GetByPlug_CarbonAware_TwoStage_AttachesEstimatedPlan(t *testing.T) {
+	handler, db := setupScheduleHandlerTest(t)
+	defer db.Close()
+	assignVehicleToSchedulePlug(t, db)
+
+	reqBody := `{"type":"carbon_aware","windowStart":"00:00","windowEnd":"23:59","twoStage":true,"enabled":true}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/plugs/"+testSchedulePlugID+"/schedule", bytes.NewReader([]byte(reqBody)))
+	req.Header.Set("Content-Type", "application/json")
+	req = withPathValue(req, "id", testSchedulePlugID)
+	req = req.WithContext(internal.WithUserID(req.Context(), testScheduleUserID))
+	rr := httptest.NewRecorder()
+	handler.UpsertByPlug(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	handler.Service().SetCarbonAwareDeps(
+		&mockCarbonForecaster{buckets: flatForecastBuckets(time.Now())},
+		func(_ *models.Vehicle, _, _ float64) (int, error) { return 30, nil },
+		nil,
+	)
+
+	req = httptest.NewRequest(http.MethodGet, "/api/plugs/"+testSchedulePlugID+"/schedule", nil)
+	req = withPathValue(req, "id", testSchedulePlugID)
+	req = req.WithContext(internal.WithUserID(req.Context(), testScheduleUserID))
+	rr = httptest.NewRecorder()
+	handler.GetByPlug(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	var schedule models.Schedule
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&schedule))
+	require.NotNil(t, schedule.EstimatedPlan, "expected estimatedPlan to be populated for a two-stage schedule")
+	timeRe := `^([01]\d|2[0-3]):[0-5]\d$`
+	assert.Regexp(t, timeRe, schedule.EstimatedPlan.Stage1Start)
+	assert.Regexp(t, timeRe, schedule.EstimatedPlan.Stage1End)
+	assert.Regexp(t, timeRe, schedule.EstimatedPlan.Stage2Start)
+	assert.Regexp(t, timeRe, schedule.EstimatedPlan.Stage2End)
+	assert.Nil(t, schedule.EstimatedStartTime, "two-stage schedules use EstimatedPlan, not EstimatedStartTime")
+}
+
 func TestScheduleHandler_UpsertByPlug_CarbonAware_MissingWindow(t *testing.T) {
 	handler, db := setupScheduleHandlerTest(t)
 	defer db.Close()
