@@ -834,18 +834,31 @@ func TestFindOptimalStart_LaterBucketIsOptimal(t *testing.T) {
 	// D = 1h. Buckets: 10:00=400, 10:30=400, 11:00=200, 11:30=400
 	// latestStart = 11:00
 	// start@10:00 → (400+400)/60=400; start@10:30 → (400+200)/60=300; start@11:00 → (200+400)/60=300
-	// Tie at 10:30 and 11:00 - both score 300 - findOptimalStart returns first encountered (10:30)
+	// Tie at 10:30 and 11:00 - both score 300 - findOptimalStart prefers the latest
+	// equally-good candidate (11:00), minimizing time at high SoC before departure.
 	buckets := makeBuckets(now, []int{400, 400, 200, 400})
 	latestStart := now.Add(60 * time.Minute) // 11:00
 
 	optimal := findOptimalStart(buckets, now, latestStart, 60*time.Minute)
-	assert.True(t, optimal.After(now.UTC()), "optimal should be after now (a later bucket)")
+	assert.Equal(t, now.Add(60*time.Minute), optimal, "tie should resolve to the latest candidate (11:00)")
 }
 
 func TestFindOptimalStart_EmptyBuckets(t *testing.T) {
 	now := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
 	optimal := findOptimalStart(nil, now, now.Add(time.Hour), 30*time.Minute)
 	assert.True(t, optimal.IsZero())
+}
+
+// TestFindOptimalStart_AllCandidatesOutOfBucketRange guards the latest-wins tie
+// break from mistaking the shared math.MaxFloat64 "no data" sentinel for a
+// genuine tie: every candidate here has zero forecast overlap, so none should
+// be treated as valid even though they'd otherwise compare equal.
+func TestFindOptimalStart_AllCandidatesOutOfBucketRange(t *testing.T) {
+	now := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
+	// Forecast data exists, but entirely outside the [now, latestStart+d] search range.
+	buckets := makeBuckets(now.Add(24*time.Hour), []int{100, 100, 100})
+	optimal := findOptimalStart(buckets, now, now.Add(time.Hour), 30*time.Minute)
+	assert.True(t, optimal.IsZero(), "no candidate has overlapping data, so no winner should be chosen")
 }
 
 // --- Carbon-aware CheckAndActivateAll scenarios ---

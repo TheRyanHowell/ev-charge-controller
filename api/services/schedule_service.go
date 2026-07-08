@@ -567,8 +567,13 @@ func alignToHalfHour(t time.Time) time.Time {
 }
 
 // findOptimalStart picks the 30-minute start time in [now, latestStart] with the
-// lowest time-weighted average gCO2/kWh over the [start, start+d] window.
-// Returns the zero Time if no valid candidate is found.
+// lowest time-weighted average gCO2/kWh over the [start, start+d] window. Ties
+// resolve to the latest candidate (loop runs in increasing time order, so "<="
+// lets a later equally-good candidate overwrite the best) - this minimizes time
+// spent at high SoC before the ready-by deadline when several slots are equally
+// clean. Candidates with no overlapping forecast data (scoreWindow's
+// math.MaxFloat64 sentinel) are never treated as a valid tie. Returns the zero
+// Time if no valid candidate is found.
 func findOptimalStart(buckets []carbonintensity.ForecastBucket, now, latestStart time.Time, d time.Duration) time.Time {
 	nowUTC := now.UTC()
 	latestUTC := latestStart.UTC()
@@ -578,7 +583,10 @@ func findOptimalStart(buckets []carbonintensity.ForecastBucket, now, latestStart
 
 	for candidate := alignToHalfHour(nowUTC); !candidate.After(latestUTC); candidate = candidate.Add(forecastBucketSize) {
 		score := scoreWindow(buckets, candidate, candidate.Add(d))
-		if score < bestScore {
+		if score == math.MaxFloat64 {
+			continue
+		}
+		if score <= bestScore {
 			bestScore = score
 			bestStart = candidate
 		}
