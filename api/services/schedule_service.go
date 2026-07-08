@@ -765,6 +765,15 @@ func resolveWindow(now time.Time, windowStart, windowEnd string) (start, end tim
 // resolveDeadline converts an HH:MM string to the next absolute timestamp at or
 // after now - single-timestamp counterpart to resolveWindow, used to resolve a
 // holding session's ready-by time relative to the current poll tick.
+//
+// Known limitation: because this is re-resolved fresh on every call rather
+// than frozen at hold time, an outage spanning the exact deadline clock-time
+// (long enough that no CheckAndResumeHoldingSession tick runs between "before
+// the deadline" and "after it") would cause the deadline to silently roll
+// forward a full day instead of being recognized as overdue. In practice this
+// is not reachable at the current PollIntervalSec=5s cadence - the deadline
+// guard in CheckAndResumeHoldingSession always fires on some earlier tick
+// first - but it's worth knowing about if the poll interval ever changes.
 func resolveDeadline(now time.Time, hhmm string) (time.Time, error) {
 	h, m, err := parseHHMM(hhmm)
 	if err != nil {

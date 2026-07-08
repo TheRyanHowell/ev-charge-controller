@@ -454,6 +454,45 @@ func TestResolveDeadline(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestResolveDeadline_MidnightBoundary characterizes resolveDeadline's
+// "next occurrence of HH:MM at or after now" semantics across the midnight
+// boundary. This mechanism is deliberately unchanged by the two-stage
+// resume audit - resolveDeadline is re-resolved fresh on every
+// CheckAndResumeHoldingSession tick (every PollIntervalSec=5s), so as long
+// as the deadline guard fires before now crosses the literal deadline
+// clock-time, the "roll forward a full day" behavior below is never
+// actually reached in practice. These tests pin the mechanism as correct,
+// not as a bug fix.
+func TestResolveDeadline_MidnightBoundary(t *testing.T) {
+	// Deadline is later tonight, just before midnight - no roll needed.
+	now := time.Date(2024, 1, 1, 23, 30, 0, 0, time.UTC)
+	deadline, err := resolveDeadline(now, "00:15")
+	require.NoError(t, err)
+	assert.Equal(t, time.Date(2024, 1, 2, 0, 15, 0, 0, time.UTC), deadline, "hhmm is 45min away, tomorrow's clock time")
+
+	// now is just after midnight, deadline is later the same (new) day - no roll.
+	now = time.Date(2024, 1, 2, 0, 5, 0, 0, time.UTC)
+	deadline, err = resolveDeadline(now, "00:15")
+	require.NoError(t, err)
+	assert.Equal(t, time.Date(2024, 1, 2, 0, 15, 0, 0, time.UTC), deadline, "hhmm is 10min away, same day")
+
+	// now is just after the deadline clock-time already passed today - rolls
+	// forward a full day. This is *correct* next-occurrence behavior, not a
+	// bug: at 00:20 the 00:15 deadline for today has already gone by, so the
+	// next valid occurrence is tomorrow's 00:15.
+	now = time.Date(2024, 1, 2, 0, 20, 0, 0, time.UTC)
+	deadline, err = resolveDeadline(now, "00:15")
+	require.NoError(t, err)
+	assert.Equal(t, time.Date(2024, 1, 3, 0, 15, 0, 0, time.UTC), deadline, "00:15 already passed 5 minutes ago - correctly rolls to tomorrow, not treated as in the past")
+
+	// now exactly equals the deadline clock-time - no roll (0 minutes away,
+	// not "already passed").
+	now = time.Date(2024, 1, 2, 0, 15, 0, 0, time.UTC)
+	deadline, err = resolveDeadline(now, "00:15")
+	require.NoError(t, err)
+	assert.Equal(t, time.Date(2024, 1, 2, 0, 15, 0, 0, time.UTC), deadline, "now == hhmm should not trigger a spurious roll")
+}
+
 func TestIsValidTimeFormat(t *testing.T) {
 	for _, validTime := range []string{"00:00", "23:59", "03:30", "12:00"} {
 		assert.True(t, isValidTimeFormat(validTime), "expected valid: %s", validTime)
