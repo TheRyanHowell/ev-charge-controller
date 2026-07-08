@@ -101,6 +101,102 @@ test.describe.serial("Schedule Persistence", () => {
     ).toHaveAttribute("aria-label", /Schedule active.*ready by.*06:00/);
   });
 
+  test("saving a daily schedule with two-stage charging persists readyBy after reload", async ({
+    page,
+  }) => {
+    const dialog = await openScheduleModal(page);
+
+    await dialog.getByLabel("Start time").fill("01:00");
+    await dialog.getByRole("switch", { name: "Two-stage charging" }).click();
+    await dialog.getByLabel("Ready by").fill("07:00");
+
+    await dialog.getByRole("button", { name: "Save" }).click();
+    await expect(
+      page.locator("dialog[open]"),
+      "Modal should close after saving",
+    ).toHaveCount(0, { timeout: 5_000 });
+
+    // The circle label is driven by schedule.time regardless of readyBy.
+    await expect(
+      page.getByTestId("schedule-circle"),
+      "Circle should show active daily schedule with the configured start time",
+    ).toHaveAttribute("aria-label", /Schedule active.*starts at.*01:00/, {
+      timeout: 5_000,
+    });
+
+    // Reload and verify readyBy survived by re-opening the modal.
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("speedometer-gauge-svg")).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.waitForLoadState("load");
+
+    const reopened = await openScheduleModal(page);
+    await expect(
+      reopened.getByRole("switch", { name: "Two-stage charging" }),
+      "Two-stage charging should still be enabled after reload",
+    ).toHaveAttribute("aria-checked", "true");
+    await expect(
+      reopened.getByLabel("Ready by"),
+      "Ready by time should persist after reload",
+    ).toHaveValue("07:00");
+  });
+
+  test("daily readyBy equal to start time shows a validation error", async ({
+    page,
+  }) => {
+    const dialog = await openScheduleModal(page);
+
+    await dialog.getByLabel("Start time").fill("04:00");
+    await dialog.getByRole("switch", { name: "Two-stage charging" }).click();
+    await dialog.getByLabel("Ready by").fill("04:00");
+
+    await dialog.getByRole("button", { name: "Save" }).click();
+
+    await expect(
+      dialog.getByRole("alert"),
+      "Form should show a validation error instead of saving",
+    ).toHaveText("Ready by must differ from start time.");
+    await expect(
+      dialog,
+      "Modal should stay open when validation fails",
+    ).toBeVisible();
+  });
+
+  test("opening modal pre-fills readyBy for an existing two-stage schedule", async ({
+    page,
+    api,
+  }) => {
+    // Seed a two-stage daily schedule via API so the UI can be verified in isolation.
+    const plugs = await api.getJson<{ id: string }[]>("/api/plugs");
+    const plugId = plugs[0]?.id;
+    if (!plugId) throw new Error("No plug found in seed data");
+
+    await api.patch(`/api/plugs/${plugId}/schedule`, {
+      type: "daily",
+      time: "02:00",
+      readyBy: "08:00",
+      enabled: true,
+    });
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("speedometer-gauge-svg")).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.waitForLoadState("load");
+
+    const dialog = await openScheduleModal(page);
+
+    await expect(
+      dialog.getByRole("switch", { name: "Two-stage charging" }),
+      "Two-stage charging toggle should reflect the saved readyBy",
+    ).toHaveAttribute("aria-checked", "true");
+    await expect(
+      dialog.getByLabel("Ready by"),
+      "Ready by input should reflect the saved schedule",
+    ).toHaveValue("08:00");
+  });
+
   test("opening modal pre-fills saved values for an existing schedule", async ({
     page,
     api,
@@ -127,7 +223,7 @@ test.describe.serial("Schedule Persistence", () => {
 
     // Modal should pre-fill from the saved schedule.
     await expect(
-      dialog.getByRole("switch"),
+      dialog.getByRole("switch", { name: "Enabled" }),
       "Enable toggle should reflect saved enabled state",
     ).toHaveAttribute("aria-checked", "true");
     await expect(
@@ -159,7 +255,7 @@ test.describe.serial("Schedule Persistence", () => {
 
     // Open modal, toggle schedule off, save.
     const dialog = await openScheduleModal(page);
-    await dialog.getByRole("switch").click(); // toggle off (was on)
+    await dialog.getByRole("switch", { name: "Enabled" }).click(); // toggle off (was on)
     await dialog.getByRole("button", { name: "Save" }).click();
     await expect(page.locator("dialog[open]")).toHaveCount(0, {
       timeout: 5_000,

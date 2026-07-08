@@ -98,6 +98,41 @@ test.describe("Schedule Modal UI", () => {
     ).toBeVisible();
   });
 
+  test("Daily tab shows a Two-stage charging toggle, off by default", async ({
+    page,
+  }) => {
+    await page.getByTestId("schedule-circle").click();
+    const dialog = page.locator("dialog[open]");
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+
+    // Daily is selected by default; seed schedule has no readyBy set.
+    await expect(
+      dialog.getByRole("switch", { name: "Two-stage charging" }),
+      "Two-stage charging toggle should be present on the Daily tab",
+    ).toBeVisible();
+    await expect(
+      dialog.getByRole("switch", { name: "Two-stage charging" }),
+      "Two-stage charging should be off when the seed schedule has no readyBy",
+    ).toHaveAttribute("aria-checked", "false");
+  });
+
+  test("toggling Two-stage charging reveals a Ready by input on the Daily tab", async ({
+    page,
+  }) => {
+    await page.getByTestId("schedule-circle").click();
+    const dialog = page.locator("dialog[open]");
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+
+    await expect(dialog.getByLabel("Ready by")).not.toBeVisible();
+
+    await dialog.getByRole("switch", { name: "Two-stage charging" }).click();
+
+    await expect(
+      dialog.getByLabel("Ready by"),
+      "Ready by input should appear once two-stage charging is enabled",
+    ).toBeVisible();
+  });
+
   test("Skip button closes the modal", async ({ page }) => {
     await page.getByTestId("schedule-circle").click();
     const dialog = page.locator("dialog[open]");
