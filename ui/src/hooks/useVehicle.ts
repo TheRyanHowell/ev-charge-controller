@@ -117,6 +117,7 @@ export function useVehicle({
     }: {
       vehicleId: string;
       prefs: {
+        notifyChargeStarted?: boolean;
         notifyChargeComplete?: boolean;
         notifyChargerOffline?: boolean;
         notifyMaintenanceOffline?: boolean;
@@ -155,6 +156,7 @@ export function useVehicle({
     async (
       vehicleId: string,
       prefs: {
+        notifyChargeStarted?: boolean;
         notifyChargeComplete?: boolean;
         notifyChargerOffline?: boolean;
         notifyMaintenanceOffline?: boolean;

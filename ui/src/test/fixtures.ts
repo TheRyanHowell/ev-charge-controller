@@ -28,6 +28,7 @@ const defaultVehicle: Vehicle = {
   id: "rm1",
   name: "Maeving RM1",
   modelName: "Maeving RM1",
+  notifyChargeStarted: true,
   notifyChargeComplete: true,
   notifyChargerOffline: true,
   notifyMaintenanceOffline: true,

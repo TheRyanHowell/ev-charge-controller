@@ -192,6 +192,118 @@ func TestChargeNotifier_NotifyChargeComplete_NoVehicle(t *testing.T) {
 	assert.Equal(t, " reached 75%", pushBody)
 }
 
+func TestChargeNotifier_NotifyChargeStarted_SingleGoroutine(t *testing.T) {
+	vehicle := &models.Vehicle{
+		Name:                "Test Car",
+		NotifyChargeStarted: true,
+	}
+	repo := &mockNotifierVehicleRepo{vehicle: vehicle}
+	push := &mockNotifierPushService{
+		sendCh: make(chan struct{}),
+		title:  new(string),
+		body:   new(string),
+	}
+	notifier := newTestNotifier(push, repo)
+
+	session := &models.ChargeSession{
+		ID:            "s1",
+		VehicleID:     "v1",
+		UserID:        testUserIDPtr,
+		PlugID:        testPlugIDPtr,
+		TargetPercent: 80,
+	}
+
+	notifier.NotifyChargeStarted(context.Background(), session)
+
+	time.Sleep(50 * time.Millisecond)
+	assert.Equal(t, 1, repo.getCallCount(), "FindByID should be called exactly once, not twice")
+
+	close(push.sendCh)
+	time.Sleep(50 * time.Millisecond)
+
+	pushTitle, pushBody := push.GetTitleBody()
+	assert.Equal(t, "Charge Started", pushTitle)
+	assert.Equal(t, "Test Car started charging (target 80%)", pushBody)
+}
+
+func TestChargeNotifier_NotifyChargeStarted_NoPushService(t *testing.T) {
+	repo := &mockNotifierVehicleRepo{vehicle: nil}
+	notifier := NewChargeNotifier(context.Background(), nil, repo, nil)
+
+	session := &models.ChargeSession{
+		ID:        "s1",
+		VehicleID: "v1",
+		UserID:    testUserIDPtr,
+		PlugID:    testPlugIDPtr,
+	}
+
+	notifier.NotifyChargeStarted(context.Background(), session)
+	time.Sleep(50 * time.Millisecond)
+
+	assert.Equal(t, 0, repo.getCallCount())
+}
+
+func TestChargeNotifier_NotifyChargeStarted_NoVehicle(t *testing.T) {
+	repo := &mockNotifierVehicleRepo{vehicle: nil}
+	push := &mockNotifierPushService{
+		sendCh: make(chan struct{}),
+		title:  new(string),
+		body:   new(string),
+	}
+	notifier := newTestNotifier(push, repo)
+
+	session := &models.ChargeSession{
+		ID:            "s1",
+		VehicleID:     "v1",
+		UserID:        testUserIDPtr,
+		PlugID:        testPlugIDPtr,
+		TargetPercent: 80,
+	}
+
+	notifier.NotifyChargeStarted(context.Background(), session)
+
+	time.Sleep(50 * time.Millisecond)
+	assert.Equal(t, 1, repo.getCallCount(), "FindByID should be called exactly once")
+
+	close(push.sendCh)
+	time.Sleep(50 * time.Millisecond)
+
+	pushTitle, pushBody := push.GetTitleBody()
+	assert.Equal(t, "Charge Started", pushTitle)
+	assert.Equal(t, " started charging (target 80%)", pushBody)
+}
+
+func TestChargeNotifier_NotifyChargeStarted_PreferenceDisabled(t *testing.T) {
+	vehicle := &models.Vehicle{
+		Name:                "Test Car",
+		NotifyChargeStarted: false,
+	}
+	repo := &mockNotifierVehicleRepo{vehicle: vehicle}
+	push := &mockNotifierPushService{
+		sendCh: make(chan struct{}),
+		title:  new(string),
+		body:   new(string),
+	}
+	notifier := newTestNotifier(push, repo)
+
+	session := &models.ChargeSession{
+		ID:            "s1",
+		VehicleID:     "v1",
+		UserID:        testUserIDPtr,
+		PlugID:        testPlugIDPtr,
+		TargetPercent: 80,
+	}
+
+	notifier.NotifyChargeStarted(context.Background(), session)
+
+	time.Sleep(50 * time.Millisecond)
+	assert.Equal(t, 1, repo.getCallCount())
+
+	pushTitle, pushBody := push.GetTitleBody()
+	assert.Equal(t, "", pushTitle)
+	assert.Equal(t, "", pushBody)
+}
+
 func TestChargeNotifier_NotifyPlugUnavailable_Success(t *testing.T) {
 	push := &mockNotifierPushService{
 		sendCh: make(chan struct{}),

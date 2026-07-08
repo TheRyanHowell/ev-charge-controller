@@ -47,6 +47,7 @@ export const VehicleSchema = z.object({
   maxSessionBatteryKwh: z.number().optional().default(0),
   lastSessionAt: z.string().optional().nullable(),
   // Per-vehicle notification preferences (default true = opted in)
+  notifyChargeStarted: z.boolean().default(true),
   notifyChargeComplete: z.boolean().default(true),
   notifyChargerOffline: z.boolean().default(true),
   notifyMaintenanceOffline: z.boolean().default(true),

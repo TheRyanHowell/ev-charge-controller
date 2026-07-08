@@ -122,7 +122,7 @@ type VehicleRepo interface {
 	List(ctx context.Context) ([]models.Vehicle, error)
 	UpdatePercents(ctx context.Context, id string, currentPercent, targetPercent float64) error
 	UpdateName(ctx context.Context, id, name, userID string) error
-	UpdateNotificationPrefs(ctx context.Context, id, userID string, notifyChargeComplete, notifyChargerOffline, notifyMaintenanceOffline bool) error
+	UpdateNotificationPrefs(ctx context.Context, id, userID string, notifyChargeStarted, notifyChargeComplete, notifyChargerOffline, notifyMaintenanceOffline bool) error
 	CreateInstance(ctx context.Context, vehicle *models.Vehicle) error
 	DeleteInstance(ctx context.Context, id, userID string) error
 	IncrementLifetimeStats(ctx context.Context, id string, batteryKwh, wallKwh, co2Grams, costPence float64, sessionAt time.Time) error

@@ -105,6 +105,7 @@ func (s *SessionLifecycleService) StartSession(ctx context.Context, plugID, vehi
 			} else {
 				session.Status = models.SessionStatusActive
 				session.StartedAt = &session.CreatedAt
+				s.sendChargeStartedNotification(ctx, session)
 			}
 			return session, nil
 		}
@@ -617,6 +618,11 @@ func (s *SessionLifecycleService) createSessionFromPercent(ctx context.Context, 
 // sendChargeCompleteNotification sends a push notification when a charge session completes.
 func (s *SessionLifecycleService) sendChargeCompleteNotification(ctx context.Context, session *models.ChargeSession, actualEndPercent float64) {
 	s.notifier.NotifyChargeComplete(ctx, session, actualEndPercent)
+}
+
+// sendChargeStartedNotification sends a push notification when a charge session starts.
+func (s *SessionLifecycleService) sendChargeStartedNotification(ctx context.Context, session *models.ChargeSession) {
+	s.notifier.NotifyChargeStarted(ctx, session)
 }
 
 // UpdateTarget updates the target percent for an active session.

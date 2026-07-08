@@ -41,7 +41,8 @@ type Vehicle struct {
 	LastSessionAt        *time.Time `json:"lastSessionAt,omitempty"`
 
 	// Per-vehicle notification preferences. All default to true (opted in).
-	NotifyChargeComplete      bool `json:"notifyChargeComplete"`
-	NotifyChargerOffline      bool `json:"notifyChargerOffline"`
-	NotifyMaintenanceOffline  bool `json:"notifyMaintenanceOffline"`
+	NotifyChargeStarted      bool `json:"notifyChargeStarted"`
+	NotifyChargeComplete     bool `json:"notifyChargeComplete"`
+	NotifyChargerOffline     bool `json:"notifyChargerOffline"`
+	NotifyMaintenanceOffline bool `json:"notifyMaintenanceOffline"`
 }

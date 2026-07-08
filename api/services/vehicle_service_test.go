@@ -412,6 +412,30 @@ func TestVehicleService_DeleteVehicle_WrongUser(t *testing.T) {
 	assert.ErrorIs(t, service.DeleteVehicle(t.Context(), "u2", v.ID), ErrVehicleNotFound)
 }
 
+func TestVehicleService_UpdateNotificationPrefs(t *testing.T) {
+	db := setupVehicleServiceTestDB(t)
+	service := newVehicleService(db)
+	userID := "u1"
+	insertTestVehicle(t, db, "v1", userID, "rm1", 20, 80)
+
+	require.NoError(t, service.UpdateNotificationPrefs(t.Context(), userID, "v1", false, true, false, true))
+
+	v, err := service.FindByID(t.Context(), "v1")
+	require.NoError(t, err)
+	assert.False(t, v.NotifyChargeStarted)
+	assert.True(t, v.NotifyChargeComplete)
+	assert.False(t, v.NotifyChargerOffline)
+	assert.True(t, v.NotifyMaintenanceOffline)
+}
+
+func TestVehicleService_UpdateNotificationPrefs_NotFound(t *testing.T) {
+	db := setupVehicleServiceTestDB(t)
+	service := newVehicleService(db)
+
+	err := service.UpdateNotificationPrefs(t.Context(), "u1", "nonexistent", true, true, true, true)
+	assert.ErrorIs(t, err, ErrVehicleNotFound)
+}
+
 func TestVehicleService_ListModels(t *testing.T) {
 	db := setupVehicleServiceTestDB(t)
 	service := newVehicleService(db)

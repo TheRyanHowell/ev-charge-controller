@@ -110,6 +110,29 @@ func TestVehicleRepository_UpdatePercents(t *testing.T) {
 	assert.Equal(t, 75.0, found.TargetPercent)
 }
 
+func TestVehicleRepository_UpdateNotificationPrefs(t *testing.T) {
+	repo := setupVehicleTestDB(t)
+	userID := "user-1"
+	v := &models.Vehicle{ModelID: "rm1", UserID: &userID, Name: "Notif Test"}
+	require.NoError(t, repo.CreateInstance(t.Context(), v))
+
+	found, err := repo.FindByID(t.Context(), v.ID)
+	require.NoError(t, err)
+	assert.True(t, found.NotifyChargeStarted)
+	assert.True(t, found.NotifyChargeComplete)
+	assert.True(t, found.NotifyChargerOffline)
+	assert.True(t, found.NotifyMaintenanceOffline)
+
+	require.NoError(t, repo.UpdateNotificationPrefs(t.Context(), v.ID, userID, false, false, true, false))
+
+	updated, err := repo.FindByID(t.Context(), v.ID)
+	require.NoError(t, err)
+	assert.False(t, updated.NotifyChargeStarted)
+	assert.False(t, updated.NotifyChargeComplete)
+	assert.True(t, updated.NotifyChargerOffline)
+	assert.False(t, updated.NotifyMaintenanceOffline)
+}
+
 func TestVehicleRepository_DeleteInstance(t *testing.T) {
 	repo := setupVehicleTestDB(t)
 	userID := "user-1"

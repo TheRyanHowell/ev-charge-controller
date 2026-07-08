@@ -294,6 +294,30 @@ func TestVehicleHandler_Patch_InvalidPercents(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 }
 
+func TestVehicleHandler_Patch_UpdateNotificationPrefs(t *testing.T) {
+	db := setupVehicleHandlerDB(t)
+	defer db.Close()
+	handler := newVehicleHandler(db)
+
+	insertHandlerVehicle(t, db, "v1", "u1", "rm1")
+
+	body := strings.NewReader(`{"notifyChargeStarted": false, "notifyChargeComplete": false}`)
+	req, _ := http.NewRequest(http.MethodPatch, "/api/vehicles/v1", body)
+	req.Header.Set("Content-Type", "application/json")
+	req = reqWithUser(req, "u1")
+	rr := httptest.NewRecorder()
+	handler.Patch(rr, req, "v1")
+
+	assert.Equal(t, http.StatusNoContent, rr.Code)
+
+	var ncs, ncc, nco, nmo int
+	require.NoError(t, db.QueryRow(`SELECT notify_charge_started, notify_charge_complete, notify_charger_offline, notify_maintenance_offline FROM vehicles WHERE id = 'v1'`).Scan(&ncs, &ncc, &nco, &nmo))
+	assert.Equal(t, 0, ncs)
+	assert.Equal(t, 0, ncc)
+	assert.Equal(t, 1, nco)
+	assert.Equal(t, 1, nmo)
+}
+
 func TestVehicleHandler_List_DBError(t *testing.T) {
 	db := setupVehicleHandlerDB(t)
 	handler := newVehicleHandler(db)

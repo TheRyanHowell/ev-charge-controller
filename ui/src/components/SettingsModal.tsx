@@ -152,6 +152,7 @@ interface SettingsModalProps {
   onUpdateNotificationPrefs?: (
     vehicleId: string,
     prefs: {
+      notifyChargeStarted?: boolean;
       notifyChargeComplete?: boolean;
       notifyChargerOffline?: boolean;
       notifyMaintenanceOffline?: boolean;
@@ -362,6 +363,19 @@ export default function SettingsModal({
                     Notifications
                   </p>
                   <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-300">
+                        Charge started
+                      </span>
+                      <Toggle
+                        checked={selectedVehicle.notifyChargeStarted}
+                        onChange={(checked) =>
+                          onUpdateNotificationPrefs(selectedVehicle.id, {
+                            notifyChargeStarted: checked,
+                          })
+                        }
+                      />
+                    </div>
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-gray-300">
                         Charge complete

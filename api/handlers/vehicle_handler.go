@@ -123,19 +123,20 @@ func (h *VehicleHandler) Patch(w http.ResponseWriter, r *http.Request, id string
 	}
 
 	var req struct {
-		Name                    *string  `json:"name"`
-		CurrentPercent          *float64 `json:"currentPercent"`
-		TargetPercent           *float64 `json:"targetPercent"`
-		NotifyChargeComplete    *bool    `json:"notifyChargeComplete"`
-		NotifyChargerOffline    *bool    `json:"notifyChargerOffline"`
-		NotifyMaintenanceOffline *bool   `json:"notifyMaintenanceOffline"`
+		Name                     *string  `json:"name"`
+		CurrentPercent           *float64 `json:"currentPercent"`
+		TargetPercent            *float64 `json:"targetPercent"`
+		NotifyChargeStarted      *bool    `json:"notifyChargeStarted"`
+		NotifyChargeComplete     *bool    `json:"notifyChargeComplete"`
+		NotifyChargerOffline     *bool    `json:"notifyChargerOffline"`
+		NotifyMaintenanceOffline *bool    `json:"notifyMaintenanceOffline"`
 	}
 	if !decodeJSONStrict(w, r, &req) {
 		return
 	}
 
 	if req.Name == nil && req.CurrentPercent == nil && req.TargetPercent == nil &&
-		req.NotifyChargeComplete == nil && req.NotifyChargerOffline == nil && req.NotifyMaintenanceOffline == nil {
+		req.NotifyChargeStarted == nil && req.NotifyChargeComplete == nil && req.NotifyChargerOffline == nil && req.NotifyMaintenanceOffline == nil {
 		problemJSON(w, http.StatusBadRequest, "about:blank#no-op", "Bad Request", "Request must include at least one field.")
 		return
 	}
@@ -176,7 +177,7 @@ func (h *VehicleHandler) Patch(w http.ResponseWriter, r *http.Request, id string
 		}
 	}
 
-	if req.NotifyChargeComplete != nil || req.NotifyChargerOffline != nil || req.NotifyMaintenanceOffline != nil {
+	if req.NotifyChargeStarted != nil || req.NotifyChargeComplete != nil || req.NotifyChargerOffline != nil || req.NotifyMaintenanceOffline != nil {
 		// Read current prefs to merge with the partial update.
 		v, err := h.service.FindByID(ctx, id)
 		if err != nil {
@@ -187,9 +188,13 @@ func (h *VehicleHandler) Patch(w http.ResponseWriter, r *http.Request, id string
 			}
 			return
 		}
+		ncs := v.NotifyChargeStarted
 		ncc := v.NotifyChargeComplete
 		nco := v.NotifyChargerOffline
 		nmo := v.NotifyMaintenanceOffline
+		if req.NotifyChargeStarted != nil {
+			ncs = *req.NotifyChargeStarted
+		}
 		if req.NotifyChargeComplete != nil {
 			ncc = *req.NotifyChargeComplete
 		}
@@ -199,7 +204,7 @@ func (h *VehicleHandler) Patch(w http.ResponseWriter, r *http.Request, id string
 		if req.NotifyMaintenanceOffline != nil {
 			nmo = *req.NotifyMaintenanceOffline
 		}
-		if err := h.service.UpdateNotificationPrefs(ctx, userID, id, ncc, nco, nmo); err != nil {
+		if err := h.service.UpdateNotificationPrefs(ctx, userID, id, ncs, ncc, nco, nmo); err != nil {
 			if errors.Is(err, services.ErrVehicleNotFound) {
 				problemJSON(w, http.StatusNotFound, "about:blank#vehicle-not-found", "Not Found", "Vehicle not found.")
 				return

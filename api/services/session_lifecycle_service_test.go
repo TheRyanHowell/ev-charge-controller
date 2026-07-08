@@ -47,6 +47,33 @@ func TestSessionLifecycleService_StartSession_Success(t *testing.T) {
 	assert.Equal(t, models.SessionStatusActive, session.Status)
 }
 
+func TestSessionLifecycleService_StartSession_SendsChargeStartedNotification(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	push := &mockNotifierPushService{
+		sendCh: make(chan struct{}),
+		title:  new(string),
+		body:   new(string),
+	}
+	notifier := newTestNotifier(push, vehicleRepo)
+	lock := newSessionLock()
+
+	service := NewSessionLifecycleService(sessRepo, sessRepo, vehicleRepo, nil, ctrl, sessRepo, notifier, lock)
+
+	session, err := service.StartSession(context.Background(), testPlugID, testVehicleID, 20, 80)
+	require.NoError(t, err)
+	require.NotNil(t, session)
+
+	close(push.sendCh)
+	notifier.Wait()
+
+	title, body := push.GetTitleBody()
+	assert.Equal(t, "Charge Started", title)
+	assert.Contains(t, body, "80%")
+}
+
 func TestSessionLifecycleService_StartSession_ActiveSessionExists(t *testing.T) {
 	db := setupServiceTestDB(t)
 	sessRepo := repository.NewChargeSessionRepository(db)

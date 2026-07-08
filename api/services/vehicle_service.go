@@ -204,7 +204,7 @@ func (s *VehicleService) UpdateName(ctx context.Context, id, name string) error 
 }
 
 // UpdateNotificationPrefs updates the per-vehicle push notification preferences.
-func (s *VehicleService) UpdateNotificationPrefs(ctx context.Context, userID, id string, notifyChargeComplete, notifyChargerOffline, notifyMaintenanceOffline bool) error {
+func (s *VehicleService) UpdateNotificationPrefs(ctx context.Context, userID, id string, notifyChargeStarted, notifyChargeComplete, notifyChargerOffline, notifyMaintenanceOffline bool) error {
 	v, err := s.repo.FindByID(ctx, id)
 	if err != nil {
 		return err
@@ -212,7 +212,7 @@ func (s *VehicleService) UpdateNotificationPrefs(ctx context.Context, userID, id
 	if v == nil || (v.UserID != nil && *v.UserID != userID) {
 		return ErrVehicleNotFound
 	}
-	return s.repo.UpdateNotificationPrefs(ctx, id, userID, notifyChargeComplete, notifyChargerOffline, notifyMaintenanceOffline)
+	return s.repo.UpdateNotificationPrefs(ctx, id, userID, notifyChargeStarted, notifyChargeComplete, notifyChargerOffline, notifyMaintenanceOffline)
 }
 
 // DeleteVehicle removes a user's vehicle instance.

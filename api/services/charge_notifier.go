@@ -95,6 +95,42 @@ func (n *ChargeNotifier) NotifyChargeComplete(ctx context.Context, session *mode
 	}()
 }
 
+// NotifyChargeStarted sends a push notification when a charge session starts,
+// gated on the vehicle's NotifyChargeStarted preference.
+func (n *ChargeNotifier) NotifyChargeStarted(ctx context.Context, session *models.ChargeSession) {
+	if n.pushService == nil {
+		slog.Info("[ChargeNotifier] PushService not configured, skipping charge started notification")
+		return
+	}
+
+	vehicle, _ := n.vehicleRepo.FindByID(ctx, session.VehicleID)
+	if vehicle != nil && !vehicle.NotifyChargeStarted {
+		slog.Info("[ChargeNotifier] charge started notification suppressed by vehicle preference", "vehicleID", vehicle.ID)
+		return
+	}
+
+	name := ""
+	if vehicle != nil {
+		name = vehicle.Name
+	}
+
+	body := fmt.Sprintf("%s started charging (target %.0f%%)", name, session.TargetPercent)
+
+	slog.Info("[ChargeNotifier] Sending charge started notification", "sessionID", session.ID, "vehicle", name)
+
+	n.wg.Add(1)
+	go func() {
+		defer n.wg.Done()
+
+		ctx, cancel := context.WithTimeout(n.baseCtx, chargeNotificationTimeout)
+		defer cancel()
+
+		if err := n.pushService.SendNotification(ctx, "Charge Started", body); err != nil {
+			slog.Error("[ChargeNotifier] Push notification error", "err", err)
+		}
+	}()
+}
+
 // NotifyPlugUnavailable sends a push notification when a plug goes offline.
 // The notification is gated per-vehicle on the NotifyChargerOffline or
 // NotifyMaintenanceOffline preference depending on plug type.

@@ -349,6 +349,43 @@ describe("useVehicle", () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
+  it("updateNotificationPrefs sends PATCH with notifyChargeStarted", async () => {
+    mockFetch.mockImplementation((url: string, opts?: any) => {
+      if (opts?.method === "PATCH" && url.includes("/api/vehicles/")) {
+        return Promise.resolve({ ok: true, status: 204 });
+      }
+      if (url.includes("/api/vehicles")) {
+        return Promise.resolve({ ok: true, json: async () => vehicles });
+      }
+      return Promise.resolve({ ok: false });
+    });
+
+    const { result } = renderHook(() => useVehicle());
+
+    await waitFor(
+      () => {
+        expect(result.current.vehicles).toHaveLength(2);
+      },
+      { timeout: 1000 },
+    );
+
+    let ok = false;
+    await act(async () => {
+      ok = await result.current.updateNotificationPrefs("rm1", {
+        notifyChargeStarted: false,
+      });
+    });
+
+    expect(ok).toBe(true);
+    const patchCalls = mockFetch.mock.calls.filter(
+      (call) => call[1] && call[1].method === "PATCH",
+    );
+    expect(patchCalls.length).toBeGreaterThan(0);
+    const lastPatch = patchCalls.at(-1);
+    if (!lastPatch) throw new Error("no patch calls");
+    expect(lastPatch[1].body).toContain('"notifyChargeStarted":false');
+  });
+
   it("fetches when no SSR data provided", async () => {
     mockFetch.mockImplementation((url: string) => {
       if (url.includes("/api/vehicles")) {

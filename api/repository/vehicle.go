@@ -27,7 +27,7 @@ const instanceColumns = `v.id, v.model_id, v.user_id, v.name, v.current_percent,
   m.pack_voltage_max_v, m.pack_cutoff_current_ma, m.range_min_mi, m.range_max_mi,
   v.total_sessions, v.total_battery_kwh, v.total_wall_kwh, v.total_co2_grams, v.total_cost_pence,
   v.min_session_battery_kwh, v.max_session_battery_kwh, v.last_session_at,
-  v.notify_charge_complete, v.notify_charger_offline, v.notify_maintenance_offline`
+  v.notify_charge_started, v.notify_charge_complete, v.notify_charger_offline, v.notify_maintenance_offline`
 
 const instanceJoin = ` FROM vehicles v JOIN vehicle_models m ON m.id = v.model_id`
 
@@ -168,7 +168,7 @@ func (r *VehicleRepository) DecrementLifetimeStats(ctx context.Context, id strin
 
 func scanVehicle(v *models.Vehicle, scanner sqlScanner) error {
 	var userID sql.NullString
-	var notifyChargeComplete, notifyChargerOffline, notifyMaintenanceOffline int
+	var notifyChargeStarted, notifyChargeComplete, notifyChargerOffline, notifyMaintenanceOffline int
 	err := scanner.Scan(
 		&v.ID, &v.ModelID, &userID, &v.Name,
 		&v.CurrentPercent, &v.TargetPercent, &v.CreatedAt,
@@ -180,7 +180,7 @@ func scanVehicle(v *models.Vehicle, scanner sqlScanner) error {
 		&v.TotalSessions, &v.TotalBatteryKwh, &v.TotalWallKwh, &v.TotalCo2Grams, &v.TotalCostPence,
 		&v.MinSessionBatteryKwh, &v.MaxSessionBatteryKwh,
 		newNullTime(&v.LastSessionAt),
-		&notifyChargeComplete, &notifyChargerOffline, &notifyMaintenanceOffline,
+		&notifyChargeStarted, &notifyChargeComplete, &notifyChargerOffline, &notifyMaintenanceOffline,
 	)
 	if err != nil {
 		return err
@@ -188,6 +188,7 @@ func scanVehicle(v *models.Vehicle, scanner sqlScanner) error {
 	if userID.Valid {
 		v.UserID = &userID.String
 	}
+	v.NotifyChargeStarted = notifyChargeStarted != 0
 	v.NotifyChargeComplete = notifyChargeComplete != 0
 	v.NotifyChargerOffline = notifyChargerOffline != 0
 	v.NotifyMaintenanceOffline = notifyMaintenanceOffline != 0
@@ -195,7 +196,11 @@ func scanVehicle(v *models.Vehicle, scanner sqlScanner) error {
 }
 
 // UpdateNotificationPrefs updates the per-vehicle notification preference toggles.
-func (r *VehicleRepository) UpdateNotificationPrefs(ctx context.Context, id, userID string, notifyChargeComplete, notifyChargerOffline, notifyMaintenanceOffline bool) error {
+func (r *VehicleRepository) UpdateNotificationPrefs(ctx context.Context, id, userID string, notifyChargeStarted, notifyChargeComplete, notifyChargerOffline, notifyMaintenanceOffline bool) error {
+	ncs := 0
+	if notifyChargeStarted {
+		ncs = 1
+	}
 	ncc := 0
 	if notifyChargeComplete {
 		ncc = 1
@@ -209,9 +214,9 @@ func (r *VehicleRepository) UpdateNotificationPrefs(ctx context.Context, id, use
 		nmo = 1
 	}
 	_, err := r.db.ExecContext(ctx,
-		`UPDATE vehicles SET notify_charge_complete = ?, notify_charger_offline = ?, notify_maintenance_offline = ?
+		`UPDATE vehicles SET notify_charge_started = ?, notify_charge_complete = ?, notify_charger_offline = ?, notify_maintenance_offline = ?
 		 WHERE id = ? AND user_id = ?`,
-		ncc, nco, nmo, id, userID,
+		ncs, ncc, nco, nmo, id, userID,
 	)
 	return err
 }

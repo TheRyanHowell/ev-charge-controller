@@ -376,7 +376,7 @@ func (m *mockVehicleRepo) CreateInstance(context.Context, *models.Vehicle) error
 func (m *mockVehicleRepo) DeleteInstance(context.Context, string, string) error                                        { return nil }
 func (m *mockVehicleRepo) IncrementLifetimeStats(context.Context, string, float64, float64, float64, float64, time.Time) error { return nil }
 func (m *mockVehicleRepo) DecrementLifetimeStats(context.Context, string, float64, float64, float64, float64) error             { return nil }
-func (m *mockVehicleRepo) UpdateNotificationPrefs(context.Context, string, string, bool, bool, bool) error                      { return nil }
+func (m *mockVehicleRepo) UpdateNotificationPrefs(context.Context, string, string, bool, bool, bool, bool) error                { return nil }
 
 // mockChargeServiceAdapter implements ChargeServiceAdapter for error injection.
 type mockChargeServiceAdapter struct {

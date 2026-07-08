@@ -252,6 +252,19 @@ describe("SettingsModal", () => {
     });
   });
 
+  it("shows Charge started toggle and calls onUpdateNotificationPrefs", () => {
+    const onUpdateNotificationPrefs = vi.fn();
+    render(
+      <SettingsModal {...createRenderProps({ onUpdateNotificationPrefs })} />,
+    );
+    expect(screen.getByText("Charge started")).toBeInTheDocument();
+    const [firstSwitch] = screen.getAllByRole("switch");
+    fireEvent.click(firstSwitch);
+    expect(onUpdateNotificationPrefs).toHaveBeenCalledWith("vehicle-1", {
+      notifyChargeStarted: false,
+    });
+  });
+
   // - Configure icon Tests -
 
   it("shows Configure gear icon button for any plug", () => {
