@@ -757,6 +757,65 @@ func TestResolveWindow_OvernightWindow_AfterMidnight(t *testing.T) {
 	assert.True(t, now.Before(end), "now must still be inside the resolved window")
 }
 
+// TestResolveWindow_OvernightWindow_MiddayWaitsForTonight confirms the
+// after-midnight fix doesn't misfire once yesterday's window instance has
+// already ended - at midday, there's nothing left to resume, so the caller
+// should be told to wait for tonight.
+func TestResolveWindow_OvernightWindow_MiddayWaitsForTonight(t *testing.T) {
+	now := time.Date(2024, 1, 2, 12, 0, 0, 0, time.UTC)
+	start, end, err := resolveWindow(now, "22:00", "06:00")
+	require.NoError(t, err)
+	assert.Equal(t, time.Date(2024, 1, 2, 22, 0, 0, 0, time.UTC), start)
+	assert.Equal(t, time.Date(2024, 1, 3, 6, 0, 0, 0, time.UTC), end)
+}
+
+// TestResolveWindow_OvernightWindow_JustPastEnd confirms that just after
+// yesterday's window closes, the caller is told to wait for tonight rather
+// than incorrectly still being considered "inside" the closed window.
+func TestResolveWindow_OvernightWindow_JustPastEnd(t *testing.T) {
+	now := time.Date(2024, 1, 2, 7, 0, 0, 0, time.UTC)
+	start, end, err := resolveWindow(now, "22:00", "06:00")
+	require.NoError(t, err)
+	assert.Equal(t, time.Date(2024, 1, 2, 22, 0, 0, 0, time.UTC), start)
+	assert.Equal(t, time.Date(2024, 1, 3, 6, 0, 0, 0, time.UTC), end)
+}
+
+// TestResolveWindow_OvernightWindow_ExactlyAtStart confirms the inclusive-start
+// boundary is preserved by the after-midnight fix (now.Before(start) is false
+// at the exact instant, so the yesterday-check never fires).
+func TestResolveWindow_OvernightWindow_ExactlyAtStart(t *testing.T) {
+	now := time.Date(2024, 1, 1, 22, 0, 0, 0, time.UTC)
+	start, end, err := resolveWindow(now, "22:00", "06:00")
+	require.NoError(t, err)
+	assert.Equal(t, time.Date(2024, 1, 1, 22, 0, 0, 0, time.UTC), start)
+	assert.Equal(t, time.Date(2024, 1, 2, 6, 0, 0, 0, time.UTC), end)
+	assert.False(t, now.Before(start), "now should be exactly at start, inside the window")
+}
+
+// TestResolveWindow_OvernightWindow_ExactlyAtEnd confirms the exclusive-end
+// boundary is preserved: exactly at the window's end, it should be treated as
+// NOT inside and rolled to the next instance.
+func TestResolveWindow_OvernightWindow_ExactlyAtEnd(t *testing.T) {
+	now := time.Date(2024, 1, 2, 6, 0, 0, 0, time.UTC)
+	start, end, err := resolveWindow(now, "22:00", "06:00")
+	require.NoError(t, err)
+	assert.Equal(t, time.Date(2024, 1, 2, 22, 0, 0, 0, time.UTC), start)
+	assert.Equal(t, time.Date(2024, 1, 3, 6, 0, 0, 0, time.UTC), end)
+}
+
+// TestResolveWindow_SameDayWindow_BeforeStart_NotAffectedByMidnightCheck guards
+// against the after-midnight fix misfiring for ordinary same-day windows: now
+// being before today's start is a perfectly mundane "window hasn't started
+// yet today" case here, not a sign of an overnight window still open from
+// yesterday.
+func TestResolveWindow_SameDayWindow_BeforeStart_NotAffectedByMidnightCheck(t *testing.T) {
+	now := time.Date(2024, 1, 1, 8, 0, 0, 0, time.UTC)
+	start, end, err := resolveWindow(now, "09:00", "13:00")
+	require.NoError(t, err)
+	assert.Equal(t, time.Date(2024, 1, 1, 9, 0, 0, 0, time.UTC), start)
+	assert.Equal(t, time.Date(2024, 1, 1, 13, 0, 0, 0, time.UTC), end)
+}
+
 func TestResolveWindow_RollForwardWhenPast(t *testing.T) {
 	// now is past the window end - both should roll forward 24h.
 	now := time.Date(2024, 1, 1, 14, 0, 0, 0, time.UTC)
