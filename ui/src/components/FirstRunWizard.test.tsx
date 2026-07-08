@@ -640,13 +640,15 @@ describe("FirstRunWizard", () => {
       await navigateToScheduleStep();
       // ScheduleForm shows "Enabled" toggle and type switcher
       expect(screen.getByText("Enabled")).toBeInTheDocument();
-      expect(screen.getByRole("switch")).toBeInTheDocument();
+      expect(
+        screen.getByRole("switch", { name: "Enabled" }),
+      ).toBeInTheDocument();
     });
 
     it("toggles schedule on and off", async () => {
       customRender(<FirstRunWizard onComplete={mockOnComplete} />);
       await navigateToScheduleStep();
-      const toggle = screen.getByRole("switch");
+      const toggle = screen.getByRole("switch", { name: "Enabled" });
       expect(toggle).toHaveAttribute("aria-checked", "false");
       await act(async () => {
         fireEvent.click(toggle);

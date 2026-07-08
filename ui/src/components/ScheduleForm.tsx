@@ -18,16 +18,19 @@ function Toggle({
   checked,
   onChange,
   disabled,
+  label,
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
   disabled?: boolean;
+  label: string;
 }) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
+      aria-label={label}
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-0
@@ -56,6 +59,7 @@ export default function ScheduleForm({
   const dailyTimeId = useId();
   const windowStartId = useId();
   const windowEndId = useId();
+  const readyById = useId();
 
   const [type, setType] = useState<"daily" | "carbon_aware">(
     () => (schedule?.type ?? "daily") as "daily" | "carbon_aware",
@@ -68,7 +72,11 @@ export default function ScheduleForm({
   const [windowEnd, setWindowEnd] = useState(
     () => schedule?.windowEnd ?? "06:00",
   );
-  const [windowError, setWindowError] = useState<string | null>(null);
+  const [twoStageEnabled, setTwoStageEnabled] = useState(
+    () => schedule?.readyBy != null,
+  );
+  const [readyBy, setReadyBy] = useState(() => schedule?.readyBy ?? "07:00");
+  const [formError, setFormError] = useState<string | null>(null);
 
   const prevScheduleRef = useRef(schedule);
   useEffect(() => {
@@ -79,20 +87,40 @@ export default function ScheduleForm({
       setDailyTime(schedule?.time ?? "01:00");
       setWindowStart(schedule?.windowStart ?? "01:00");
       setWindowEnd(schedule?.windowEnd ?? "06:00");
+      setTwoStageEnabled(schedule?.readyBy != null);
+      setReadyBy(schedule?.readyBy ?? "07:00");
     }
   }, [schedule]);
 
   const handleSave = useCallback(() => {
     if (type === "carbon_aware") {
       if (windowStart === windowEnd) {
-        setWindowError("Start and ready-by times must differ.");
+        setFormError("Start and ready-by times must differ.");
         return;
       }
       onSave({ type: "carbon_aware", windowStart, windowEnd, enabled });
     } else {
-      onSave({ type: "daily", time: dailyTime, enabled });
+      if (twoStageEnabled && readyBy === dailyTime) {
+        setFormError("Ready by must differ from start time.");
+        return;
+      }
+      onSave({
+        type: "daily",
+        time: dailyTime,
+        ...(twoStageEnabled ? { readyBy } : {}),
+        enabled,
+      });
     }
-  }, [type, enabled, dailyTime, windowStart, windowEnd, onSave]);
+  }, [
+    type,
+    enabled,
+    dailyTime,
+    windowStart,
+    windowEnd,
+    twoStageEnabled,
+    readyBy,
+    onSave,
+  ]);
 
   return (
     <div className="space-y-5">
@@ -104,7 +132,7 @@ export default function ScheduleForm({
             Auto-start charging on this schedule
           </p>
         </div>
-        <Toggle checked={enabled} onChange={setEnabled} />
+        <Toggle checked={enabled} onChange={setEnabled} label="Enabled" />
       </div>
 
       {/* Type switcher */}
@@ -135,7 +163,7 @@ export default function ScheduleForm({
         </div>
 
         {type === "daily" ? (
-          <div className="space-y-2">
+          <div className="space-y-3">
             <p className="text-xs text-gray-400">
               Start charging at a fixed time each day if below target.
             </p>
@@ -150,12 +178,53 @@ export default function ScheduleForm({
                 id={dailyTimeId}
                 type="time"
                 value={dailyTime}
-                onChange={(e) => setDailyTime(e.target.value)}
+                onChange={(e) => {
+                  setDailyTime(e.target.value);
+                  setFormError(null);
+                }}
                 className="bg-gray-800 text-white px-3 py-1.5 rounded-md text-sm
                   border border-gray-600 focus:border-blue-500 focus:outline-none
                   focus:ring-1 focus:ring-blue-500"
               />
             </div>
+
+            <div className="flex items-center justify-between pt-1">
+              <div>
+                <p className="text-xs font-medium text-gray-300">
+                  Two-stage charging
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Charge to 80% now, hold, then finish by a ready-by time.
+                </p>
+              </div>
+              <Toggle
+                checked={twoStageEnabled}
+                onChange={setTwoStageEnabled}
+                label="Two-stage charging"
+              />
+            </div>
+            {twoStageEnabled && (
+              <div className="flex items-center gap-3">
+                <label
+                  htmlFor={readyById}
+                  className="text-xs font-medium text-gray-400 uppercase tracking-wider whitespace-nowrap"
+                >
+                  Ready by
+                </label>
+                <input
+                  id={readyById}
+                  type="time"
+                  value={readyBy}
+                  onChange={(e) => {
+                    setReadyBy(e.target.value);
+                    setFormError(null);
+                  }}
+                  className="bg-gray-800 text-white px-3 py-1.5 rounded-md text-sm
+                    border border-gray-600 focus:border-blue-500 focus:outline-none
+                    focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+            )}
           </div>
         ) : (
           <div className="space-y-3">
@@ -177,7 +246,7 @@ export default function ScheduleForm({
                   value={windowStart}
                   onChange={(e) => {
                     setWindowStart(e.target.value);
-                    setWindowError(null);
+                    setFormError(null);
                   }}
                   className="bg-gray-800 text-white px-3 py-1.5 rounded-md text-sm
                     border border-gray-600 focus:border-blue-500 focus:outline-none
@@ -197,7 +266,7 @@ export default function ScheduleForm({
                   value={windowEnd}
                   onChange={(e) => {
                     setWindowEnd(e.target.value);
-                    setWindowError(null);
+                    setFormError(null);
                   }}
                   className="bg-gray-800 text-white px-3 py-1.5 rounded-md text-sm
                     border border-gray-600 focus:border-blue-500 focus:outline-none
@@ -205,12 +274,12 @@ export default function ScheduleForm({
                 />
               </div>
             </div>
-            {windowError && (
-              <p className="text-xs text-red-400" role="alert">
-                {windowError}
-              </p>
-            )}
           </div>
+        )}
+        {formError && (
+          <p className="text-xs text-red-400" role="alert">
+            {formError}
+          </p>
         )}
       </div>
 

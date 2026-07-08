@@ -62,12 +62,15 @@ describe("ScheduleModal", () => {
 
   it("enable toggle is off by default with null schedule", () => {
     render(<ScheduleModal {...baseProps} />);
-    expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByRole("switch", { name: "Enabled" })).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
   });
 
   it("enable toggle turns on when clicked", () => {
     render(<ScheduleModal {...baseProps} />);
-    const toggle = screen.getByRole("switch");
+    const toggle = screen.getByRole("switch", { name: "Enabled" });
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute("aria-checked", "true");
   });
@@ -102,7 +105,7 @@ describe("ScheduleModal", () => {
     const onSave = vi.fn();
     render(<ScheduleModal {...baseProps} onSave={onSave} />);
 
-    fireEvent.click(screen.getByRole("switch")); // enable
+    fireEvent.click(screen.getByRole("switch", { name: "Enabled" })); // enable
     fireEvent.change(screen.getByLabelText("Start time"), {
       target: { value: "03:00" },
     });
@@ -218,7 +221,10 @@ describe("ScheduleModal", () => {
       />,
     );
     expect(screen.getByLabelText("Start time")).toHaveValue("03:00");
-    expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("switch", { name: "Enabled" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
   });
 
   it("initializes from an existing carbon_aware schedule", () => {
