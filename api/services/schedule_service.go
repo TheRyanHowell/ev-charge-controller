@@ -519,7 +519,11 @@ func (s *ScheduleService) EstimateCarbonAwareStart(ctx context.Context, sch *mod
 
 	optimalStart := findOptimalStart(buckets, searchFrom, latestStart, time.Duration(d)*time.Minute)
 	if optimalStart.IsZero() {
-		return "", false
+		// No half-hour-aligned candidate fit inside [searchFrom, latestStart]
+		// (a valid window narrower than one grid step). searchFrom is already
+		// known to be before latestStart here, so latestStart remains a
+		// safe, valid fallback - same one used just above.
+		return formatTime(latestStart.In(now.Location())), true
 	}
 
 	return formatTime(optimalStart.In(now.Location())), true
@@ -688,7 +692,13 @@ func (s *ScheduleService) estimateBalancedStageStart(ctx context.Context, search
 	}
 	start := findBalancedStart(buckets, searchFrom, latestStart, windowEnd, time.Duration(durMin)*time.Minute)
 	if start.IsZero() {
-		return time.Time{}, false
+		// No half-hour-aligned candidate fit inside [searchFrom, latestStart]
+		// (a valid window narrower than one grid step - e.g. stage 1 finishes
+		// only a few minutes before stage 2's deadline guard). searchFrom is
+		// already known to be before latestStart at this point, so latestStart
+		// remains a safe, valid fallback - the same one used just above when
+		// there's no search range left at all.
+		return latestStart, true
 	}
 	return start, true
 }
@@ -891,6 +901,13 @@ func findOptimalStart(buckets []carbonintensity.ForecastBucket, now, latestStart
 	bestScore := math.MaxFloat64
 
 	for candidate := alignToHalfHour(nowUTC); !candidate.After(latestUTC); candidate = candidate.Add(forecastBucketSize) {
+		// alignToHalfHour truncates down, so the first grid position can land
+		// before now when now itself isn't half-hour aligned (the common
+		// case). Skip it rather than ever returning a start before the
+		// requested lower bound.
+		if candidate.Before(nowUTC) {
+			continue
+		}
 		score := scoreWindow(buckets, candidate, candidate.Add(d))
 		if score == math.MaxFloat64 {
 			continue
@@ -929,6 +946,14 @@ func findBalancedStart(buckets []carbonintensity.ForecastBucket, now, latestStar
 
 	var candidates []balancedCandidate
 	for c := alignToHalfHour(nowUTC); !c.After(latestUTC); c = c.Add(forecastBucketSize) {
+		// alignToHalfHour truncates down, so the first grid position can land
+		// before now when now itself isn't half-hour aligned (the common
+		// case - e.g. stage 2's lower bound is stage 1's finish time, which
+		// is essentially never on a half-hour boundary). Skip it rather than
+		// ever returning a start before the requested lower bound.
+		if c.Before(nowUTC) {
+			continue
+		}
 		carbon := scoreWindow(buckets, c, c.Add(d))
 		if carbon == math.MaxFloat64 {
 			continue

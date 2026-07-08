@@ -1150,6 +1150,50 @@ func TestFindBalancedStart_NoValidCandidates(t *testing.T) {
 	assert.True(t, start.IsZero(), "no forecast data anywhere should yield no winner")
 }
 
+// TestFindOptimalStart_NowNotHalfHourAligned_NeverReturnsBeforeNow is a
+// regression test for a bug where the search's lower bound was computed via
+// alignToHalfHour(now), which truncates DOWN to the nearest half-hour. When
+// now itself isn't half-hour aligned (the common case - schedule checks run
+// every few seconds, not on the half-hour), this let the search consider a
+// candidate starting before now, which could then win the scoring and be
+// returned as the "optimal start" - a time before the caller's requested
+// lower bound. All existing tests happened to use exactly-aligned `now`
+// values, which is why this was never caught.
+func TestFindOptimalStart_NowNotHalfHourAligned_NeverReturnsBeforeNow(t *testing.T) {
+	now := time.Date(2024, 1, 1, 10, 3, 0, 0, time.UTC) // not on a half-hour boundary
+	// The 10:00 bucket (before now) is made artificially very clean so it
+	// would win the scoring outright if the truncated candidate were ever
+	// considered - this proves the fix excludes it, not just happens to lose.
+	buckets := makeBuckets(now.Truncate(30*time.Minute), []int{10, 400, 400, 400})
+	latestStart := now.Add(90 * time.Minute)
+
+	optimal := findOptimalStart(buckets, now, latestStart, 30*time.Minute)
+	require.False(t, optimal.IsZero())
+	assert.False(t, optimal.Before(now), "optimal start must never be before the requested lower bound")
+}
+
+// TestFindBalancedStart_NowNotHalfHourAligned_NeverReturnsBeforeNow is the
+// findBalancedStart counterpart to the same bug - this is the function used
+// by carbon-aware two-stage, where the reported symptom was a plan showing
+// Stage 2 starting before Stage 1 even finished charging (stage2's search
+// lower bound is stage1End, which is essentially never half-hour aligned
+// since it's stage1Start plus an arbitrary integer number of minutes). The
+// narrow now-to-latestStart gap (both inside the same half-hour grid cell)
+// matches the real reproduction: it left only the truncated, too-early
+// candidate in range, so it won by being the sole candidate rather than by
+// outscoring anything.
+func TestFindBalancedStart_NowNotHalfHourAligned_NeverReturnsBeforeNow(t *testing.T) {
+	now := time.Date(2024, 1, 1, 10, 3, 0, 0, time.UTC)
+	deadline := now.Add(2 * time.Hour)
+	latestStart := now.Add(5 * time.Minute) // 10:08 - same half-hour cell as now
+	buckets := makeBuckets(now.Truncate(30*time.Minute), []int{200, 200, 200, 200})
+
+	start := findBalancedStart(buckets, now, latestStart, deadline, 30*time.Minute)
+	if !start.IsZero() {
+		assert.False(t, start.Before(now), "balanced start must never be before the requested lower bound - a zero (no candidate) result is acceptable here, unlike a too-early one")
+	}
+}
+
 // --- Carbon-aware CheckAndActivateAll scenarios ---
 
 func carbonAwareSchedule(windowStart, windowEnd string) models.Schedule {
@@ -2152,6 +2196,78 @@ func TestScheduleService_EstimateCarbonAwareTwoStagePlan_MinDurationBoundary(t *
 			assert.Equal(t, tt.wantOk, ok)
 		})
 	}
+}
+
+// TestScheduleService_EstimateCarbonAwareTwoStagePlan_Stage1NeverBeforeWindowStart
+// is an end-to-end regression test for the reported bug: a non-half-hour-
+// aligned window start (01:15) let the search consider a candidate at 01:00
+// - before the window even opened. d1+d2 is sized so stage1LatestStart
+// (01:20) sits only 5 minutes after windowStart(01:15) - the same narrow-gap
+// shape as the confirmed stage 2 repro, needed because findBalancedStart's
+// equal-weighted scoring otherwise naturally avoids the earliest candidate
+// on its own (it can tie for best but never strictly win), which would let
+// this test pass even without the fix.
+func TestScheduleService_EstimateCarbonAwareTwoStagePlan_Stage1NeverBeforeWindowStart(t *testing.T) {
+	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 0, TargetPercent: 100} // hold=80
+	buckets := makeBuckets(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), []int{
+		200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200,
+	})
+	svc.SetCarbonAwareDeps(&mockForecaster{buckets: buckets}, func(_ *models.Vehicle, current, _ float64) (int, error) {
+		if current == 0 {
+			return 260, nil // d1: current(0) -> hold(80)
+		}
+		return 20, nil // d2: hold(80) -> target(100), above MinTwoStageStageDurationMin
+	}, nil)
+	sch := carbonAwareTwoStageSchedule("01:15", "06:00")
+
+	// now is before windowStart, so searchFrom resolves to windowStart(01:15) itself.
+	now := time.Date(2024, 1, 1, 0, 30, 0, 0, time.UTC)
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return now }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	plan, ok := svc.EstimateCarbonAwareTwoStagePlan(t.Context(), &sch)
+	require.True(t, ok)
+	// HH:MM string comparison matches chronological order here since both
+	// times fall on the same day (no midnight wrap in this scenario).
+	assert.GreaterOrEqual(t, plan.Stage1Start, "01:15", "stage 1 must never start before the window's earliest bound")
+}
+
+// TestScheduleService_EstimateCarbonAwareTwoStagePlan_Stage2NeverBeforeStage1End
+// is an end-to-end regression test for the reported bug: with a tiny stage 1
+// and a stage 2 deadline guard only a few minutes after stage 1 finishes,
+// the search picked a half-hour-aligned candidate before stage 1 even ended.
+func TestScheduleService_EstimateCarbonAwareTwoStagePlan_Stage2NeverBeforeStage1End(t *testing.T) {
+	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{
+		ID: "v1", CurrentPercent: 79, TargetPercent: 100,
+		CapacityKwh: 2.026, ChargerOutputW: 600, ChargingEfficiency: 0.8,
+	}
+	buckets := makeBuckets(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), func() []int {
+		v := make([]int, 96)
+		for i := range v {
+			v[i] = 200
+		}
+		return v
+	}())
+	svc.SetCarbonAwareDeps(&mockForecaster{buckets: buckets}, chargeestimate.EstimateMinutes, nil)
+	sch := carbonAwareTwoStageSchedule("01:00", "06:00")
+
+	now := time.Date(2024, 1, 1, 3, 47, 0, 0, time.UTC) // not half-hour aligned
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return now }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	plan, ok := svc.EstimateCarbonAwareTwoStagePlan(t.Context(), &sch)
+	require.True(t, ok)
+	stage1End, err := time.Parse("15:04", plan.Stage1End)
+	require.NoError(t, err)
+	stage2Start, err := time.Parse("15:04", plan.Stage2Start)
+	require.NoError(t, err)
+	assert.False(t, stage2Start.Before(stage1End), "stage 2 must never start before stage 1 finishes charging (stage1End=%s, stage2Start=%s)", plan.Stage1End, plan.Stage2Start)
 }
 
 func TestScheduleService_EstimateCarbonAwareTwoStagePlan_PastDeadline_UsesLatestStarts(t *testing.T) {
