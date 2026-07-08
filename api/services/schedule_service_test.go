@@ -1060,6 +1060,36 @@ func TestScheduleService_CarbonAware_AfterWindow_RolledForward(t *testing.T) {
 	assert.False(t, chargeAdapter.createPendingCalled)
 }
 
+// TestScheduleService_CarbonAware_AfterMidnight_StillConsidersWindowOpen is the
+// integration-level regression test for the resolveWindow midnight bug: an
+// overnight window (22:00-06:00) evaluated at 02:00 - still inside the
+// instance that opened the previous evening - must be treated as open and
+// reach the deadline-guard logic, not silently wait for tonight's window.
+func TestScheduleService_CarbonAware_AfterMidnight_StillConsidersWindowOpen(t *testing.T) {
+	svc, scheduleRepo, plugRepo, vehicleRepo, chargeAdapter := newMockScheduleService()
+	scheduleRepo.listAllResult = []models.Schedule{carbonAwareSchedule("22:00", "06:00")}
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 20, TargetPercent: 80}
+	chargeAdapter.createPendingResult = &models.ChargeSession{ID: "sess1"}
+
+	// D = 300min (5h); windowEnd resolves to today 06:00, so latestStart = 01:00.
+	// now = 02:00, already past latestStart - deadline guard should fire.
+	// Before the fix, resolveWindow would have computed windowEnd as tomorrow
+	// 06:00 (a full day away) and the scheduler would have bailed out early
+	// thinking the window hadn't started yet, leaving createPendingCalled false.
+	svc.SetCarbonAwareDeps(nil, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 300, nil
+	}, nil)
+
+	nowAfterMidnight := time.Date(2024, 1, 2, 2, 0, 0, 0, time.UTC)
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return nowAfterMidnight }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	svc.CheckAndActivateAll(t.Context())
+	assert.True(t, chargeAdapter.createPendingCalled, "overnight window still open after midnight should reach the deadline guard and start")
+}
+
 func TestScheduleService_CarbonAware_EstimatorError_FailsafeStart(t *testing.T) {
 	svc, scheduleRepo, plugRepo, vehicleRepo, chargeAdapter := newMockScheduleService()
 	scheduleRepo.listAllResult = []models.Schedule{carbonAwareSchedule("09:00", "13:00")}
@@ -1575,6 +1605,35 @@ func TestScheduleService_EstimateCarbonAwareStart_PastDeadline_ReturnsLatestStar
 	assert.Equal(t, "09:30", start)
 }
 
+// TestScheduleService_EstimateCarbonAwareStart_AfterMidnight_StillConsidersWindowOpen
+// is the estimate-mirror counterpart to the activation-side midnight
+// regression test: an overnight window evaluated just after local midnight
+// must still resolve to the instance that opened the previous evening.
+func TestScheduleService_EstimateCarbonAwareStart_AfterMidnight_StillConsidersWindowOpen(t *testing.T) {
+	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 20, TargetPercent: 80}
+	// Window 22:00-06:00, D=300min(5h) -> latestStart = today 01:00.
+	// now = today 02:00, already past latestStart.
+	// Before the fix, resolveWindow would have computed windowEnd as tomorrow
+	// 06:00 and searchFrom as tomorrow's windowStart (22:00, still in the
+	// future relative to now), so the deadline guard would never fire here
+	// and the empty mockForecaster would make the whole estimate fail (ok=false).
+	svc.SetCarbonAwareDeps(&mockForecaster{}, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 300, nil
+	}, nil)
+	sch := carbonAwareSchedule("22:00", "06:00")
+
+	nowAfterMidnight := time.Date(2024, 1, 2, 2, 0, 0, 0, time.UTC)
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return nowAfterMidnight }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	start, ok := svc.EstimateCarbonAwareStart(t.Context(), &sch)
+	require.True(t, ok, "overnight window still open after midnight should still produce a confident estimate")
+	assert.Equal(t, "01:00", start)
+}
+
 func TestScheduleService_EstimateCarbonAwareStart_ForecastError(t *testing.T) {
 	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
 	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
@@ -1685,6 +1744,35 @@ func TestScheduleService_EstimateCarbonAwareTwoStagePlan_AlreadyPastHoldPercent(
 
 	_, ok := svc.EstimateCarbonAwareTwoStagePlan(t.Context(), &sch)
 	assert.False(t, ok, "no plan when there's nothing to hold for")
+}
+
+// TestScheduleService_EstimateCarbonAwareTwoStagePlan_AfterMidnight_StillConsidersWindowOpen
+// is the two-stage estimate-mirror counterpart to the midnight regression test.
+func TestScheduleService_EstimateCarbonAwareTwoStagePlan_AfterMidnight_StillConsidersWindowOpen(t *testing.T) {
+	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 20, TargetPercent: 80} // hold=64
+	// Window 23:00-00:30 (crosses midnight), d1=d2=60min -> stage1LatestStart =
+	// today's windowEnd(00:30) - 120min = yesterday 22:30, well before now.
+	// Before the fix, windowEnd would resolve to tomorrow 00:30 - a full day
+	// away - so the deadline guard would never fire and the empty
+	// mockForecaster would make the whole plan fail (ok=false).
+	svc.SetCarbonAwareDeps(&mockForecaster{}, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 60, nil
+	}, nil)
+	sch := carbonAwareTwoStageSchedule("23:00", "00:30")
+
+	nowAfterMidnight := time.Date(2024, 1, 2, 0, 15, 0, 0, time.UTC)
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return nowAfterMidnight }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	plan, ok := svc.EstimateCarbonAwareTwoStagePlan(t.Context(), &sch)
+	require.True(t, ok, "overnight window still open after midnight should still produce a confident plan")
+	assert.Equal(t, "22:30", plan.Stage1Start)
+	assert.Equal(t, "23:30", plan.Stage1End)
+	assert.Equal(t, "23:30", plan.Stage2Start)
+	assert.Equal(t, "00:30", plan.Stage2End)
 }
 
 func TestScheduleService_EstimateCarbonAwareTwoStagePlan_EstimatorError(t *testing.T) {
