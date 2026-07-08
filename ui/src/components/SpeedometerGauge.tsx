@@ -39,6 +39,7 @@ interface SpeedometerGaugeProps {
   maintenance?: MaintenancePlugState | null;
   onToggleMaintenance?: () => void;
   isMaintenancePending?: boolean;
+  estimatedResumeTime?: string | null;
 }
 
 const VIEW_BOX = 300;
@@ -62,6 +63,7 @@ function SpeedometerGauge({
   maintenance,
   onToggleMaintenance,
   isMaintenancePending,
+  estimatedResumeTime,
 }: SpeedometerGaugeProps) {
   // Subscribe to store percents for real-time drag feedback.
   const storeCurrent = useGaugeStore((s) => s.currentPercent);
@@ -277,6 +279,7 @@ function SpeedometerGauge({
             maintenance={maintenance}
             onToggleMaintenance={onToggleMaintenance}
             isMaintenancePending={isMaintenancePending}
+            estimatedResumeTime={estimatedResumeTime}
           />
         </div>
       </div>

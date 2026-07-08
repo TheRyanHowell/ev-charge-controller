@@ -327,6 +327,10 @@ export default function Dashboard({
                 | "conditioning"
                 | "holding"
                 | "error",
+              estimatedResumeTime:
+                session.status === "holding"
+                  ? session.estimatedResumeTime
+                  : null,
             }}
             session={{
               isChargingOrPending,

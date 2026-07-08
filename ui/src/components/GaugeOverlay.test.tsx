@@ -65,6 +65,50 @@ describe("GaugeOverlay", () => {
     expect(screen.getByText("Holding")).toBeInTheDocument();
   });
 
+  it("shows estimated resume time when holding with an estimate", () => {
+    render(
+      <GaugeOverlay
+        status="holding"
+        currentPercent={64}
+        targetPercent={80}
+        onStartStop={() => {}}
+        estimatedResumeTime="23:30"
+      />,
+    );
+    expect(screen.getByTestId("estimated-resume-time")).toHaveTextContent(
+      "23:30",
+    );
+  });
+
+  it("does not show estimated resume time when holding without an estimate", () => {
+    render(
+      <GaugeOverlay
+        status="holding"
+        currentPercent={64}
+        targetPercent={80}
+        onStartStop={() => {}}
+      />,
+    );
+    expect(
+      screen.queryByTestId("estimated-resume-time"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not show estimated resume time when charging even with an estimate present", () => {
+    render(
+      <GaugeOverlay
+        status="charging"
+        currentPercent={64}
+        targetPercent={80}
+        onStartStop={() => {}}
+        estimatedResumeTime="23:30"
+      />,
+    );
+    expect(
+      screen.queryByTestId("estimated-resume-time"),
+    ).not.toBeInTheDocument();
+  });
+
   it("shows STOP button when holding", () => {
     render(
       <GaugeOverlay

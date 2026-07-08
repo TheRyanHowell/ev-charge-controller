@@ -20,6 +20,8 @@ interface GaugeOverlayProps {
   onStartStop: () => void;
   isActionPending?: boolean;
   tasmotaConnected?: boolean | null;
+  /** HH:MM best guess for when a holding session will resume; only shown while status is "holding". */
+  estimatedResumeTime?: string | null;
   schedule?: Schedule | null;
   onOpenSchedule?: () => void;
   maintenance?: MaintenancePlugState | null;
@@ -60,6 +62,7 @@ export function GaugeOverlay({
   maintenance,
   onToggleMaintenance,
   isMaintenancePending,
+  estimatedResumeTime,
 }: GaugeOverlayProps) {
   const isCharged = currentPercent >= targetPercent;
 
@@ -105,6 +108,14 @@ export function GaugeOverlay({
               "Ready"}
             {status === "error" && "Error"}
           </div>
+          {status === "holding" && estimatedResumeTime && (
+            <div
+              className="text-[10px] text-gray-500 mt-1 normal-case tracking-normal font-normal"
+              data-testid="estimated-resume-time"
+            >
+              resumes ~{estimatedResumeTime}
+            </div>
+          )}
         </div>
       </div>
 

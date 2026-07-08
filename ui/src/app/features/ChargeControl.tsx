@@ -15,6 +15,8 @@ interface GaugeState {
     | "conditioning"
     | "holding"
     | "error";
+  /** HH:MM best guess for when a holding session will resume. */
+  estimatedResumeTime?: string | null;
 }
 
 interface SessionState {
@@ -129,6 +131,7 @@ export default function ChargeControl({
             }
             onToggleMaintenance={onToggleMaintenance}
             isMaintenancePending={isMaintenancePending}
+            estimatedResumeTime={gauge.estimatedResumeTime}
           />
         </ErrorBoundary>
       </div>
