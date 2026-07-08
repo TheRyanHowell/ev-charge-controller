@@ -61,6 +61,59 @@ func TestChargeSessionRepository_Create(t *testing.T) {
 	assert.Equal(t, "rm1", found.VehicleID)
 }
 
+func TestChargeSessionRepository_Create_TwoStageFields(t *testing.T) {
+	db := setupChargeSessionDB(t)
+	defer db.Close()
+
+	repo := NewChargeSessionRepository(db)
+	holdPercent := 64.0
+	readyByTime := "07:00"
+	session := &models.ChargeSession{
+		VehicleID:     "rm1",
+		UserID:        repoTestUserIDPtr,
+		PlugID:        repoTestPlugIDPtr,
+		StartKwh:      0.38,
+		TargetKwh:     1.9,
+		Status:        "active",
+		HoldPercent:   &holdPercent,
+		ReadyByTime:   &readyByTime,
+		TargetPercent: 80,
+	}
+
+	require.NoError(t, repo.Create(t.Context(), session))
+
+	found, err := repo.FindByID(t.Context(), session.ID)
+	require.NoError(t, err)
+	require.NotNil(t, found)
+	require.NotNil(t, found.HoldPercent)
+	assert.Equal(t, 64.0, *found.HoldPercent)
+	require.NotNil(t, found.ReadyByTime)
+	assert.Equal(t, "07:00", *found.ReadyByTime)
+}
+
+func TestChargeSessionRepository_Create_TwoStageFieldsNil(t *testing.T) {
+	db := setupChargeSessionDB(t)
+	defer db.Close()
+
+	repo := NewChargeSessionRepository(db)
+	session := &models.ChargeSession{
+		VehicleID: "rm1",
+		UserID:    repoTestUserIDPtr,
+		PlugID:    repoTestPlugIDPtr,
+		StartKwh:  0.38,
+		TargetKwh: 1.9,
+		Status:    "active",
+	}
+
+	require.NoError(t, repo.Create(t.Context(), session))
+
+	found, err := repo.FindByID(t.Context(), session.ID)
+	require.NoError(t, err)
+	require.NotNil(t, found)
+	assert.Nil(t, found.HoldPercent)
+	assert.Nil(t, found.ReadyByTime)
+}
+
 // TestChargeSessionRepository_ReadsPopulateUserID guards a regression where
 // reads omitted the user_id column, leaving ChargeSession.UserID nil. That made
 // ownership checks (verifySessionOwnership) treat every session as not-owned and
@@ -1566,6 +1619,54 @@ func TestChargeSessionRepository_ActivatePending_WrongState(t *testing.T) {
 	// Try to activate - should fail with ErrSessionWrongState
 	err := repo.ActivatePending(t.Context(), session.ID, time.Now())
 	assert.Error(t, err)
+	assert.Equal(t, ErrSessionWrongState, err)
+}
+
+func TestChargeSessionRepository_ResumeHolding(t *testing.T) {
+	db := setupChargeSessionDB(t)
+	defer db.Close()
+
+	repo := NewChargeSessionRepository(db)
+
+	holdPercent := 64.0
+	session := &models.ChargeSession{
+		VehicleID:   "rm1",
+		UserID:      repoTestUserIDPtr,
+		PlugID:      repoTestPlugIDPtr,
+		StartKwh:    0.38,
+		TargetKwh:   1.9,
+		Status:      models.SessionStatusHolding,
+		HoldPercent: &holdPercent,
+	}
+	require.NoError(t, repo.Create(t.Context(), session))
+
+	err := repo.ResumeHolding(t.Context(), session.ID)
+	assert.NoError(t, err)
+
+	updated, err := repo.FindByID(t.Context(), session.ID)
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+	assert.Equal(t, models.SessionStatusActive, updated.Status)
+	assert.Nil(t, updated.HoldPercent)
+}
+
+func TestChargeSessionRepository_ResumeHolding_WrongState(t *testing.T) {
+	db := setupChargeSessionDB(t)
+	defer db.Close()
+
+	repo := NewChargeSessionRepository(db)
+
+	session := &models.ChargeSession{
+		VehicleID: "rm1",
+		UserID:    repoTestUserIDPtr,
+		PlugID:    repoTestPlugIDPtr,
+		StartKwh:  0.38,
+		TargetKwh: 1.9,
+		Status:    models.SessionStatusActive,
+	}
+	require.NoError(t, repo.Create(t.Context(), session))
+
+	err := repo.ResumeHolding(t.Context(), session.ID)
 	assert.Equal(t, ErrSessionWrongState, err)
 }
 

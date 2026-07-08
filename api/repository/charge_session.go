@@ -25,16 +25,17 @@ func generateID() string {
 	return uuid.New().String()
 }
 
-const chargeSessionColumns = "id, vehicle_id, created_at, ended_at, start_kwh, end_kwh, target_kwh, start_percent, end_percent, target_percent, status, start_total_kwh, started_at, last_blended_kwh, plug_id, battery_kwh, wall_kwh, avg_carbon_intensity, co2_grams, user_id, cost_pence, off_peak_kwh"
+const chargeSessionColumns = "id, vehicle_id, created_at, ended_at, start_kwh, end_kwh, target_kwh, start_percent, end_percent, target_percent, status, start_total_kwh, started_at, last_blended_kwh, plug_id, battery_kwh, wall_kwh, avg_carbon_intensity, co2_grams, user_id, cost_pence, off_peak_kwh, hold_percent, ready_by_time"
 
 func (r *ChargeSessionRepository) Create(ctx context.Context, session *models.ChargeSession) error {
 	session.ID = generateID()
 
-	query := `INSERT INTO charge_sessions (id, vehicle_id, created_at, start_kwh, target_kwh, start_percent, target_percent, status, start_total_kwh, user_id, plug_id)
-	          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO charge_sessions (id, vehicle_id, created_at, start_kwh, target_kwh, start_percent, target_percent, status, start_total_kwh, user_id, plug_id, hold_percent, ready_by_time)
+	          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err := r.db.ExecContext(ctx, query, session.ID, session.VehicleID, session.CreatedAt,
 		session.StartKwh, session.TargetKwh, session.StartPercent, session.TargetPercent, session.Status, session.StartTotalKwh,
-		toNullString(session.UserID), toNullString(session.PlugID))
+		toNullString(session.UserID), toNullString(session.PlugID),
+		toNullFloat(session.HoldPercent), toNullString(session.ReadyByTime))
 
 	return err
 }
@@ -166,7 +167,8 @@ func scanChargeSession(s *models.ChargeSession, scanner sqlScanner) error {
 		newNullString(&s.PlugID),
 		newNullFloat(&s.BatteryKwh), newNullFloat(&s.WallKwh), newNullFloat(&s.AvgCarbonIntensity), newNullFloat(&s.Co2Grams),
 		newNullString(&s.UserID),
-		newNullFloat(&s.CostPence), newNullFloat(&s.OffPeakKwh))
+		newNullFloat(&s.CostPence), newNullFloat(&s.OffPeakKwh),
+		newNullFloat(&s.HoldPercent), newNullString(&s.ReadyByTime))
 }
 
 // queryOneSession executes a single-row query and returns the session.
@@ -211,6 +213,26 @@ func (r *ChargeSessionRepository) UpdateStatus(ctx context.Context, id, status s
 func (r *ChargeSessionRepository) ActivatePending(ctx context.Context, id string, startedAt time.Time) error {
 	query := `UPDATE charge_sessions SET started_at = ?, status = ? WHERE id = ? AND status = ?`
 	result, err := r.db.ExecContext(ctx, query, startedAt.Format(time.RFC3339), models.SessionStatusActive, id, models.SessionStatusPending)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return ErrSessionWrongState
+	}
+	return nil
+}
+
+// ResumeHolding atomically transitions a holding session back to active and
+// clears hold_percent, so subsequent auto-stop checks compare progress against
+// the real target instead of the intermediate hold point.
+// Returns ErrSessionWrongState if no rows were affected (session not holding).
+func (r *ChargeSessionRepository) ResumeHolding(ctx context.Context, id string) error {
+	query := `UPDATE charge_sessions SET status = ?, hold_percent = NULL WHERE id = ? AND status = ?`
+	result, err := r.db.ExecContext(ctx, query, models.SessionStatusActive, id, models.SessionStatusHolding)
 	if err != nil {
 		return err
 	}

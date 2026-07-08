@@ -34,6 +34,7 @@ type ChargeSessionRepo interface {
 	UpdateEndWithStats(ctx context.Context, id string, endedAt time.Time, endKwh, endPercent float64, batteryKwh, wallKwh, co2Grams float64, avgCarbonIntensity *float64, costPence, offPeakKwh float64) error
 	UpdateLastBlendedKwh(ctx context.Context, id string, lastBlendedKwh float64) error
 	UpdateTarget(ctx context.Context, id string, targetPercent float64) error
+	ResumeHolding(ctx context.Context, id string) error
 	Delete(ctx context.Context, id string) error
 	CreatePowerReading(ctx context.Context, reading *models.PowerReading) error
 	CreateSOCSnapshot(ctx context.Context, snapshot *models.SOCSnapshot) error
@@ -76,6 +77,7 @@ type SessionWriter interface {
 	UpdateEndWithStats(ctx context.Context, id string, endedAt time.Time, endKwh, endPercent float64, batteryKwh, wallKwh, co2Grams float64, avgCarbonIntensity *float64, costPence, offPeakKwh float64) error
 	UpdateLastBlendedKwh(ctx context.Context, id string, lastBlendedKwh float64) error
 	UpdateTarget(ctx context.Context, id string, targetPercent float64) error
+	ResumeHolding(ctx context.Context, id string) error
 	Delete(ctx context.Context, id string) error
 }
 

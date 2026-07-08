@@ -10,6 +10,7 @@ const (
 	SessionStatusPending      = "pending"
 	SessionStatusActive       = "active"
 	SessionStatusConditioning = "conditioning"
+	SessionStatusHolding      = "holding"
 	SessionStatusCompleted    = "completed"
 	SessionStatusCancelled    = "cancelled"
 )
@@ -21,6 +22,7 @@ var ActiveSessionStatuses = []string{
 	SessionStatusActive,
 	SessionStatusPending,
 	SessionStatusConditioning,
+	SessionStatusHolding,
 }
 
 type ChargeSession struct {
@@ -46,6 +48,14 @@ type ChargeSession struct {
 	Co2Grams         *float64 `json:"co2Grams,omitempty"`
 	CostPence        *float64 `json:"costPence,omitempty"`
 	OffPeakKwh       *float64 `json:"offPeakKwh,omitempty"`
+	// HoldPercent is the intermediate stage-1 target for two-stage (ready-by)
+	// charging. Set at session creation, cleared back to nil on resume - this
+	// distinguishes "still charging toward the hold point" from "resumed,
+	// charging toward the real target" without an extra column.
+	HoldPercent *float64 `json:"holdPercent,omitempty"`
+	// ReadyByTime is the HH:MM deadline carried from the originating schedule,
+	// used to compute when to resume from the holding phase.
+	ReadyByTime *string `json:"readyByTime,omitempty"`
 }
 
 // ChargeSessionView extends ChargeSession with computed fields for API responses.

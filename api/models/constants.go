@@ -63,6 +63,14 @@ const (
 	ConditioningStopThresholdFraction = 0.10
 )
 
+// Two-stage (ready-by) charging thresholds.
+const (
+	// TwoStageHoldFraction is the fraction of a vehicle's target percent charged
+	// during stage 1 before the plug is powered off and the session holds, ready
+	// to resume in time to reach 100% of the target by the schedule's ready-by time.
+	TwoStageHoldFraction = 0.8
+)
+
 // LWT debounce and cooldown durations.
 const (
 	// LWTOfflineDebounce is how long to wait after an LWT Offline before marking
