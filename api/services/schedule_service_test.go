@@ -2339,3 +2339,33 @@ func TestResolveWindow_TimeMatrix(t *testing.T) {
 		}
 	}
 }
+
+// TestResolveDeadline_TimeMatrix exhaustively sweeps hhmm and now at
+// 30-minute increments across a full 24h day (48x48 = 2,304 cases),
+// asserting the "next occurrence" invariant holds everywhere: the returned
+// deadline is never before now, is always within 24h of now, and lands on
+// the requested clock time. This covers every possible now-vs-hhmm
+// relationship including the crossover case already spot-checked in
+// TestResolveDeadline_MidnightBoundary.
+func TestResolveDeadline_TimeMatrix(t *testing.T) {
+	baseDate := time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC)
+	const dayMinutes = 24 * 60
+
+	for hhmmMin := 0; hhmmMin < dayMinutes; hhmmMin += 30 {
+		hhmmStr := fmt.Sprintf("%02d:%02d", hhmmMin/60, hhmmMin%60)
+
+		for nowMin := 0; nowMin < dayMinutes; nowMin += 30 {
+			now := baseDate.Add(time.Duration(nowMin) * time.Minute)
+			name := fmt.Sprintf("hhmm=%s/now=%02d:%02d", hhmmStr, nowMin/60, nowMin%60)
+
+			t.Run(name, func(t *testing.T) {
+				deadline, err := resolveDeadline(now, hhmmStr)
+				require.NoError(t, err)
+
+				assert.False(t, deadline.Before(now), "deadline must never be before now")
+				assert.LessOrEqual(t, deadline.Sub(now), 24*time.Hour, "deadline must be within 24h of now")
+				assert.Equal(t, hhmmStr, formatTime(deadline), "deadline must land on the requested clock time")
+			})
+		}
+	}
+}
