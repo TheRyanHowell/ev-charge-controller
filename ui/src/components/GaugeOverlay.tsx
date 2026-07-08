@@ -27,10 +27,19 @@ function scheduleIcon(type: Schedule["type"] | undefined): string {
 
 function scheduleLabel(schedule: Schedule | null | undefined): string {
   if (!schedule) return "";
-  if (schedule.type === "carbon_aware" && schedule.windowEnd) {
-    return schedule.windowEnd;
+  if (schedule.type === "carbon_aware") {
+    return schedule.estimatedStartTime ?? schedule.windowEnd ?? "";
   }
   return schedule.time;
+}
+
+// scheduleLabelWord describes what scheduleTime represents: once a forecast-based
+// start estimate exists we're showing when charging begins, not the ready-by deadline.
+function scheduleLabelWord(schedule: Schedule | null | undefined): string {
+  if (schedule?.type === "carbon_aware" && !schedule.estimatedStartTime) {
+    return "ready by";
+  }
+  return "starts at";
 }
 
 export function GaugeOverlay({
@@ -190,7 +199,7 @@ export function GaugeOverlay({
           `}
           aria-label={
             scheduleActive
-              ? `Schedule active - ${schedule?.type === "carbon_aware" ? "ready by" : "starts at"} ${scheduleTime}`
+              ? `Schedule active - ${scheduleLabelWord(schedule)} ${scheduleTime}`
               : schedule
                 ? `Schedule configured but disabled - ${scheduleTime}`
                 : "Configure charge schedule"

@@ -131,6 +131,7 @@ export const ScheduleSchema = z.object({
   time: z.string().regex(timePattern),
   windowStart: z.string().regex(timePattern).optional().nullable(),
   windowEnd: z.string().regex(timePattern).optional().nullable(),
+  estimatedStartTime: z.string().regex(timePattern).optional().nullable(),
   enabled: z.boolean(),
 });
 

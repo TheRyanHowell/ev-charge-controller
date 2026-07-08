@@ -199,4 +199,54 @@ describe("GaugeOverlay", () => {
     );
     expect(screen.getByTestId("maintenance-circle")).toBeDisabled();
   });
+
+  it("shows the forecast-based estimated start time for a carbon-aware schedule", () => {
+    render(
+      <GaugeOverlay
+        status="idle"
+        currentPercent={50}
+        targetPercent={80}
+        onStartStop={() => {}}
+        schedule={{
+          id: "s1",
+          type: "carbon_aware",
+          time: "22:00",
+          windowStart: "22:00",
+          windowEnd: "06:00",
+          estimatedStartTime: "23:30",
+          enabled: true,
+        }}
+      />,
+    );
+    expect(screen.getByText("23:30")).toBeInTheDocument();
+    expect(screen.queryByText("06:00")).not.toBeInTheDocument();
+    expect(screen.getByTestId("schedule-circle")).toHaveAttribute(
+      "aria-label",
+      "Schedule active - starts at 23:30",
+    );
+  });
+
+  it("falls back to the ready-by time when no estimate is available yet", () => {
+    render(
+      <GaugeOverlay
+        status="idle"
+        currentPercent={50}
+        targetPercent={80}
+        onStartStop={() => {}}
+        schedule={{
+          id: "s1",
+          type: "carbon_aware",
+          time: "22:00",
+          windowStart: "22:00",
+          windowEnd: "06:00",
+          enabled: true,
+        }}
+      />,
+    );
+    expect(screen.getByText("06:00")).toBeInTheDocument();
+    expect(screen.getByTestId("schedule-circle")).toHaveAttribute(
+      "aria-label",
+      "Schedule active - ready by 06:00",
+    );
+  });
 });
