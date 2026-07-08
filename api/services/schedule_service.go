@@ -278,7 +278,8 @@ func (s *ScheduleService) tryActivateDaily(ctx context.Context, sch models.Sched
 
 	var sess *models.ChargeSession
 	var err error
-	if holdPercent := cand.vehicle.TargetPercent * models.TwoStageHoldFraction; sch.ReadyBy != nil && holdPercent > cand.vehicle.CurrentPercent {
+	holdPercent := cand.vehicle.TargetPercent * models.TwoStageHoldFraction
+	if sch.ReadyBy != nil && s.worthwhileTwoStage(cand.vehicle, holdPercent) {
 		sess, err = s.chargeService.StartTwoStageSession(ctx, plugID, cand.vehicle.ID, cand.vehicle.CurrentPercent, cand.vehicle.TargetPercent, holdPercent, *sch.ReadyBy, false)
 	} else {
 		sess, err = s.chargeService.StartSession(ctx, plugID, cand.vehicle.ID, cand.vehicle.CurrentPercent, cand.vehicle.TargetPercent)
@@ -323,14 +324,40 @@ func (s *ScheduleService) tryActivateCarbonAware(ctx context.Context, sch models
 
 	if sch.TwoStage {
 		holdPercent := cand.vehicle.TargetPercent * models.TwoStageHoldFraction
-		if holdPercent > cand.vehicle.CurrentPercent {
+		if s.worthwhileTwoStage(cand.vehicle, holdPercent) {
 			s.tryActivateCarbonAwareTwoStage(ctx, plugID, cand.vehicle, now, lastAct, windowEnd, holdPercent)
 			return
 		}
-		// Already past the hold point - nothing to hold for, single-stage to target.
+		// Already past the hold point, or the deferred top-up is too small to be
+		// worth a relay power-cycle - single-stage straight to target.
 	}
 
 	s.tryActivateCarbonAwareSingleStage(ctx, plugID, cand.vehicle, now, lastAct, windowEnd)
+}
+
+// worthwhileTwoStage reports whether stage 2 (hold->target) is long enough to
+// justify the overhead of a relay power-cycle and hold/resume transition. Only
+// gates on stage 2's duration - see MinTwoStageStageDurationMin's doc comment
+// for why stage 1 is intentionally not gated. Returns true (proceed with
+// two-stage) on estimator error rather than blocking it here: callers
+// (tryActivateCarbonAwareTwoStage, and StartTwoStageSession's own resume-time
+// estimator in session_monitoring_service.go) already have their own
+// estimator-error failsafes that start charging immediately, which is the
+// existing, more deliberate posture for "we can't estimate" - this guard
+// should only veto two-stage when it confidently knows the split is too small.
+func (s *ScheduleService) worthwhileTwoStage(vehicle *models.Vehicle, holdPercent float64) bool {
+	if holdPercent <= vehicle.CurrentPercent {
+		return false
+	}
+	est := s.estimator
+	if est == nil {
+		est = chargeestimate.EstimateMinutes
+	}
+	d2, err := est(vehicle, holdPercent, vehicle.TargetPercent)
+	if err != nil {
+		return true
+	}
+	return d2 >= models.MinTwoStageStageDurationMin
 }
 
 // tryActivateCarbonAwareSingleStage runs the pure-carbon decision for a

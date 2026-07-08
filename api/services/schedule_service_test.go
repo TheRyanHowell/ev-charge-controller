@@ -1411,9 +1411,11 @@ func TestScheduleService_CarbonAwareTwoStage_SkipsWhenStage2TooShort(t *testing.
 
 	svc.SetCarbonAwareDeps(nil, chargeestimate.EstimateMinutes, nil)
 
-	nowInsideWindow := time.Date(2024, 1, 1, 23, 0, 0, 0, time.UTC)
+	// Just before windowEnd (06:00) so the single-stage deadline guard forces
+	// an immediate start rather than deferring for lack of a forecaster.
+	nowNearWindowEnd := time.Date(2024, 1, 2, 5, 59, 0, 0, time.UTC)
 	old := scheduleNowFunc
-	scheduleNowFunc = func() time.Time { return nowInsideWindow }
+	scheduleNowFunc = func() time.Time { return nowNearWindowEnd }
 	t.Cleanup(func() { scheduleNowFunc = old })
 
 	svc.CheckAndActivateAll(t.Context())
