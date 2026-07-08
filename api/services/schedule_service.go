@@ -20,12 +20,12 @@ import (
 )
 
 var (
-	ErrInvalidScheduleTime    = errors.New("invalid schedule time format, expected HH:MM")
-	ErrInvalidScheduleType    = errors.New("invalid schedule type")
-	ErrWindowRequired         = errors.New("windowStart and windowEnd are required for carbon_aware schedule")
-	ErrWindowEqual            = errors.New("windowStart and windowEnd must differ")
+	ErrInvalidScheduleTime     = errors.New("invalid schedule time format, expected HH:MM")
+	ErrInvalidScheduleType     = errors.New("invalid schedule type")
+	ErrWindowRequired          = errors.New("windowStart and windowEnd are required for carbon_aware schedule")
+	ErrWindowEqual             = errors.New("windowStart and windowEnd must differ")
 	ErrMaintenancePlugSchedule = errors.New("schedules are not supported for maintenance plugs")
-	ErrReadyByEqualsTime      = errors.New("readyBy must differ from time")
+	ErrReadyByEqualsTime       = errors.New("readyBy must differ from time")
 )
 
 // scheduleThrottleDuration is the minimum time between schedule activations across all plugs.
@@ -605,6 +605,71 @@ func (s *ScheduleService) EstimateCarbonAwareTwoStagePlan(ctx context.Context, s
 		Stage1End:   formatTime(stage1End.In(loc)),
 		Stage2Start: formatTime(stage2Start.In(loc)),
 		Stage2End:   formatTime(stage2End.In(loc)),
+	}, true
+}
+
+// EstimateDailyTwoStagePlan computes the currently estimated stage 1 and
+// stage 2 timing for an enabled daily two-stage schedule (ReadyBy set),
+// mirroring the decision logic in tryActivateDaily / CheckAndResumeHoldingSession
+// without any side effects. Unlike the carbon-aware equivalent, daily
+// two-stage has no forecast optimization: stage 1 always starts at the
+// schedule's fixed daily time, and stage 2 always resumes exactly at the
+// deadline guard's latest-safe-moment. Returns ok=false when no confident
+// estimate can be made (missing deps, vehicle already past the hold point,
+// stage 2 too short to be worthwhile, etc.).
+func (s *ScheduleService) EstimateDailyTwoStagePlan(ctx context.Context, sch *models.Schedule) (models.TwoStagePlanEstimate, bool) {
+	if sch == nil || sch.Type == models.ScheduleTypeCarbonAware || !sch.Enabled || sch.ReadyBy == nil {
+		return models.TwoStagePlanEstimate{}, false
+	}
+	if sch.PlugID == nil {
+		return models.TwoStagePlanEstimate{}, false
+	}
+
+	now := scheduleNowFunc()
+	stage1Start, err := resolveDeadline(now, sch.Time)
+	if err != nil {
+		return models.TwoStagePlanEstimate{}, false
+	}
+
+	cand := s.loadCandidate(ctx, *sch.PlugID)
+	if cand == nil {
+		return models.TwoStagePlanEstimate{}, false
+	}
+
+	holdPercent := cand.vehicle.TargetPercent * models.TwoStageHoldFraction
+	if !s.worthwhileTwoStage(cand.vehicle, holdPercent) {
+		return models.TwoStagePlanEstimate{}, false
+	}
+
+	est := s.estimator
+	if est == nil {
+		est = chargeestimate.EstimateMinutes
+	}
+	d1, err1 := est(cand.vehicle, cand.vehicle.CurrentPercent, holdPercent)
+	d2, err2 := est(cand.vehicle, holdPercent, cand.vehicle.TargetPercent)
+	if err1 != nil || err2 != nil {
+		return models.TwoStagePlanEstimate{}, false
+	}
+
+	// readyBy is resolved relative to stage1Start (not `now`), so a readyBy
+	// clock time before/equal to the daily start time correctly rolls to the
+	// following day - matching what the real session will do once it
+	// activates at stage1Start and CheckAndResumeHoldingSession later
+	// resolves the same ReadyByTime string relative to its own poll tick.
+	deadline, err := resolveDeadline(stage1Start, *sch.ReadyBy)
+	if err != nil {
+		return models.TwoStagePlanEstimate{}, false
+	}
+
+	stage1End := stage1Start.Add(time.Duration(d1) * time.Minute)
+	stage2Start := deadline.Add(-time.Duration(d2) * time.Minute)
+
+	loc := now.Location()
+	return models.TwoStagePlanEstimate{
+		Stage1Start: formatTime(stage1Start.In(loc)),
+		Stage1End:   formatTime(stage1End.In(loc)),
+		Stage2Start: formatTime(stage2Start.In(loc)),
+		Stage2End:   formatTime(deadline.In(loc)),
 	}, true
 }
 

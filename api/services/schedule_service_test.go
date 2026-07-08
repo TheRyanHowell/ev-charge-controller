@@ -1477,6 +1477,17 @@ func carbonAwareTwoStageSchedule(windowStart, windowEnd string) models.Schedule 
 	}
 }
 
+func dailyTwoStageSchedule(dailyTime, readyBy string) models.Schedule {
+	plugID := testPlugID
+	return models.Schedule{
+		PlugID:  &plugID,
+		Type:    models.ScheduleTypeDaily,
+		Time:    dailyTime,
+		ReadyBy: &readyBy,
+		Enabled: true,
+	}
+}
+
 func TestScheduleService_CarbonAwareTwoStage_SkipsHoldWhenAlreadyPastHoldPercent(t *testing.T) {
 	svc, scheduleRepo, plugRepo, vehicleRepo, chargeAdapter := newMockScheduleService()
 
@@ -2210,6 +2221,163 @@ func TestScheduleService_EstimateCarbonAwareTwoStagePlan_ForecastError(t *testin
 
 	_, ok := svc.EstimateCarbonAwareTwoStagePlan(t.Context(), &sch)
 	assert.False(t, ok)
+}
+
+// --- EstimateDailyTwoStagePlan tests ---
+
+func TestScheduleService_EstimateDailyTwoStagePlan_NilSchedule(t *testing.T) {
+	svc, _, _, _, _ := newMockScheduleService()
+	_, ok := svc.EstimateDailyTwoStagePlan(t.Context(), nil)
+	assert.False(t, ok)
+}
+
+func TestScheduleService_EstimateDailyTwoStagePlan_CarbonAwareType(t *testing.T) {
+	svc, _, _, _, _ := newMockScheduleService()
+	sch := carbonAwareTwoStageSchedule("22:00", "06:00")
+	_, ok := svc.EstimateDailyTwoStagePlan(t.Context(), &sch)
+	assert.False(t, ok, "carbon-aware schedules use EstimateCarbonAwareTwoStagePlan instead")
+}
+
+func TestScheduleService_EstimateDailyTwoStagePlan_Disabled(t *testing.T) {
+	svc, _, _, _, _ := newMockScheduleService()
+	sch := dailyTwoStageSchedule("22:00", "06:00")
+	sch.Enabled = false
+	_, ok := svc.EstimateDailyTwoStagePlan(t.Context(), &sch)
+	assert.False(t, ok)
+}
+
+func TestScheduleService_EstimateDailyTwoStagePlan_ReadyByNil(t *testing.T) {
+	svc, _, _, _, _ := newMockScheduleService()
+	sch := models.Schedule{PlugID: stringPtr(testPlugID), Type: models.ScheduleTypeDaily, Time: "22:00", Enabled: true}
+	_, ok := svc.EstimateDailyTwoStagePlan(t.Context(), &sch)
+	assert.False(t, ok, "single-stage daily schedules have no two-stage plan")
+}
+
+func TestScheduleService_EstimateDailyTwoStagePlan_MissingPlugID(t *testing.T) {
+	svc, _, _, _, _ := newMockScheduleService()
+	readyBy := "06:00"
+	sch := models.Schedule{Type: models.ScheduleTypeDaily, Time: "22:00", ReadyBy: &readyBy, Enabled: true}
+	_, ok := svc.EstimateDailyTwoStagePlan(t.Context(), &sch)
+	assert.False(t, ok)
+}
+
+func TestScheduleService_EstimateDailyTwoStagePlan_VehicleAlreadyAtTarget(t *testing.T) {
+	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 80, TargetPercent: 80}
+	sch := dailyTwoStageSchedule("22:00", "06:00")
+
+	_, ok := svc.EstimateDailyTwoStagePlan(t.Context(), &sch)
+	assert.False(t, ok)
+}
+
+func TestScheduleService_EstimateDailyTwoStagePlan_AlreadyPastHoldPercent(t *testing.T) {
+	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 70, TargetPercent: 80} // hold=64 < 70
+	svc.SetCarbonAwareDeps(nil, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 60, nil
+	}, nil)
+	sch := dailyTwoStageSchedule("22:00", "06:00")
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return mockNow }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	_, ok := svc.EstimateDailyTwoStagePlan(t.Context(), &sch)
+	assert.False(t, ok, "no plan when there's nothing to hold for")
+}
+
+func TestScheduleService_EstimateDailyTwoStagePlan_SkipsWhenStage2TooShort(t *testing.T) {
+	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{
+		ID: "v1", CurrentPercent: 1, TargetPercent: 2,
+		CapacityKwh: 2.026, ChargerOutputW: 600, ChargingEfficiency: 0.8,
+	}
+	svc.SetCarbonAwareDeps(nil, chargeestimate.EstimateMinutes, nil)
+	sch := dailyTwoStageSchedule("22:00", "06:00")
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return mockNow }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	_, ok := svc.EstimateDailyTwoStagePlan(t.Context(), &sch)
+	assert.False(t, ok, "stage 2 duration is too short to be worthwhile")
+}
+
+func TestScheduleService_EstimateDailyTwoStagePlan_EstimatorError(t *testing.T) {
+	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 20, TargetPercent: 80}
+	svc.SetCarbonAwareDeps(nil, func(_ *models.Vehicle, current, _ float64) (int, error) {
+		// worthwhileTwoStage's own d2 estimate returns true on error (proceed),
+		// so d1/d2 here must fail specifically at this later estimator call to
+		// exercise this branch - simulate by erroring only for the d1 call
+		// (current == vehicle's CurrentPercent, i.e. the stage-1 estimate).
+		if current == 20 {
+			return 0, errors.New("no estimate")
+		}
+		return 60, nil
+	}, nil)
+	sch := dailyTwoStageSchedule("22:00", "06:00")
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return mockNow }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	_, ok := svc.EstimateDailyTwoStagePlan(t.Context(), &sch)
+	assert.False(t, ok)
+}
+
+// TestScheduleService_EstimateDailyTwoStagePlan_HappyPath is a concrete worked
+// example with no midnight rollover: Time=01:00 (next occurrence rolls to
+// tomorrow since mockNow=10:00 is later in the day), ReadyBy=07:00 the same
+// day as stage 1.
+func TestScheduleService_EstimateDailyTwoStagePlan_HappyPath(t *testing.T) {
+	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 20, TargetPercent: 80} // hold=64
+	svc.SetCarbonAwareDeps(nil, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 60, nil
+	}, nil)
+	sch := dailyTwoStageSchedule("01:00", "07:00")
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return mockNow } // 2024-01-01 10:00
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	plan, ok := svc.EstimateDailyTwoStagePlan(t.Context(), &sch)
+	require.True(t, ok)
+	assert.Equal(t, "01:00", plan.Stage1Start, "next occurrence of the daily time, rolled to tomorrow since now=10:00 is later today")
+	assert.Equal(t, "02:00", plan.Stage1End)
+	assert.Equal(t, "06:00", plan.Stage2Start, "deadline(07:00) - d2(60min)")
+	assert.Equal(t, "07:00", plan.Stage2End)
+}
+
+// TestScheduleService_EstimateDailyTwoStagePlan_ReadyByCrossesMidnight pins the
+// daily-specific case where ReadyBy's clock time is earlier than the daily
+// start time, so it must resolve to the following day relative to stage 1 -
+// not relative to `now`.
+func TestScheduleService_EstimateDailyTwoStagePlan_ReadyByCrossesMidnight(t *testing.T) {
+	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 20, TargetPercent: 80} // hold=64
+	svc.SetCarbonAwareDeps(nil, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 60, nil
+	}, nil)
+	sch := dailyTwoStageSchedule("23:30", "02:00")
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return mockNow } // 2024-01-01 10:00
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	plan, ok := svc.EstimateDailyTwoStagePlan(t.Context(), &sch)
+	require.True(t, ok)
+	assert.Equal(t, "23:30", plan.Stage1Start)
+	assert.Equal(t, "00:30", plan.Stage1End, "stage 1 crosses midnight")
+	assert.Equal(t, "01:00", plan.Stage2Start, "readyBy(02:00) resolved relative to stage1Start rolls to the next day, not to today's already-passed 02:00")
+	assert.Equal(t, "02:00", plan.Stage2End)
 }
 
 func TestScheduleService_formatTime_MatchesUpsertFormat(t *testing.T) {
