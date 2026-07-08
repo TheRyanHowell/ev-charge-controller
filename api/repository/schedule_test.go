@@ -87,6 +87,49 @@ func TestScheduleRepository_Get_ReadyByNull(t *testing.T) {
 	assert.Nil(t, schedule.ReadyBy)
 }
 
+func TestScheduleRepository_Get_TwoStage(t *testing.T) {
+	db := setupScheduleTestDB(t)
+
+	repo := NewScheduleRepository(db)
+
+	plugID := "plug"
+	require.NoError(t, testdb.InsertPlug(db, plugID, "test-user", "Test Plug", "ns-test", "test"))
+	require.NoError(t, testdb.InsertSchedule(db, &testdb.ScheduleOpts{
+		ID:       "plug",
+		PlugID:   plugID,
+		UserID:   "test-user",
+		Time:     "03:00",
+		TwoStage: true,
+		Enabled:  true,
+	}))
+
+	schedule, err := repo.Get(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, schedule)
+	assert.True(t, schedule.TwoStage)
+}
+
+func TestScheduleRepository_Get_TwoStageDefaultsFalse(t *testing.T) {
+	db := setupScheduleTestDB(t)
+
+	repo := NewScheduleRepository(db)
+
+	plugID := "plug"
+	require.NoError(t, testdb.InsertPlug(db, plugID, "test-user", "Test Plug", "ns-test", "test"))
+	require.NoError(t, testdb.InsertSchedule(db, &testdb.ScheduleOpts{
+		ID:      "plug",
+		PlugID:  plugID,
+		UserID:  "test-user",
+		Time:    "03:00",
+		Enabled: true,
+	}))
+
+	schedule, err := repo.Get(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, schedule)
+	assert.False(t, schedule.TwoStage)
+}
+
 func TestScheduleRepository_Get_Empty(t *testing.T) {
 	db := setupScheduleTestDB(t)
 
@@ -160,6 +203,42 @@ func TestScheduleRepository_Upsert_ReadyBy(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, found)
 	assert.Nil(t, found.ReadyBy)
+}
+
+func TestScheduleRepository_Upsert_TwoStage(t *testing.T) {
+	db := setupScheduleTestDB(t)
+
+	repo := NewScheduleRepository(db)
+
+	plugID := "plug"
+	userID := "test-user"
+	require.NoError(t, testdb.InsertPlug(db, plugID, userID, "Test Plug", "ns-test", "test"))
+	schedule := &models.Schedule{
+		ID:       "plug",
+		PlugID:   &plugID,
+		UserID:   &userID,
+		Time:     "02:30",
+		TwoStage: true,
+		Enabled:  true,
+	}
+
+	err := repo.Upsert(t.Context(), schedule)
+	require.NoError(t, err)
+
+	found, err := repo.Get(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, found)
+	assert.True(t, found.TwoStage)
+
+	// Upsert again with twoStage off - must clear the flag, not leave it stale.
+	schedule.TwoStage = false
+	err = repo.Upsert(t.Context(), schedule)
+	require.NoError(t, err)
+
+	found, err = repo.Get(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, found)
+	assert.False(t, found.TwoStage)
 }
 
 func TestScheduleRepository_Upsert_Update(t *testing.T) {
@@ -298,6 +377,43 @@ func TestScheduleRepository_UpsertByPlugID_ReadyBy(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, found)
 	assert.Nil(t, found.ReadyBy)
+}
+
+func TestScheduleRepository_UpsertByPlugID_TwoStage(t *testing.T) {
+	db := setupScheduleTestDB(t)
+
+	repo := NewScheduleRepository(db)
+
+	plugID := "plug-upsert-twostage"
+	userID := "test-user"
+	require.NoError(t, testdb.InsertPlug(db, plugID, userID, "Test", "ns", "t"))
+
+	sched := &models.Schedule{
+		ID:       "s1",
+		PlugID:   &plugID,
+		UserID:   &userID,
+		Time:     "06:00",
+		TwoStage: true,
+		Enabled:  true,
+	}
+
+	err := repo.UpsertByPlugID(t.Context(), sched)
+	require.NoError(t, err)
+
+	found, err := repo.GetByPlugID(t.Context(), plugID)
+	require.NoError(t, err)
+	require.NotNil(t, found)
+	assert.True(t, found.TwoStage)
+
+	// Upsert again with twoStage off - must clear the flag.
+	sched.TwoStage = false
+	err = repo.UpsertByPlugID(t.Context(), sched)
+	require.NoError(t, err)
+
+	found, err = repo.GetByPlugID(t.Context(), plugID)
+	require.NoError(t, err)
+	require.NotNil(t, found)
+	assert.False(t, found.TwoStage)
 }
 
 func TestScheduleRepository_ListAll(t *testing.T) {

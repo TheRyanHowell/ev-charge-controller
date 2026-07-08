@@ -66,12 +66,13 @@ type SOCSnapshotOpts struct {
 // ScheduleOpts configures a test schedule insert.
 // PlugID and UserID are required.
 type ScheduleOpts struct {
-	ID      string
-	PlugID  string
-	UserID  string
-	Time    string
-	ReadyBy string
-	Enabled bool
+	ID       string
+	PlugID   string
+	UserID   string
+	Time     string
+	ReadyBy  string
+	TwoStage bool
+	Enabled  bool
 }
 
 // RefreshTokenOpts configures a test refresh token insert.
@@ -189,12 +190,16 @@ func InsertSchedule(db *sql.DB, opts *ScheduleOpts) error {
 	if opts.Enabled {
 		enabled = 1
 	}
+	twoStage := 0
+	if opts.TwoStage {
+		twoStage = 1
+	}
 	var readyBy any
 	if opts.ReadyBy != "" {
 		readyBy = opts.ReadyBy
 	}
-	_, err := db.Exec(`INSERT INTO schedules (id, plug_id, user_id, time, ready_by, enabled) VALUES (?, ?, ?, ?, ?, ?)`,
-		opts.ID, opts.PlugID, opts.UserID, opts.Time, readyBy, enabled)
+	_, err := db.Exec(`INSERT INTO schedules (id, plug_id, user_id, time, ready_by, two_stage, enabled) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		opts.ID, opts.PlugID, opts.UserID, opts.Time, readyBy, twoStage, enabled)
 	return err
 }
 
