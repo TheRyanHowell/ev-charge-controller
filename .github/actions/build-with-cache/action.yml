@@ -1,0 +1,46 @@
+name: Build with resilient GHA cache
+description: >
+  Builds the image required for the job to proceed using cache-from only
+  (a cache miss just means a slower build, never a failure), then makes a
+  best-effort attempt to warm the GHA cache for next time. The warm-cache
+  step reuses the same builder's local cache so it's normally a no-op
+  rebuild, and its failure is swallowed since cache is a performance
+  optimization only, not a correctness requirement.
+inputs:
+  context:
+    required: true
+  target:
+    required: true
+  tags:
+    required: true
+  cache-scope:
+    description: Scope this job owns and writes to (never shared with a concurrent job)
+    required: true
+  base-cache-scope:
+    description: Shared tier-1 scope to read pre-populated base layers from
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Build image
+      uses: docker/build-push-action@v7
+      with:
+        context: ${{ inputs.context }}
+        target: ${{ inputs.target }}
+        load: true
+        tags: ${{ inputs.tags }}
+        cache-from: |
+          type=gha,scope=${{ inputs.cache-scope }}
+          type=gha,scope=${{ inputs.base-cache-scope }}
+
+    - name: Warm cache (best-effort)
+      continue-on-error: true
+      uses: docker/build-push-action@v7
+      with:
+        context: ${{ inputs.context }}
+        target: ${{ inputs.target }}
+        cache-from: |
+          type=gha,scope=${{ inputs.cache-scope }}
+          type=gha,scope=${{ inputs.base-cache-scope }}
+        cache-to: type=gha,scope=${{ inputs.cache-scope }}
+

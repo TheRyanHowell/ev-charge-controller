@@ -13,12 +13,20 @@ env:
 
 # =====================================================================
 # TIER 1 — Build shared base layers (parallelized per Dockerfile)
-# All tier-2 jobs depend on this and read from GHA cache.
+# All tier-2 jobs depend on this and read from its GHA cache scope for
+# the shared base layers, but write to their own scope (e.g. api-test,
+# api-lint, api-e2e-<matrix>) so concurrent tier-2 jobs never write to
+# the same GHA cache scope at once — concurrent writers to one scope
+# corrupt the cache manifest ("error writing layer blob: not_found").
 # =====================================================================
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Pure cache pre-population: nothing downstream consumes this job's
+    # output, so a failure here (including a GHA cache write failure)
+    # must never block tier-2 jobs, which build their own images anyway.
+    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
@@ -83,14 +91,13 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Build test image
-        uses: docker/build-push-action@v7
+        uses: ./.github/actions/build-with-cache
         with:
           context: ${{ matrix.context }}
           target: ${{ matrix.target }}
-          load: true
           tags: ${{ matrix.service }}:ci
-          cache-from: type=gha,scope=${{ matrix.cache }}
-          cache-to: type=gha,scope=${{ matrix.cache }},mode=max
+          cache-scope: ${{ matrix.cache }}-test
+          base-cache-scope: ${{ matrix.cache }}
 
       - name: Run tests
         run: docker run --rm ${{ matrix.service }}:ci ${{ matrix.cmd }}
@@ -115,14 +122,13 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Build test image
-        uses: docker/build-push-action@v7
+        uses: ./.github/actions/build-with-cache
         with:
           context: ${{ matrix.context }}
           target: test
-          load: true
           tags: ${{ matrix.service }}:ci
-          cache-from: type=gha,scope=${{ matrix.cache }}
-          cache-to: type=gha,scope=${{ matrix.cache }},mode=max
+          cache-scope: ${{ matrix.cache }}-race
+          base-cache-scope: ${{ matrix.cache }}
 
       - name: Run race detector
         run: docker run --rm ${{ matrix.service }}:ci go test -race ./...
@@ -147,14 +153,13 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Build test image
-        uses: docker/build-push-action@v7
+        uses: ./.github/actions/build-with-cache
         with:
           context: ${{ matrix.context }}
           target: test
-          load: true
           tags: ${{ matrix.service }}:ci
-          cache-from: type=gha,scope=${{ matrix.cache }}
-          cache-to: type=gha,scope=${{ matrix.cache }},mode=max
+          cache-scope: ${{ matrix.cache }}-deadcode
+          base-cache-scope: ${{ matrix.cache }}
 
       - name: Detect dead code
         run: |
@@ -192,14 +197,13 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Build lint image
-        uses: docker/build-push-action@v7
+        uses: ./.github/actions/build-with-cache
         with:
           context: ${{ matrix.context }}
           target: lint
-          load: true
           tags: ${{ matrix.service }}:ci
-          cache-from: type=gha,scope=${{ matrix.cache }}
-          cache-to: type=gha,scope=${{ matrix.cache }},mode=max
+          cache-scope: ${{ matrix.cache }}-lint
+          base-cache-scope: ${{ matrix.cache }}
 
       - name: Run linters
         run: docker run --rm ${{ matrix.service }}:ci ${{ matrix.cmd }}
@@ -244,6 +248,7 @@ jobs:
           sed -i "s/^MQTT_PASSWORD=.*/MQTT_PASSWORD=$(openssl rand -hex 32)/" .env
           mkdir -p data && chmod 777 data
 
+      # Required: only reads cache (a miss just means a cold, slower build).
       - name: Build e2e stack images (cached)
         uses: docker/bake-action@v7
         with:
@@ -252,14 +257,38 @@ jobs:
           load: true
           targets: api,ui,mock-tasmota,e2e
           set: |
+            api.cache-from=type=gha,scope=api-e2e-${{ matrix.name }}
             api.cache-from=type=gha,scope=api
-            api.cache-to=type=gha,scope=api,mode=max
+            ui.cache-from=type=gha,scope=ui-e2e-${{ matrix.name }}
             ui.cache-from=type=gha,scope=ui
-            ui.cache-to=type=gha,scope=ui,mode=max
+            mock-tasmota.cache-from=type=gha,scope=mock-e2e-${{ matrix.name }}
             mock-tasmota.cache-from=type=gha,scope=mock
-            mock-tasmota.cache-to=type=gha,scope=mock,mode=max
+            e2e.cache-from=type=gha,scope=e2e-e2e-${{ matrix.name }}
             e2e.cache-from=type=gha,scope=e2e
-            e2e.cache-to=type=gha,scope=e2e,mode=max
+
+      # Best-effort: writes to this leg's own scope so next run reads it
+      # back above. Reuses the same builder's local cache from the step
+      # above (near-instant), and its failure must never fail the job.
+      - name: Warm e2e cache (best-effort)
+        continue-on-error: true
+        uses: docker/bake-action@v7
+        with:
+          source: .
+          files: docker-compose.yml,docker-compose.e2e.yml
+          targets: api,ui,mock-tasmota,e2e
+          set: |
+            api.cache-from=type=gha,scope=api-e2e-${{ matrix.name }}
+            api.cache-from=type=gha,scope=api
+            api.cache-to=type=gha,scope=api-e2e-${{ matrix.name }}
+            ui.cache-from=type=gha,scope=ui-e2e-${{ matrix.name }}
+            ui.cache-from=type=gha,scope=ui
+            ui.cache-to=type=gha,scope=ui-e2e-${{ matrix.name }}
+            mock-tasmota.cache-from=type=gha,scope=mock-e2e-${{ matrix.name }}
+            mock-tasmota.cache-from=type=gha,scope=mock
+            mock-tasmota.cache-to=type=gha,scope=mock-e2e-${{ matrix.name }}
+            e2e.cache-from=type=gha,scope=e2e-e2e-${{ matrix.name }}
+            e2e.cache-from=type=gha,scope=e2e
+            e2e.cache-to=type=gha,scope=e2e-e2e-${{ matrix.name }}
 
       - name: Start e2e stack
         run: $COMPOSE up -d --wait --wait-timeout 120 api ui mock-tasmota mock-tasmota-2 mock-tasmota-3
