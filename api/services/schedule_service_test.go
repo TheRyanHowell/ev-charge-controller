@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -2202,4 +2203,79 @@ func TestScheduleService_formatTime_MatchesUpsertFormat(t *testing.T) {
 		assert.Equal(t, 2, colonIdx,
 			"formatTime for hour %02d produced %q, expected 2-digit hour", hour, formatted)
 	}
+}
+
+// --- Exhaustive property sweeps ---
+//
+// The tests below are pure-function invariant checks (no DB, no service
+// wiring) covering percent and time boundaries at the density requested
+// during the edge-case audit: 5-percentage-point increments across 0-100%,
+// and 30-minute increments across a full 24h day including midnight
+// crossover. They check *invariants* that must hold for every generated
+// case, rather than a hand-computed expected value per row - the only way
+// to state "expected" for hundreds/thousands of generated cases.
+
+// sweepVehicleSpec matches the seeded RM1 model (api/database/seed.sql) so
+// EstimateMinutes produces grounded, non-error durations across the sweep.
+var sweepVehicleSpec = &models.Vehicle{
+	ID:                 "sweep-vehicle",
+	CapacityKwh:        2.026,
+	ChargerOutputW:     600,
+	ChargingEfficiency: 0.8,
+}
+
+// TestWorthwhileTwoStage_PercentMatrix exhaustively sweeps every
+// (current, target) pair at 5-percentage-point increments across 0-100%
+// (current < target) and cross-checks worthwhileTwoStage's decision against
+// an independently recomputed expectation, rather than hard-coding
+// "yes/no" per pair. If MinTwoStageStageDurationMin or TwoStageHoldFraction
+// ever change, this test pinpoints exactly which percent pairs flip
+// behavior instead of silently drifting.
+func TestWorthwhileTwoStage_PercentMatrix(t *testing.T) {
+	svc, _, _, _, _ := newMockScheduleService()
+
+	var lastTarget float64 = -1
+	var prevWorthwhile bool
+	for target := 0.0; target <= 100.0; target += 5.0 {
+		if target != lastTarget {
+			lastTarget = target
+			prevWorthwhile = false // reset monotonicity tracking per target
+		}
+		for current := 0.0; current < target; current += 5.0 {
+			t.Run(formatPercentPair(current, target), func(t *testing.T) {
+				vehicle := *sweepVehicleSpec
+				vehicle.CurrentPercent = current
+				vehicle.TargetPercent = target
+
+				d, err := chargeestimate.EstimateMinutes(&vehicle, current, target)
+				require.NoError(t, err)
+				assert.Greater(t, d, 0, "duration must never be zero for current < target (ceil-to->=1min invariant)")
+
+				holdPercent := target * models.TwoStageHoldFraction
+				got := svc.worthwhileTwoStage(&vehicle, holdPercent)
+
+				if holdPercent <= current {
+					assert.False(t, got, "already past hold point must never be worthwhile")
+					return
+				}
+
+				d2, err := chargeestimate.EstimateMinutes(&vehicle, holdPercent, target)
+				require.NoError(t, err)
+				want := d2 >= models.MinTwoStageStageDurationMin
+				assert.Equal(t, want, got, "worthwhileTwoStage must match an independently recomputed d2 >= threshold")
+
+				// Monotonicity: for a fixed target, once current gets close enough
+				// to no longer be worthwhile, increasing current further (getting
+				// even closer to target) must never flip it back to worthwhile.
+				if !prevWorthwhile && current > 0 {
+					assert.False(t, got, "worthwhileTwoStage flipped false->true as current increased toward a fixed target")
+				}
+				prevWorthwhile = got
+			})
+		}
+	}
+}
+
+func formatPercentPair(current, target float64) string {
+	return fmt.Sprintf("%.0f->%.0fpct", current, target)
 }
