@@ -2509,3 +2509,92 @@ func TestScheduleService_Daily_TwoStage_Matrix(t *testing.T) {
 		})
 	}
 }
+
+func TestScheduleService_CarbonAware_SingleStage_Matrix(t *testing.T) {
+	tests := []struct {
+		name        string
+		current     float64
+		target      float64
+		windowStart string
+		windowEnd   string
+		now         time.Time
+		estimateMin int
+	}{
+		// now is placed 1 minute before windowEnd and estimateMin=1, so the
+		// deadline guard fires deterministically regardless of window length,
+		// without needing a forecaster.
+		{"tiny target inside a long overnight window", 0, 1, "22:00", "06:00", time.Date(2024, 1, 2, 5, 59, 0, 0, time.UTC), 1},
+		{"10-minute window forces immediate deadline guard", 79, 80, "22:00", "22:10", time.Date(2024, 1, 1, 22, 9, 0, 0, time.UTC), 1},
+		{"tiny top-up, very short window", 99, 100, "01:00", "01:05", time.Date(2024, 1, 1, 1, 4, 0, 0, time.UTC), 1},
+		// Midnight-crossing case (ties into Part 1's fix): now is inside
+		// yesterday's still-open instance of the overnight window.
+		{"midnight-crossing window still open after midnight", 20, 80, "22:00", "06:00", time.Date(2024, 1, 2, 2, 0, 0, 0, time.UTC), 240},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc, scheduleRepo, plugRepo, vehicleRepo, chargeAdapter := newMockScheduleService()
+			scheduleRepo.listAllResult = []models.Schedule{carbonAwareSchedule(tt.windowStart, tt.windowEnd)}
+			plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+			vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: tt.current, TargetPercent: tt.target}
+			chargeAdapter.createPendingResult = &models.ChargeSession{ID: "sess1"}
+
+			svc.SetCarbonAwareDeps(nil, func(_ *models.Vehicle, _, _ float64) (int, error) {
+				return tt.estimateMin, nil
+			}, nil)
+
+			now := tt.now
+			old := scheduleNowFunc
+			scheduleNowFunc = func() time.Time { return now }
+			t.Cleanup(func() { scheduleNowFunc = old })
+
+			svc.CheckAndActivateAll(t.Context())
+			assert.True(t, chargeAdapter.createPendingCalled, "expected a single-stage session to be created")
+			assert.False(t, chargeAdapter.twoStageCalled)
+		})
+	}
+}
+
+func TestScheduleService_CarbonAware_TwoStage_Matrix(t *testing.T) {
+	tests := []struct {
+		name           string
+		current        float64
+		target         float64
+		windowStart    string
+		windowEnd      string
+		now            time.Time
+		estimateMin    int
+		expectTwoStage bool
+	}{
+		{"stage2 too short", 1, 2, "22:00", "06:00", time.Date(2024, 1, 2, 5, 59, 0, 0, time.UTC), models.MinTwoStageStageDurationMin - 1, false},
+		{"comfortably above threshold", 50, 80, "22:00", "06:00", time.Date(2024, 1, 2, 5, 59, 0, 0, time.UTC), 30, true},
+		{"already past hold", 79, 80, "22:00", "06:00", time.Date(2024, 1, 2, 5, 59, 0, 0, time.UTC), 30, false},
+		// d1=d2=15 (both exactly at the worthwhileness threshold, sum=30min)
+		// inside a 35-minute window - short enough that the deadline guard
+		// forces stage 1 to start immediately once now is close to the end.
+		{"window shorter than d1+d2 forces stage 1 immediately", 20, 80, "22:00", "22:35", time.Date(2024, 1, 1, 22, 34, 0, 0, time.UTC), models.MinTwoStageStageDurationMin, true},
+		{"tiny stage 1 does not block two-stage", 63, 80, "22:00", "06:00", time.Date(2024, 1, 2, 5, 59, 0, 0, time.UTC), 30, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc, scheduleRepo, plugRepo, vehicleRepo, chargeAdapter := newMockScheduleService()
+			scheduleRepo.listAllResult = []models.Schedule{carbonAwareTwoStageSchedule(tt.windowStart, tt.windowEnd)}
+			plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+			vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: tt.current, TargetPercent: tt.target}
+			chargeAdapter.createPendingResult = &models.ChargeSession{ID: "sess1"}
+			chargeAdapter.twoStageResult = &models.ChargeSession{ID: "sess1"}
+
+			svc.SetCarbonAwareDeps(nil, func(_ *models.Vehicle, _, _ float64) (int, error) {
+				return tt.estimateMin, nil
+			}, nil)
+
+			now := tt.now
+			old := scheduleNowFunc
+			scheduleNowFunc = func() time.Time { return now }
+			t.Cleanup(func() { scheduleNowFunc = old })
+
+			svc.CheckAndActivateAll(t.Context())
+			assert.Equal(t, tt.expectTwoStage, chargeAdapter.twoStageCalled)
+			assert.Equal(t, !tt.expectTwoStage, chargeAdapter.createPendingCalled)
+		})
+	}
+}
