@@ -40,6 +40,11 @@ type Config struct {
 
 	// CORS
 	CORSOrigin string
+
+	// CarbonIntensityDisabled turns off the live carbon-intensity forecast client.
+	// Used in CI/E2E, where hitting the real external API would make carbon-aware
+	// schedule estimates and activation timing non-deterministic across runs.
+	CarbonIntensityDisabled bool
 }
 
 // LoadConfig reads configuration from environment variables with defaults.
@@ -57,6 +62,7 @@ func LoadConfig() *Config {
 		MQTTPassword:          os.Getenv("MQTT_PASSWORD"),
 		MQTTExternalIP:        os.Getenv("MQTT_IP"),
 		MQTTExternalPort:   envOrDefault("MQTT_EXTERNAL_PORT", "1883"),
+		CarbonIntensityDisabled: os.Getenv("CARBON_INTENSITY_DISABLED") == "true",
 	}
 }
 

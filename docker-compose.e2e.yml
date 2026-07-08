@@ -7,6 +7,9 @@ services:
       - /etc/localtime:/etc/localtime:ro
     environment:
       - APP_ENV=dev
+      # The live api.carbonintensity.org.uk forecast varies by the hour, which would
+      # make carbon-aware schedule estimates non-deterministic across CI runs.
+      - CARBON_INTENSITY_DISABLED=true
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
       interval: 5s

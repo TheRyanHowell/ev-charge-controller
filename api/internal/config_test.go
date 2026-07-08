@@ -35,6 +35,12 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	assert.Empty(t, cfg.CORSOrigin)
 	assert.False(t, cfg.PushEnabled())
 	assert.False(t, cfg.IsDev())
+	assert.False(t, cfg.CarbonIntensityDisabled)
+}
+
+func TestLoadConfig_CarbonIntensityDisabled(t *testing.T) {
+	t.Setenv("CARBON_INTENSITY_DISABLED", "true")
+	assert.True(t, LoadConfig().CarbonIntensityDisabled)
 }
 
 func TestLoadConfig_FromEnv(t *testing.T) {

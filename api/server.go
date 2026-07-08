@@ -175,7 +175,9 @@ func initServices(ctx context.Context, db *sql.DB, cfg *internal.Config) *server
 	chargeService.SetTariffProvider(tariffService)
 	vehicleService := services.NewVehicleService(vehicleRepo, vehicleModelRepo, chargeRepo, chargeService.Locker())
 	scheduleService := services.NewScheduleService(scheduleRepo, plugRepo, vehicleRepo, chargeService)
-	scheduleService.SetCarbonAwareDeps(carbonIntensityClient, chargeestimate.EstimateMinutes, chargeService.Notifier())
+	if !cfg.CarbonIntensityDisabled {
+		scheduleService.SetCarbonAwareDeps(carbonIntensityClient, chargeestimate.EstimateMinutes, chargeService.Notifier())
+	}
 	chartDataService := services.NewChartDataService(chargeRepo)
 	historyService := services.NewHistoryService(chargeRepo, chargeRepo)
 	authService := services.NewAuthService(userRepo, tokenRepo, cfg.JWTSecret)
