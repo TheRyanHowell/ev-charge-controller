@@ -863,6 +863,64 @@ func TestFindOptimalStart_AllCandidatesOutOfBucketRange(t *testing.T) {
 	assert.True(t, optimal.IsZero(), "no candidate has overlapping data, so no winner should be chosen")
 }
 
+// --- findBalancedStart unit tests ---
+
+func TestFindBalancedStart_FlatCarbon_PicksLatest(t *testing.T) {
+	now := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
+	deadline := time.Date(2024, 1, 1, 12, 30, 0, 0, time.UTC)
+	latestStart := now.Add(2 * time.Hour) // 12:00
+
+	// Carbon is identical everywhere - only dwell time should decide.
+	buckets := makeBuckets(now, []int{200, 200, 200, 200, 200})
+	start := findBalancedStart(buckets, now, latestStart, deadline, 30*time.Minute)
+	assert.Equal(t, latestStart, start, "flat carbon should collapse to pure lateness preference")
+}
+
+func TestFindBalancedStart_BalancesCleanlinessAndLateness(t *testing.T) {
+	now := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
+	deadline := time.Date(2024, 1, 1, 12, 30, 0, 0, time.UTC)
+	latestStart := now.Add(2 * time.Hour) // 12:00
+
+	// 10:00=500(dirty,early) 10:30=300 11:00=100(cleanest,mid) 11:30=300 12:00=500(dirty,latest)
+	// Neither the earliest (cleanest-biased) nor the latest (lateness-biased) slot
+	// wins - the middle slot balances both dimensions best. See plan file for the
+	// worked normalization: combined scores are 2.0, 1.25, 0.5, 0.75, 1.0.
+	buckets := makeBuckets(now, []int{500, 300, 100, 300, 500})
+	start := findBalancedStart(buckets, now, latestStart, deadline, 30*time.Minute)
+	assert.Equal(t, now.Add(60*time.Minute), start, "expected 11:00 - the balanced trade-off, not earliest-clean or latest")
+}
+
+func TestFindBalancedStart_PrefersDecentLateOverVeryCleanEarly(t *testing.T) {
+	now := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
+	deadline := time.Date(2024, 1, 1, 12, 30, 0, 0, time.UTC)
+	latestStart := now.Add(2 * time.Hour) // 12:00
+
+	// 10:00=50(very clean,earliest) 10:30=200 11:00=200 11:30=200 12:00=190(decent,latest)
+	// Combined scores: 1.0, 1.75, 1.5, 1.25, 0.9333 - the decent-but-latest slot
+	// wins over the much-cleaner-but-earliest one, proving carbon isn't dominant.
+	buckets := makeBuckets(now, []int{50, 200, 200, 200, 190})
+	start := findBalancedStart(buckets, now, latestStart, deadline, 30*time.Minute)
+	assert.Equal(t, latestStart, start, "expected 12:00 to win despite worse carbon than 10:00")
+}
+
+func TestFindBalancedStart_SingleCandidate(t *testing.T) {
+	now := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
+	deadline := now.Add(90 * time.Minute)
+	buckets := makeBuckets(now, []int{300})
+
+	// latestStart == now, so only the current bucket is a valid candidate.
+	start := findBalancedStart(buckets, now, now, deadline, 30*time.Minute)
+	assert.Equal(t, alignToHalfHour(now), start, "single candidate should be picked without divide-by-zero")
+}
+
+func TestFindBalancedStart_NoValidCandidates(t *testing.T) {
+	now := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
+	deadline := now.Add(2 * time.Hour)
+
+	start := findBalancedStart(nil, now, now.Add(time.Hour), deadline, 30*time.Minute)
+	assert.True(t, start.IsZero(), "no forecast data anywhere should yield no winner")
+}
+
 // --- Carbon-aware CheckAndActivateAll scenarios ---
 
 func carbonAwareSchedule(windowStart, windowEnd string) models.Schedule {

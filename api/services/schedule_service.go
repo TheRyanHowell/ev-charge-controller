@@ -595,6 +595,75 @@ func findOptimalStart(buckets []carbonintensity.ForecastBucket, now, latestStart
 	return bestStart
 }
 
+// balancedCandidate holds a single search candidate's raw scores before normalization.
+type balancedCandidate struct {
+	start  time.Time
+	carbon float64
+	dwell  float64
+}
+
+// findBalancedStart picks the 30-minute start time in [now, latestStart] that
+// balances carbon cleanliness against minimizing high-SoC dwell time before
+// deadline - used for carbon-aware two-stage charging, where finishing a stage
+// early leaves the battery sitting at an elevated charge level for longer than
+// necessary. Each candidate's carbon score (time-weighted avg gCO2/kWh, via
+// scoreWindow) and dwell score (deadline minus finish time - smaller is
+// better, i.e. later is better) are independently min-max normalized to
+// [0,1] across the candidate set, then summed with equal weight. Ties resolve
+// to the latest candidate, same as findOptimalStart. Candidates with no
+// overlapping forecast data are excluded, same as findOptimalStart. Returns
+// the zero Time if no valid candidate is found.
+func findBalancedStart(buckets []carbonintensity.ForecastBucket, now, latestStart, deadline time.Time, d time.Duration) time.Time {
+	nowUTC := now.UTC()
+	latestUTC := latestStart.UTC()
+	deadlineUTC := deadline.UTC()
+
+	var candidates []balancedCandidate
+	for c := alignToHalfHour(nowUTC); !c.After(latestUTC); c = c.Add(forecastBucketSize) {
+		carbon := scoreWindow(buckets, c, c.Add(d))
+		if carbon == math.MaxFloat64 {
+			continue
+		}
+		dwell := deadlineUTC.Sub(c.Add(d)).Minutes()
+		candidates = append(candidates, balancedCandidate{start: c, carbon: carbon, dwell: dwell})
+	}
+	if len(candidates) == 0 {
+		return time.Time{}
+	}
+
+	minCarbon, maxCarbon := candidates[0].carbon, candidates[0].carbon
+	minDwell, maxDwell := candidates[0].dwell, candidates[0].dwell
+	for _, c := range candidates[1:] {
+		minCarbon = math.Min(minCarbon, c.carbon)
+		maxCarbon = math.Max(maxCarbon, c.carbon)
+		minDwell = math.Min(minDwell, c.dwell)
+		maxDwell = math.Max(maxDwell, c.dwell)
+	}
+
+	var bestStart time.Time
+	bestScore := math.MaxFloat64
+	for _, c := range candidates {
+		score := normalizeScore(c.carbon, minCarbon, maxCarbon) + normalizeScore(c.dwell, minDwell, maxDwell)
+		if score <= bestScore {
+			bestScore = score
+			bestStart = c.start
+		}
+	}
+
+	return bestStart
+}
+
+// normalizeScore min-max normalizes v into [0,1] given the range [min, max].
+// Returns 0 when the range is degenerate (min == max) so a dimension with no
+// variance across candidates drops out of a combined ranking instead of
+// dividing by zero.
+func normalizeScore(v, min, max float64) float64 {
+	if max == min {
+		return 0
+	}
+	return (v - min) / (max - min)
+}
+
 // scoreWindow computes the time-weighted average gCO2/kWh over [start, end] using
 // the provided forecast buckets. Returns math.MaxFloat64 when no buckets overlap.
 func scoreWindow(buckets []carbonintensity.ForecastBucket, start, end time.Time) float64 {
