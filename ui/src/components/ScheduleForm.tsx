@@ -173,6 +173,18 @@ export default function ScheduleForm({
           </button>
         </div>
 
+        {schedule?.targetUnreachable && (
+          <div
+            className="text-xs text-amber-300 bg-amber-950/40 border border-amber-800/50 rounded-md px-3 py-2"
+            role="alert"
+            data-testid="target-unreachable-warning"
+          >
+            This schedule doesn&apos;t leave enough time to reach your target by
+            the ready-by time. Widen the window, choose an earlier ready-by, or
+            lower the target.
+          </div>
+        )}
+
         {type === "daily" ? (
           <div className="space-y-3">
             <p className="text-xs text-gray-400">

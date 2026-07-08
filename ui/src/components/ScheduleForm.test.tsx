@@ -371,4 +371,35 @@ describe("ScheduleForm", () => {
     render(<ScheduleForm schedule={dailySchedule} onSave={vi.fn()} />);
     expect(screen.queryByTestId("estimated-plan")).not.toBeInTheDocument();
   });
+
+  it("does not show the target-unreachable warning when targetUnreachable is false", () => {
+    render(<ScheduleForm schedule={baseSchedule} onSave={vi.fn()} />);
+    expect(
+      screen.queryByTestId("target-unreachable-warning"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the target-unreachable warning when targetUnreachable is true", () => {
+    const schedule: Schedule = { ...baseSchedule, targetUnreachable: true };
+    render(<ScheduleForm schedule={schedule} onSave={vi.fn()} />);
+    expect(screen.getByTestId("target-unreachable-warning")).toHaveTextContent(
+      /doesn't leave enough time to reach your target/i,
+    );
+  });
+
+  it("shows the target-unreachable warning on the carbon-aware tab too", () => {
+    const schedule: Schedule = {
+      id: "s2",
+      type: "carbon_aware",
+      time: "06:00",
+      windowStart: "01:00",
+      windowEnd: "07:00",
+      targetUnreachable: true,
+      enabled: true,
+    };
+    render(<ScheduleForm schedule={schedule} onSave={vi.fn()} />);
+    expect(
+      screen.getByTestId("target-unreachable-warning"),
+    ).toBeInTheDocument();
+  });
 });

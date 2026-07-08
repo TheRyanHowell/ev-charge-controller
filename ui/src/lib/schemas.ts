@@ -145,6 +145,7 @@ export const ScheduleSchema = z.object({
   readyBy: z.string().regex(timePattern).optional().nullable(),
   twoStage: z.boolean().optional(),
   estimatedPlan: TwoStagePlanEstimateSchema.optional().nullable(),
+  targetUnreachable: z.boolean().optional(),
   enabled: z.boolean(),
 });
 
