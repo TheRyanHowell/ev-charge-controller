@@ -304,8 +304,8 @@ func TestScheduleService_CheckAndActivateAll_HappyPath(t *testing.T) {
 // two-stage - confirming the guard uses >= not >.
 func TestScheduleService_Daily_TwoStage_MinDurationBoundary(t *testing.T) {
 	tests := []struct {
-		name          string
-		d2            int
+		name           string
+		d2             int
 		expectTwoStage bool
 	}{
 		{"below threshold", models.MinTwoStageStageDurationMin - 1, false},
@@ -566,11 +566,17 @@ type mockScheduleRepo struct {
 	getByPlugResult *models.Schedule
 }
 
-func (m *mockScheduleRepo) Get(context.Context) (*models.Schedule, error)                       { return nil, nil }
-func (m *mockScheduleRepo) Upsert(context.Context, *models.Schedule) error                      { return nil }
-func (m *mockScheduleRepo) GetByPlugID(context.Context, string) (*models.Schedule, error)       { return m.getByPlugResult, m.getByPlugErr }
-func (m *mockScheduleRepo) UpsertByPlugID(context.Context, *models.Schedule) error              { return m.upsertErr }
-func (m *mockScheduleRepo) ListAll(context.Context) ([]models.Schedule, error)                  { return m.listAllResult, m.listAllErr }
+func (m *mockScheduleRepo) Get(context.Context) (*models.Schedule, error)  { return nil, nil }
+func (m *mockScheduleRepo) Upsert(context.Context, *models.Schedule) error { return nil }
+func (m *mockScheduleRepo) GetByPlugID(context.Context, string) (*models.Schedule, error) {
+	return m.getByPlugResult, m.getByPlugErr
+}
+func (m *mockScheduleRepo) UpsertByPlugID(context.Context, *models.Schedule) error {
+	return m.upsertErr
+}
+func (m *mockScheduleRepo) ListAll(context.Context) ([]models.Schedule, error) {
+	return m.listAllResult, m.listAllErr
+}
 
 // mockPlugRepo implements internal.PlugRepo for error injection.
 type mockPlugRepo struct {
@@ -578,17 +584,23 @@ type mockPlugRepo struct {
 	findByIDResult *models.Plug
 }
 
-func (m *mockPlugRepo) Create(context.Context, *models.Plug) error                                   { return nil }
-func (m *mockPlugRepo) FindByID(context.Context, string) (*models.Plug, error)                        { return m.findByIDResult, m.findByIDErr }
-func (m *mockPlugRepo) FindByNamespaceAndSlug(context.Context, string, string) (*models.Plug, error) { return nil, nil }
-func (m *mockPlugRepo) ListNamespacesByUserID(context.Context, string) ([]string, error)              { return nil, nil }
-func (m *mockPlugRepo) List(context.Context, string) ([]models.Plug, error)                           { return nil, nil }
-func (m *mockPlugRepo) Update(context.Context, *models.Plug) error                                    { return nil }
-func (m *mockPlugRepo) Delete(context.Context, string, string) error                                  { return nil }
-func (m *mockPlugRepo) SetOnline(context.Context, string, bool) error                                 { return nil }
-func (m *mockPlugRepo) UpdateLastOfflineNotifiedAt(context.Context, string) error                     { return nil }
-func (m *mockPlugRepo) SetInitialized(context.Context, string) error  { return nil }
-func (m *mockPlugRepo) SetPowerState(context.Context, string, bool) error { return nil }
+func (m *mockPlugRepo) Create(context.Context, *models.Plug) error { return nil }
+func (m *mockPlugRepo) FindByID(context.Context, string) (*models.Plug, error) {
+	return m.findByIDResult, m.findByIDErr
+}
+func (m *mockPlugRepo) FindByNamespaceAndSlug(context.Context, string, string) (*models.Plug, error) {
+	return nil, nil
+}
+func (m *mockPlugRepo) ListNamespacesByUserID(context.Context, string) ([]string, error) {
+	return nil, nil
+}
+func (m *mockPlugRepo) List(context.Context, string) ([]models.Plug, error)       { return nil, nil }
+func (m *mockPlugRepo) Update(context.Context, *models.Plug) error                { return nil }
+func (m *mockPlugRepo) Delete(context.Context, string, string) error              { return nil }
+func (m *mockPlugRepo) SetOnline(context.Context, string, bool) error             { return nil }
+func (m *mockPlugRepo) UpdateLastOfflineNotifiedAt(context.Context, string) error { return nil }
+func (m *mockPlugRepo) SetInitialized(context.Context, string) error              { return nil }
+func (m *mockPlugRepo) SetPowerState(context.Context, string, bool) error         { return nil }
 
 // mockVehicleRepo implements internal.VehicleRepo for error injection.
 type mockVehicleRepo struct {
@@ -596,16 +608,26 @@ type mockVehicleRepo struct {
 	findByIDResult *models.Vehicle
 }
 
-func (m *mockVehicleRepo) FindByID(context.Context, string) (*models.Vehicle, error)                                   { return m.findByIDResult, m.findByIDErr }
-func (m *mockVehicleRepo) FindByIDs(context.Context, []string) (map[string]*models.Vehicle, error)                    { return nil, nil }
-func (m *mockVehicleRepo) List(context.Context) ([]models.Vehicle, error)                                              { return nil, nil }
-func (m *mockVehicleRepo) UpdatePercents(context.Context, string, float64, float64) error                              { return nil }
-func (m *mockVehicleRepo) UpdateName(context.Context, string, string, string) error                                    { return nil }
-func (m *mockVehicleRepo) CreateInstance(context.Context, *models.Vehicle) error                                       { return nil }
-func (m *mockVehicleRepo) DeleteInstance(context.Context, string, string) error                                        { return nil }
-func (m *mockVehicleRepo) IncrementLifetimeStats(context.Context, string, float64, float64, float64, float64, time.Time) error { return nil }
-func (m *mockVehicleRepo) DecrementLifetimeStats(context.Context, string, float64, float64, float64, float64) error             { return nil }
-func (m *mockVehicleRepo) UpdateNotificationPrefs(context.Context, string, string, bool, bool, bool, bool) error                { return nil }
+func (m *mockVehicleRepo) FindByID(context.Context, string) (*models.Vehicle, error) {
+	return m.findByIDResult, m.findByIDErr
+}
+func (m *mockVehicleRepo) FindByIDs(context.Context, []string) (map[string]*models.Vehicle, error) {
+	return nil, nil
+}
+func (m *mockVehicleRepo) List(context.Context) ([]models.Vehicle, error)                 { return nil, nil }
+func (m *mockVehicleRepo) UpdatePercents(context.Context, string, float64, float64) error { return nil }
+func (m *mockVehicleRepo) UpdateName(context.Context, string, string, string) error       { return nil }
+func (m *mockVehicleRepo) CreateInstance(context.Context, *models.Vehicle) error          { return nil }
+func (m *mockVehicleRepo) DeleteInstance(context.Context, string, string) error           { return nil }
+func (m *mockVehicleRepo) IncrementLifetimeStats(context.Context, string, float64, float64, float64, float64, time.Time) error {
+	return nil
+}
+func (m *mockVehicleRepo) DecrementLifetimeStats(context.Context, string, float64, float64, float64, float64) error {
+	return nil
+}
+func (m *mockVehicleRepo) UpdateNotificationPrefs(context.Context, string, string, bool, bool, bool, bool) error {
+	return nil
+}
 
 // mockChargeServiceAdapter implements ChargeServiceAdapter for error injection.
 type mockChargeServiceAdapter struct {
@@ -615,12 +637,12 @@ type mockChargeServiceAdapter struct {
 	createPendingResult   *models.ChargeSession
 	createPendingCalled   bool
 
-	twoStageErr             error
-	twoStageResult          *models.ChargeSession
-	twoStageCalled          bool
-	twoStageHoldArg         float64
-	twoStageReadyByArg      string
-	twoStageCarbonAwareArg  bool
+	twoStageErr            error
+	twoStageResult         *models.ChargeSession
+	twoStageCalled         bool
+	twoStageHoldArg        float64
+	twoStageReadyByArg     string
+	twoStageCarbonAwareArg bool
 }
 
 func (m *mockChargeServiceAdapter) GetActiveByPlug(context.Context, string) (*models.ChargeSession, error) {
@@ -955,7 +977,10 @@ func TestResolveWindow_InvalidWindowEnd(t *testing.T) {
 // --- parseHHMM unit tests ---
 
 func TestParseHHMM_Valid(t *testing.T) {
-	tests := []struct{ input string; h, m int }{
+	tests := []struct {
+		input string
+		h, m  int
+	}{
 		{"00:00", 0, 0},
 		{"09:05", 9, 5},
 		{"23:59", 23, 59},
@@ -2367,5 +2392,120 @@ func TestResolveDeadline_TimeMatrix(t *testing.T) {
 				assert.Equal(t, hhmmStr, formatTime(deadline), "deadline must land on the requested clock time")
 			})
 		}
+	}
+}
+
+// --- Curated DB-backed integration matrices ---
+//
+// The exhaustive sweeps above prove the underlying math is sound everywhere.
+// These smaller, hand-picked tables prove the *wiring* - that the right
+// repository/service/session calls actually happen - at a handful of
+// representative points spanning both schedule types and both charging
+// modes. Kept deliberately small since each row pays real SQLite setup cost.
+
+func TestScheduleService_Daily_SingleStage_Matrix(t *testing.T) {
+	tests := []struct {
+		name          string
+		current       float64
+		target        float64
+		startTime     string
+		expectSession bool
+	}{
+		{"tiny target, exact midnight start", 0, 1, "00:00", true},
+		{"full range, last-minute-of-day start", 0, 100, "23:59", true},
+		{"tiny top-up near full", 99, 100, "12:00", true},
+		{"fractional percents", 49.5, 50.5, "06:00", true},
+		{"baseline sanity", 20, 80, "03:00", true},
+		{"already at target - no session", 100, 100, "03:00", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service, db, chargeService := setupScheduleServiceTest(t)
+			defer db.Close()
+
+			_, err := db.Exec(`UPDATE vehicles SET current_percent = ?, target_percent = ? WHERE id = ?`, tt.current, tt.target, "rm1")
+			require.NoError(t, err)
+
+			_, err = service.UpsertByPlugID(t.Context(), testPlugID, testUserID, tt.startTime, nil, true)
+			require.NoError(t, err)
+
+			now := mustParseHHMMOnFixedDate(t, tt.startTime)
+			old := scheduleNowFunc
+			scheduleNowFunc = func() time.Time { return now }
+			t.Cleanup(func() { scheduleNowFunc = old })
+
+			service.CheckAndActivateAll(t.Context())
+
+			active, err := chargeService.sessionReader.GetActive(t.Context())
+			require.NoError(t, err)
+			if !tt.expectSession {
+				assert.Nil(t, active, "expected no session to be created")
+				return
+			}
+			require.NotNil(t, active, "expected a single-stage session to be created")
+			assert.Nil(t, active.HoldPercent, "no readyBy set - must never be two-stage")
+			assert.Equal(t, tt.target, active.TargetPercent)
+		})
+	}
+}
+
+// mustParseHHMMOnFixedDate constructs a fixed UTC time.Time for an "HH:MM"
+// string, for tests that need a deterministic scheduleNowFunc override.
+func mustParseHHMMOnFixedDate(t *testing.T, hhmm string) time.Time {
+	t.Helper()
+	h, m, err := parseHHMM(hhmm)
+	require.NoError(t, err)
+	return time.Date(2024, 1, 1, h, m, 0, 0, time.UTC)
+}
+
+func TestScheduleService_Daily_TwoStage_Matrix(t *testing.T) {
+	tests := []struct {
+		name           string
+		current        float64
+		target         float64
+		startTime      string
+		readyBy        string
+		expectTwoStage bool
+	}{
+		{"stage2 too short", 1, 2, "00:00", "00:01", false},
+		{"typical overnight", 20, 80, "22:00", "06:00", true},
+		{"already past hold", 79, 80, "03:00", "04:00", false},
+		{"user's 50->80 example", 50, 80, "01:00", "07:00", true},
+		{"tiny stage 1, big stage 2", 63, 80, "02:00", "03:00", true},
+		{"readyBy wraps past midnight - no activation-time deadline guard for daily", 20, 80, "23:59", "00:01", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service, db, chargeService := setupScheduleServiceTest(t)
+			defer db.Close()
+
+			_, err := db.Exec(`UPDATE vehicles SET current_percent = ?, target_percent = ? WHERE id = ?`, tt.current, tt.target, "rm1")
+			require.NoError(t, err)
+
+			readyBy := tt.readyBy
+			_, err = service.UpsertByPlugID(t.Context(), testPlugID, testUserID, tt.startTime, &readyBy, true)
+			require.NoError(t, err)
+
+			now := mustParseHHMMOnFixedDate(t, tt.startTime)
+			old := scheduleNowFunc
+			scheduleNowFunc = func() time.Time { return now }
+			t.Cleanup(func() { scheduleNowFunc = old })
+
+			service.CheckAndActivateAll(t.Context())
+
+			active, err := chargeService.sessionReader.GetActive(t.Context())
+			require.NoError(t, err)
+			require.NotNil(t, active, "expected a session to be created")
+			if tt.expectTwoStage {
+				require.NotNil(t, active.HoldPercent)
+				assert.Equal(t, tt.target*models.TwoStageHoldFraction, *active.HoldPercent)
+				require.NotNil(t, active.ReadyByTime)
+				assert.Equal(t, tt.readyBy, *active.ReadyByTime)
+			} else {
+				assert.Nil(t, active.HoldPercent)
+				assert.Nil(t, active.ReadyByTime)
+			}
+			assert.Equal(t, tt.target, active.TargetPercent)
+		})
 	}
 }
