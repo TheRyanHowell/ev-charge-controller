@@ -25,17 +25,17 @@ func generateID() string {
 	return uuid.New().String()
 }
 
-const chargeSessionColumns = "id, vehicle_id, created_at, ended_at, start_kwh, end_kwh, target_kwh, start_percent, end_percent, target_percent, status, start_total_kwh, started_at, last_blended_kwh, plug_id, battery_kwh, wall_kwh, avg_carbon_intensity, co2_grams, user_id, cost_pence, off_peak_kwh, hold_percent, ready_by_time"
+const chargeSessionColumns = "id, vehicle_id, created_at, ended_at, start_kwh, end_kwh, target_kwh, start_percent, end_percent, target_percent, status, start_total_kwh, started_at, last_blended_kwh, plug_id, battery_kwh, wall_kwh, avg_carbon_intensity, co2_grams, user_id, cost_pence, off_peak_kwh, hold_percent, ready_by_time, carbon_aware_hold"
 
 func (r *ChargeSessionRepository) Create(ctx context.Context, session *models.ChargeSession) error {
 	session.ID = generateID()
 
-	query := `INSERT INTO charge_sessions (id, vehicle_id, created_at, start_kwh, target_kwh, start_percent, target_percent, status, start_total_kwh, user_id, plug_id, hold_percent, ready_by_time)
-	          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO charge_sessions (id, vehicle_id, created_at, start_kwh, target_kwh, start_percent, target_percent, status, start_total_kwh, user_id, plug_id, hold_percent, ready_by_time, carbon_aware_hold)
+	          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err := r.db.ExecContext(ctx, query, session.ID, session.VehicleID, session.CreatedAt,
 		session.StartKwh, session.TargetKwh, session.StartPercent, session.TargetPercent, session.Status, session.StartTotalKwh,
 		toNullString(session.UserID), toNullString(session.PlugID),
-		toNullFloat(session.HoldPercent), toNullString(session.ReadyByTime))
+		toNullFloat(session.HoldPercent), toNullString(session.ReadyByTime), session.CarbonAwareHold)
 
 	return err
 }
@@ -168,7 +168,7 @@ func scanChargeSession(s *models.ChargeSession, scanner sqlScanner) error {
 		newNullFloat(&s.BatteryKwh), newNullFloat(&s.WallKwh), newNullFloat(&s.AvgCarbonIntensity), newNullFloat(&s.Co2Grams),
 		newNullString(&s.UserID),
 		newNullFloat(&s.CostPence), newNullFloat(&s.OffPeakKwh),
-		newNullFloat(&s.HoldPercent), newNullString(&s.ReadyByTime))
+		newNullFloat(&s.HoldPercent), newNullString(&s.ReadyByTime), &s.CarbonAwareHold)
 }
 
 // queryOneSession executes a single-row query and returns the session.

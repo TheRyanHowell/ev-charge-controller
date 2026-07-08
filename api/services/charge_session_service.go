@@ -301,8 +301,8 @@ func (s *ChargeSessionService) StartSession(ctx context.Context, plugID, vehicle
 
 // StartTwoStageSession starts a ready-by two-stage session. See
 // SessionLifecycleService.StartTwoStageSession for details.
-func (s *ChargeSessionService) StartTwoStageSession(ctx context.Context, plugID, vehicleID string, startPercent, targetPercent, holdPercent float64, readyByTime string) (*models.ChargeSession, error) {
-	return s.lifecycle.StartTwoStageSession(ctx, plugID, vehicleID, startPercent, targetPercent, holdPercent, readyByTime)
+func (s *ChargeSessionService) StartTwoStageSession(ctx context.Context, plugID, vehicleID string, startPercent, targetPercent, holdPercent float64, readyByTime string, carbonAwareHold bool) (*models.ChargeSession, error) {
+	return s.lifecycle.StartTwoStageSession(ctx, plugID, vehicleID, startPercent, targetPercent, holdPercent, readyByTime, carbonAwareHold)
 }
 
 

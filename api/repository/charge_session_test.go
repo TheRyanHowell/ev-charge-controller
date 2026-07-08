@@ -69,15 +69,16 @@ func TestChargeSessionRepository_Create_TwoStageFields(t *testing.T) {
 	holdPercent := 64.0
 	readyByTime := "07:00"
 	session := &models.ChargeSession{
-		VehicleID:     "rm1",
-		UserID:        repoTestUserIDPtr,
-		PlugID:        repoTestPlugIDPtr,
-		StartKwh:      0.38,
-		TargetKwh:     1.9,
-		Status:        "active",
-		HoldPercent:   &holdPercent,
-		ReadyByTime:   &readyByTime,
-		TargetPercent: 80,
+		VehicleID:       "rm1",
+		UserID:          repoTestUserIDPtr,
+		PlugID:          repoTestPlugIDPtr,
+		StartKwh:        0.38,
+		TargetKwh:       1.9,
+		Status:          "active",
+		HoldPercent:     &holdPercent,
+		ReadyByTime:     &readyByTime,
+		TargetPercent:   80,
+		CarbonAwareHold: true,
 	}
 
 	require.NoError(t, repo.Create(t.Context(), session))
@@ -89,6 +90,7 @@ func TestChargeSessionRepository_Create_TwoStageFields(t *testing.T) {
 	assert.Equal(t, 64.0, *found.HoldPercent)
 	require.NotNil(t, found.ReadyByTime)
 	assert.Equal(t, "07:00", *found.ReadyByTime)
+	assert.True(t, found.CarbonAwareHold)
 }
 
 func TestChargeSessionRepository_Create_TwoStageFieldsNil(t *testing.T) {
@@ -112,6 +114,7 @@ func TestChargeSessionRepository_Create_TwoStageFieldsNil(t *testing.T) {
 	require.NotNil(t, found)
 	assert.Nil(t, found.HoldPercent)
 	assert.Nil(t, found.ReadyByTime)
+	assert.False(t, found.CarbonAwareHold)
 }
 
 // TestChargeSessionRepository_ReadsPopulateUserID guards a regression where

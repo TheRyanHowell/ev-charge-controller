@@ -502,11 +502,12 @@ type mockChargeServiceAdapter struct {
 	createPendingResult   *models.ChargeSession
 	createPendingCalled   bool
 
-	twoStageErr        error
-	twoStageResult     *models.ChargeSession
-	twoStageCalled     bool
-	twoStageHoldArg    float64
-	twoStageReadyByArg string
+	twoStageErr             error
+	twoStageResult          *models.ChargeSession
+	twoStageCalled          bool
+	twoStageHoldArg         float64
+	twoStageReadyByArg      string
+	twoStageCarbonAwareArg  bool
 }
 
 func (m *mockChargeServiceAdapter) GetActiveByPlug(context.Context, string) (*models.ChargeSession, error) {
@@ -518,10 +519,11 @@ func (m *mockChargeServiceAdapter) StartSession(context.Context, string, string,
 	return m.createPendingResult, m.createPendingErr
 }
 
-func (m *mockChargeServiceAdapter) StartTwoStageSession(_ context.Context, _, _ string, _, _, holdPercent float64, readyByTime string) (*models.ChargeSession, error) {
+func (m *mockChargeServiceAdapter) StartTwoStageSession(_ context.Context, _, _ string, _, _, holdPercent float64, readyByTime string, carbonAwareHold bool) (*models.ChargeSession, error) {
 	m.twoStageCalled = true
 	m.twoStageHoldArg = holdPercent
 	m.twoStageReadyByArg = readyByTime
+	m.twoStageCarbonAwareArg = carbonAwareHold
 	return m.twoStageResult, m.twoStageErr
 }
 

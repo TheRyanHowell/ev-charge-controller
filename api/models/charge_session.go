@@ -56,6 +56,11 @@ type ChargeSession struct {
 	// ReadyByTime is the HH:MM deadline carried from the originating schedule,
 	// used to compute when to resume from the holding phase.
 	ReadyByTime *string `json:"readyByTime,omitempty"`
+	// CarbonAwareHold marks a two-stage session as originating from a
+	// carbon-aware schedule: the resume decision consults the carbon forecast
+	// (via findBalancedStart) instead of the plain deadline guard daily
+	// two-stage sessions use.
+	CarbonAwareHold bool `json:"carbonAwareHold,omitempty"`
 }
 
 // ChargeSessionView extends ChargeSession with computed fields for API responses.

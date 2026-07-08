@@ -71,17 +71,19 @@ func NewSessionLifecycleService(
 // On success, transitions pending→active inline. On failure, cancels the pending
 // session and best-effort turns the plug OFF.
 func (s *SessionLifecycleService) StartSession(ctx context.Context, plugID, vehicleID string, startPercent, targetPercent float64) (*models.ChargeSession, error) {
-	return s.startSession(ctx, plugID, vehicleID, startPercent, targetPercent, nil, nil)
+	return s.startSession(ctx, plugID, vehicleID, startPercent, targetPercent, nil, nil, false)
 }
 
 // StartTwoStageSession starts a ready-by two-stage session: charges to holdPercent,
 // holds there, then resumes to reach targetPercent by readyByTime. Shares the same
-// pending→MQTT-confirm→active flow as StartSession.
-func (s *SessionLifecycleService) StartTwoStageSession(ctx context.Context, plugID, vehicleID string, startPercent, targetPercent, holdPercent float64, readyByTime string) (*models.ChargeSession, error) {
-	return s.startSession(ctx, plugID, vehicleID, startPercent, targetPercent, &holdPercent, &readyByTime)
+// pending→MQTT-confirm→active flow as StartSession. carbonAwareHold marks whether
+// the resume decision should consult the carbon forecast (carbon-aware origin) or
+// just the plain deadline guard (daily origin).
+func (s *SessionLifecycleService) StartTwoStageSession(ctx context.Context, plugID, vehicleID string, startPercent, targetPercent, holdPercent float64, readyByTime string, carbonAwareHold bool) (*models.ChargeSession, error) {
+	return s.startSession(ctx, plugID, vehicleID, startPercent, targetPercent, &holdPercent, &readyByTime, carbonAwareHold)
 }
 
-func (s *SessionLifecycleService) startSession(ctx context.Context, plugID, vehicleID string, startPercent, targetPercent float64, holdPercent *float64, readyByTime *string) (*models.ChargeSession, error) {
+func (s *SessionLifecycleService) startSession(ctx context.Context, plugID, vehicleID string, startPercent, targetPercent float64, holdPercent *float64, readyByTime *string, carbonAwareHold bool) (*models.ChargeSession, error) {
 	if err := s.validateVehicleExists(ctx, vehicleID); err != nil {
 		return nil, err
 	}
@@ -100,7 +102,7 @@ func (s *SessionLifecycleService) startSession(ctx context.Context, plugID, vehi
 	}
 
 	// Create pending session in DB FIRST so it survives browser refresh or API crash.
-	session, err := s.createSessionFromPercent(ctx, plugID, vehicleID, startPercent, targetPercent, startTotalKwh, holdPercent, readyByTime)
+	session, err := s.createSessionFromPercent(ctx, plugID, vehicleID, startPercent, targetPercent, startTotalKwh, holdPercent, readyByTime, carbonAwareHold)
 	if err != nil {
 		return nil, err
 	}
@@ -585,24 +587,26 @@ func (s *SessionLifecycleService) captureEnergyBaseline(_ context.Context, plugI
 }
 
 // createSessionFromPercent creates a new charge session with percent-based start/end values.
-// holdPercent and readyByTime are non-nil only for two-stage (ready-by) sessions.
-func (s *SessionLifecycleService) createSessionFromPercent(ctx context.Context, plugID, vehicleID string, startPercent, targetPercent float64, startTotalKwh, holdPercent *float64, readyByTime *string) (*models.ChargeSession, error) {
+// holdPercent and readyByTime are non-nil only for two-stage (ready-by) sessions;
+// carbonAwareHold is only meaningful alongside them.
+func (s *SessionLifecycleService) createSessionFromPercent(ctx context.Context, plugID, vehicleID string, startPercent, targetPercent float64, startTotalKwh, holdPercent *float64, readyByTime *string, carbonAwareHold bool) (*models.ChargeSession, error) {
 	vehicle, err := s.vehicleRepo.FindByID(ctx, vehicleID)
 	if err != nil {
 		return nil, err
 	}
 
 	session := &models.ChargeSession{
-		VehicleID:     vehicleID,
-		StartPercent:  startPercent,
-		StartKwh:      vehicle.CapacityKwh * startPercent / 100,
-		TargetPercent: targetPercent,
-		TargetKwh:     vehicle.CapacityKwh * targetPercent / 100,
-		Status:        models.SessionStatusPending,
-		CreatedAt:     time.Now(),
-		StartTotalKwh: startTotalKwh,
-		HoldPercent:   holdPercent,
-		ReadyByTime:   readyByTime,
+		VehicleID:       vehicleID,
+		StartPercent:    startPercent,
+		StartKwh:        vehicle.CapacityKwh * startPercent / 100,
+		TargetPercent:   targetPercent,
+		TargetKwh:       vehicle.CapacityKwh * targetPercent / 100,
+		Status:          models.SessionStatusPending,
+		CreatedAt:       time.Now(),
+		StartTotalKwh:   startTotalKwh,
+		HoldPercent:     holdPercent,
+		ReadyByTime:     readyByTime,
+		CarbonAwareHold: carbonAwareHold,
 	}
 
 	if userID, ok := internal.UserIDFromContext(ctx); ok {

@@ -42,7 +42,7 @@ type DurationEstimator func(v *models.Vehicle, current, target float64) (int, er
 type ChargeServiceAdapter interface {
 	GetActiveByPlug(ctx context.Context, plugID string) (*models.ChargeSession, error)
 	StartSession(ctx context.Context, plugID, vehicleID string, startPercent, targetPercent float64) (*models.ChargeSession, error)
-	StartTwoStageSession(ctx context.Context, plugID, vehicleID string, startPercent, targetPercent, holdPercent float64, readyByTime string) (*models.ChargeSession, error)
+	StartTwoStageSession(ctx context.Context, plugID, vehicleID string, startPercent, targetPercent, holdPercent float64, readyByTime string, carbonAwareHold bool) (*models.ChargeSession, error)
 }
 
 // chargeSessionServiceAdapter wraps *ChargeSessionService to satisfy ChargeServiceAdapter.
@@ -58,8 +58,8 @@ func (a *chargeSessionServiceAdapter) StartSession(ctx context.Context, plugID, 
 	return a.svc.StartSession(ctx, plugID, vehicleID, startPercent, targetPercent)
 }
 
-func (a *chargeSessionServiceAdapter) StartTwoStageSession(ctx context.Context, plugID, vehicleID string, startPercent, targetPercent, holdPercent float64, readyByTime string) (*models.ChargeSession, error) {
-	return a.svc.StartTwoStageSession(ctx, plugID, vehicleID, startPercent, targetPercent, holdPercent, readyByTime)
+func (a *chargeSessionServiceAdapter) StartTwoStageSession(ctx context.Context, plugID, vehicleID string, startPercent, targetPercent, holdPercent float64, readyByTime string, carbonAwareHold bool) (*models.ChargeSession, error) {
+	return a.svc.StartTwoStageSession(ctx, plugID, vehicleID, startPercent, targetPercent, holdPercent, readyByTime, carbonAwareHold)
 }
 
 // scheduleNowFunc returns the current time. Overridable in tests.
@@ -278,7 +278,7 @@ func (s *ScheduleService) tryActivateDaily(ctx context.Context, sch models.Sched
 	var sess *models.ChargeSession
 	var err error
 	if holdPercent := cand.vehicle.TargetPercent * models.TwoStageHoldFraction; sch.ReadyBy != nil && holdPercent > cand.vehicle.CurrentPercent {
-		sess, err = s.chargeService.StartTwoStageSession(ctx, plugID, cand.vehicle.ID, cand.vehicle.CurrentPercent, cand.vehicle.TargetPercent, holdPercent, *sch.ReadyBy)
+		sess, err = s.chargeService.StartTwoStageSession(ctx, plugID, cand.vehicle.ID, cand.vehicle.CurrentPercent, cand.vehicle.TargetPercent, holdPercent, *sch.ReadyBy, false)
 	} else {
 		sess, err = s.chargeService.StartSession(ctx, plugID, cand.vehicle.ID, cand.vehicle.CurrentPercent, cand.vehicle.TargetPercent)
 	}

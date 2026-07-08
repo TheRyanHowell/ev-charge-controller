@@ -388,7 +388,7 @@ func TestMigrationTrackingTableExists(t *testing.T) {
 	var version uint
 	err := db.QueryRow("SELECT version FROM schema_migrations").Scan(&version)
 	assert.NoError(t, err)
-	assert.Equal(t, uint(25), version, "should be at latest migration version")
+	assert.Equal(t, uint(26), version, "should be at latest migration version")
 }
 
 func TestMigrationTrackingRecordsAllVersions(t *testing.T) {
@@ -408,7 +408,7 @@ func TestMigrationTrackingRecordsAllVersions(t *testing.T) {
 	var version uint
 	err = db.QueryRow("SELECT version FROM schema_migrations").Scan(&version)
 	assert.NoError(t, err)
-	assert.Equal(t, uint(25), version, "should be at version 25 after all migrations")
+	assert.Equal(t, uint(26), version, "should be at version 26 after all migrations")
 }
 
 func TestMigrationIsIdempotent(t *testing.T) {
