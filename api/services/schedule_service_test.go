@@ -2496,6 +2496,168 @@ func TestScheduleService_EstimateDailyTwoStagePlan_ReadyByCrossesMidnight(t *tes
 	assert.Equal(t, "02:00", plan.Stage2End)
 }
 
+// --- EstimateTargetReachable tests ---
+
+func TestScheduleService_EstimateTargetReachable_NilSchedule(t *testing.T) {
+	svc, _, _, _, _ := newMockScheduleService()
+	assert.True(t, svc.EstimateTargetReachable(t.Context(), nil))
+}
+
+func TestScheduleService_EstimateTargetReachable_Disabled(t *testing.T) {
+	svc, _, _, _, _ := newMockScheduleService()
+	sch := dailyTwoStageSchedule("01:00", "07:00")
+	sch.Enabled = false
+	assert.True(t, svc.EstimateTargetReachable(t.Context(), &sch))
+}
+
+func TestScheduleService_EstimateTargetReachable_MissingPlugID(t *testing.T) {
+	svc, _, _, _, _ := newMockScheduleService()
+	readyBy := "07:00"
+	sch := models.Schedule{Type: models.ScheduleTypeDaily, Time: "01:00", ReadyBy: &readyBy, Enabled: true}
+	assert.True(t, svc.EstimateTargetReachable(t.Context(), &sch))
+}
+
+func TestScheduleService_EstimateTargetReachable_DailySingleStage_AlwaysTrue(t *testing.T) {
+	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 0, TargetPercent: 100}
+	sch := models.Schedule{PlugID: stringPtr(testPlugID), Type: models.ScheduleTypeDaily, Time: "01:00", Enabled: true}
+	assert.True(t, svc.EstimateTargetReachable(t.Context(), &sch), "no readyBy means no deadline to violate")
+}
+
+func TestScheduleService_EstimateTargetReachable_DailyTwoStage_Feasible(t *testing.T) {
+	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 20, TargetPercent: 80} // hold=64
+	svc.SetCarbonAwareDeps(nil, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 60, nil // d1+d2=120min, plenty of room in a 6-hour window
+	}, nil)
+	sch := dailyTwoStageSchedule("01:00", "07:00")
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return mockNow }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	assert.True(t, svc.EstimateTargetReachable(t.Context(), &sch))
+}
+
+func TestScheduleService_EstimateTargetReachable_DailyTwoStage_Infeasible(t *testing.T) {
+	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 20, TargetPercent: 80} // hold=64
+	svc.SetCarbonAwareDeps(nil, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 60, nil // d1+d2=120min, but the window below is only 30 minutes
+	}, nil)
+	sch := dailyTwoStageSchedule("01:00", "01:30")
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return mockNow }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	assert.False(t, svc.EstimateTargetReachable(t.Context(), &sch))
+}
+
+func TestScheduleService_EstimateTargetReachable_CarbonAwareSingleStage_Infeasible(t *testing.T) {
+	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 20, TargetPercent: 80}
+	svc.SetCarbonAwareDeps(nil, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 90, nil // d=90min, window below is only 30 minutes
+	}, nil)
+	sch := carbonAwareSchedule("01:00", "01:30")
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return mockNow }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	assert.False(t, svc.EstimateTargetReachable(t.Context(), &sch))
+}
+
+func TestScheduleService_EstimateTargetReachable_CarbonAwareSingleStage_Feasible(t *testing.T) {
+	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 20, TargetPercent: 80}
+	svc.SetCarbonAwareDeps(nil, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 90, nil
+	}, nil)
+	sch := carbonAwareSchedule("01:00", "06:00")
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return mockNow }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	assert.True(t, svc.EstimateTargetReachable(t.Context(), &sch))
+}
+
+func TestScheduleService_EstimateTargetReachable_CarbonAwareTwoStage_Infeasible(t *testing.T) {
+	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 20, TargetPercent: 80} // hold=64
+	svc.SetCarbonAwareDeps(nil, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 60, nil // d1+d2=120min, window below is only 30 minutes
+	}, nil)
+	sch := carbonAwareTwoStageSchedule("01:00", "01:30")
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return mockNow }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	assert.False(t, svc.EstimateTargetReachable(t.Context(), &sch))
+}
+
+// TestScheduleService_EstimateTargetReachable_CarbonAwareTwoStage_NotWorthwhile_UsesSingleStageDuration
+// proves the check mirrors real activation behavior rather than assuming
+// two-stage always applies: when worthwhileTwoStage says the schedule will
+// actually fall back to single-stage, reachability must be judged against
+// the single-stage duration d, not d1+d2.
+func TestScheduleService_EstimateTargetReachable_CarbonAwareTwoStage_NotWorthwhile_UsesSingleStageDuration(t *testing.T) {
+	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	// current=70, target=80 -> hold=64, already below current: worthwhileTwoStage
+	// is false ("already past hold point"), so this behaves as single-stage.
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 70, TargetPercent: 80}
+	svc.SetCarbonAwareDeps(nil, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 20, nil // single-stage d=20min fits comfortably in a 30-minute window
+	}, nil)
+	sch := carbonAwareTwoStageSchedule("01:00", "01:30")
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return mockNow }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	assert.True(t, svc.EstimateTargetReachable(t.Context(), &sch),
+		"should be judged against the single-stage duration, not d1+d2, since worthwhileTwoStage falls back to single-stage")
+}
+
+func TestScheduleService_EstimateTargetReachable_EstimatorError(t *testing.T) {
+	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 20, TargetPercent: 80}
+	svc.SetCarbonAwareDeps(nil, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 0, errors.New("no estimate")
+	}, nil)
+	sch := carbonAwareSchedule("01:00", "01:30")
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return mockNow }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	assert.True(t, svc.EstimateTargetReachable(t.Context(), &sch), "estimator error should fail open, not warn")
+}
+
+func TestScheduleService_EstimateTargetReachable_VehicleNotFound(t *testing.T) {
+	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDErr = errors.New("db error")
+	sch := carbonAwareSchedule("01:00", "01:30")
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return mockNow }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	assert.True(t, svc.EstimateTargetReachable(t.Context(), &sch))
+}
+
 func TestScheduleService_formatTime_MatchesUpsertFormat(t *testing.T) {
 	// Regression test: formatTime must produce zero-padded hours ("09:05")
 	// so it matches the time stored by UpsertByPlugID ("09:05"). Previously

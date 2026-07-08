@@ -360,6 +360,92 @@ func (s *ScheduleService) worthwhileTwoStage(vehicle *models.Vehicle, holdPercen
 	return d2 >= models.MinTwoStageStageDurationMin
 }
 
+// hasTwoStageIntent reports whether a schedule requests two-stage charging,
+// regardless of type - carbon-aware uses the TwoStage flag, daily uses
+// ReadyBy being set.
+func hasTwoStageIntent(sch *models.Schedule) bool {
+	if sch.Type == models.ScheduleTypeCarbonAware {
+		return sch.TwoStage
+	}
+	return sch.ReadyBy != nil
+}
+
+// resolveScheduleDeadlineWindow returns the earliest permitted start and the
+// deadline a schedule must reach target by. ok=false means there's no
+// deadline to check at all (single-stage daily) or the schedule's time
+// fields can't be resolved.
+func (s *ScheduleService) resolveScheduleDeadlineWindow(sch *models.Schedule) (earliestStart, deadline time.Time, ok bool) {
+	now := scheduleNowFunc()
+	if sch.Type == models.ScheduleTypeCarbonAware {
+		if sch.WindowStart == nil || sch.WindowEnd == nil {
+			return
+		}
+		start, end, err := resolveWindow(now, *sch.WindowStart, *sch.WindowEnd)
+		if err != nil {
+			return
+		}
+		return start, end, true
+	}
+	if sch.ReadyBy == nil {
+		return
+	}
+	stage1Start, err := resolveDeadline(now, sch.Time)
+	if err != nil {
+		return
+	}
+	deadlineTime, err := resolveDeadline(stage1Start, *sch.ReadyBy)
+	if err != nil {
+		return
+	}
+	return stage1Start, deadlineTime, true
+}
+
+// EstimateTargetReachable reports whether the vehicle can realistically reach
+// its target by the schedule's deadline, given the estimated charge duration
+// and the time actually available between the earliest permitted start and
+// the deadline. Mirrors whichever mode (single-stage or two-stage) the
+// schedule will actually run in via worthwhileTwoStage, so this never
+// contradicts real activation behavior. Returns true (assume reachable) when
+// there's no deadline to check, or when any dependency is unavailable -
+// matching this codebase's failsafe posture of favoring a non-blocking
+// outcome over a possibly-wrong warning.
+func (s *ScheduleService) EstimateTargetReachable(ctx context.Context, sch *models.Schedule) bool {
+	if sch == nil || !sch.Enabled || sch.PlugID == nil {
+		return true
+	}
+	earliestStart, deadline, ok := s.resolveScheduleDeadlineWindow(sch)
+	if !ok {
+		return true
+	}
+	cand := s.loadCandidate(ctx, *sch.PlugID)
+	if cand == nil {
+		return true
+	}
+
+	est := s.estimator
+	if est == nil {
+		est = chargeestimate.EstimateMinutes
+	}
+	available := deadline.Sub(earliestStart).Minutes()
+
+	if hasTwoStageIntent(sch) {
+		holdPercent := cand.vehicle.TargetPercent * models.TwoStageHoldFraction
+		if s.worthwhileTwoStage(cand.vehicle, holdPercent) {
+			d1, err1 := est(cand.vehicle, cand.vehicle.CurrentPercent, holdPercent)
+			d2, err2 := est(cand.vehicle, holdPercent, cand.vehicle.TargetPercent)
+			if err1 != nil || err2 != nil {
+				return true
+			}
+			return available >= float64(d1+d2)
+		}
+	}
+	d, err := est(cand.vehicle, cand.vehicle.CurrentPercent, cand.vehicle.TargetPercent)
+	if err != nil {
+		return true
+	}
+	return available >= float64(d)
+}
+
 // tryActivateCarbonAwareSingleStage runs the pure-carbon decision for a
 // carbon-aware schedule targeting the vehicle's real target percent directly
 // (no hold stage): estimate duration, deadline-guard, throttle, then pick the
