@@ -319,4 +319,53 @@ describe("GaugeOverlay", () => {
       "Schedule active - ready by 06:00",
     );
   });
+
+  it("shows an at-a-glance warning on the schedule circle when the target is unreachable", () => {
+    render(
+      <GaugeOverlay
+        status="idle"
+        currentPercent={50}
+        targetPercent={80}
+        onStartStop={() => {}}
+        schedule={{
+          id: "s1",
+          type: "daily",
+          time: "01:00",
+          readyBy: "01:05",
+          targetUnreachable: true,
+          enabled: true,
+        }}
+      />,
+    );
+    const circle = screen.getByTestId("schedule-circle");
+    expect(circle).toHaveAttribute(
+      "aria-label",
+      "Schedule active but may not reach target - starts at 01:00",
+    );
+    expect(circle).toHaveTextContent("Warning");
+  });
+
+  it("does not show the unreachable warning on the schedule circle when the schedule is disabled", () => {
+    render(
+      <GaugeOverlay
+        status="idle"
+        currentPercent={50}
+        targetPercent={80}
+        onStartStop={() => {}}
+        schedule={{
+          id: "s1",
+          type: "daily",
+          time: "01:00",
+          readyBy: "01:05",
+          targetUnreachable: true,
+          enabled: false,
+        }}
+      />,
+    );
+    expect(screen.getByTestId("schedule-circle")).toHaveAttribute(
+      "aria-label",
+      "Schedule configured but disabled - 01:00",
+    );
+    expect(screen.queryByText("Warning")).not.toBeInTheDocument();
+  });
 });

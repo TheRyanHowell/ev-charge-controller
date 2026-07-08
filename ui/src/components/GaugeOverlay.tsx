@@ -81,6 +81,8 @@ export function GaugeOverlay({
 
   const scheduleActive = schedule?.enabled ?? false;
   const scheduleTime = scheduleLabel(schedule);
+  const scheduleUnreachable =
+    scheduleActive && (schedule?.targetUnreachable ?? false);
 
   return (
     <>
@@ -212,29 +214,37 @@ export function GaugeOverlay({
             border-2 transition-all duration-200
             focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent
             ${
-              scheduleActive
-                ? schedule?.type === "carbon_aware"
-                  ? "bg-green-900/80 border-green-400 text-green-300 hover:bg-green-800/80 shadow-md shadow-green-500/20"
-                  : "bg-blue-900/80 border-blue-400 text-blue-300 hover:bg-blue-800/80 shadow-md shadow-blue-500/20"
-                : "bg-gray-900/70 border-gray-600/50 text-gray-500 hover:text-gray-300 hover:border-gray-500"
+              scheduleUnreachable
+                ? "bg-amber-950/70 border-amber-500 text-amber-400 hover:bg-amber-900/70"
+                : scheduleActive
+                  ? schedule?.type === "carbon_aware"
+                    ? "bg-green-900/80 border-green-400 text-green-300 hover:bg-green-800/80 shadow-md shadow-green-500/20"
+                    : "bg-blue-900/80 border-blue-400 text-blue-300 hover:bg-blue-800/80 shadow-md shadow-blue-500/20"
+                  : "bg-gray-900/70 border-gray-600/50 text-gray-500 hover:text-gray-300 hover:border-gray-500"
             }
           `}
           aria-label={
-            scheduleActive
-              ? `Schedule active - ${scheduleLabelWord(schedule)} ${scheduleTime}`
-              : schedule
-                ? `Schedule configured but disabled - ${scheduleTime}`
-                : "Configure charge schedule"
+            scheduleUnreachable
+              ? `Schedule active but may not reach target - ${scheduleLabelWord(schedule)} ${scheduleTime}`
+              : scheduleActive
+                ? `Schedule active - ${scheduleLabelWord(schedule)} ${scheduleTime}`
+                : schedule
+                  ? `Schedule configured but disabled - ${scheduleTime}`
+                  : "Configure charge schedule"
           }
           data-testid="schedule-circle"
         >
           <i
-            className={`${scheduleIcon(schedule?.type)} text-lg leading-none`}
+            className={`${scheduleUnreachable ? "fa-solid fa-triangle-exclamation" : scheduleIcon(schedule?.type)} text-lg leading-none`}
             aria-hidden="true"
           />
           {scheduleActive && (
             <span className="text-[10px] leading-none uppercase tracking-wide opacity-80">
-              {schedule?.type === "carbon_aware" ? "Carbon" : "Daily"}
+              {scheduleUnreachable
+                ? "Warning"
+                : schedule?.type === "carbon_aware"
+                  ? "Carbon"
+                  : "Daily"}
             </span>
           )}
           {scheduleActive && scheduleTime ? (
