@@ -1105,6 +1105,195 @@ func TestSessionMonitoringService_CheckAndResumeHoldingSession_PowerOnNotConfirm
 	require.NotNil(t, updated.HoldPercent)
 }
 
+// --- EstimateResumeTime tests ---
+
+func TestSessionMonitoringService_EstimateResumeTime_NilSession(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	_, ok := service.EstimateResumeTime(context.Background(), nil)
+	assert.False(t, ok)
+}
+
+func TestSessionMonitoringService_EstimateResumeTime_NotHolding(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	holdPercent := 64.0
+	readyByTime := "23:59"
+	session := &models.ChargeSession{
+		VehicleID:       testVehicleID,
+		Status:          models.SessionStatusActive,
+		HoldPercent:     &holdPercent,
+		ReadyByTime:     &readyByTime,
+		CarbonAwareHold: true,
+	}
+
+	_, ok := service.EstimateResumeTime(context.Background(), session)
+	assert.False(t, ok)
+}
+
+func TestSessionMonitoringService_EstimateResumeTime_DailyOrigin(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+	service.SetForecaster(&mockForecaster{buckets: makeBuckets(time.Now(), []int{100})})
+
+	holdPercent := 64.0
+	readyByTime := "23:59"
+	session := &models.ChargeSession{
+		VehicleID:       testVehicleID,
+		Status:          models.SessionStatusHolding,
+		HoldPercent:     &holdPercent,
+		ReadyByTime:     &readyByTime,
+		CarbonAwareHold: false,
+	}
+
+	_, ok := service.EstimateResumeTime(context.Background(), session)
+	assert.False(t, ok, "daily-origin holds have no forecast-based resume estimate")
+}
+
+func TestSessionMonitoringService_EstimateResumeTime_NoForecaster(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	holdPercent := 64.0
+	readyByTime := "23:59"
+	session := &models.ChargeSession{
+		VehicleID:       testVehicleID,
+		Status:          models.SessionStatusHolding,
+		HoldPercent:     &holdPercent,
+		ReadyByTime:     &readyByTime,
+		CarbonAwareHold: true,
+	}
+
+	_, ok := service.EstimateResumeTime(context.Background(), session)
+	assert.False(t, ok)
+}
+
+func TestSessionMonitoringService_EstimateResumeTime_PastDeadline_ReturnsLatestStart(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+	service.SetEstimator(func(*models.Vehicle, float64, float64) (int, error) {
+		return 30, nil
+	})
+	service.SetForecaster(&mockForecaster{})
+
+	mockNow := time.Date(2024, 1, 1, 23, 45, 0, 0, time.UTC) // readyBy 23:59 - 30min = 23:29, already past
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return mockNow }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	holdPercent := 64.0
+	readyByTime := "23:59"
+	session := &models.ChargeSession{
+		VehicleID:       testVehicleID,
+		Status:          models.SessionStatusHolding,
+		HoldPercent:     &holdPercent,
+		TargetPercent:   80,
+		ReadyByTime:     &readyByTime,
+		CarbonAwareHold: true,
+	}
+
+	resumeTime, ok := service.EstimateResumeTime(context.Background(), session)
+	require.True(t, ok)
+	assert.Equal(t, "23:29", resumeTime)
+}
+
+func TestSessionMonitoringService_EstimateResumeTime_ForecastPicksBalancedWindow(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+	service.SetEstimator(func(*models.Vehicle, float64, float64) (int, error) {
+		return 30, nil
+	})
+	// Same worked scenario as the CheckAndResumeHoldingSession carbon-aware test:
+	// deadline=12:30, d=30min -> latestStart=12:00, candidates 10:00..12:00 balance to 11:00.
+	mockNow := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
+	buckets := makeBuckets(mockNow, []int{500, 300, 100, 300, 500})
+	service.SetForecaster(&mockForecaster{buckets: buckets})
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return mockNow }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	holdPercent := 64.0
+	readyByTime := "12:30"
+	session := &models.ChargeSession{
+		VehicleID:       testVehicleID,
+		Status:          models.SessionStatusHolding,
+		HoldPercent:     &holdPercent,
+		TargetPercent:   80,
+		ReadyByTime:     &readyByTime,
+		CarbonAwareHold: true,
+	}
+
+	resumeTime, ok := service.EstimateResumeTime(context.Background(), session)
+	require.True(t, ok)
+	assert.Equal(t, "11:00", resumeTime)
+}
+
+func TestSessionMonitoringService_EstimateResumeTime_ForecastError(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+	service.SetEstimator(func(*models.Vehicle, float64, float64) (int, error) {
+		return 30, nil
+	})
+	service.SetForecaster(&mockForecaster{err: errors.New("API down")})
+
+	mockNow := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return mockNow }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	holdPercent := 64.0
+	readyByTime := "23:59"
+	session := &models.ChargeSession{
+		VehicleID:       testVehicleID,
+		Status:          models.SessionStatusHolding,
+		HoldPercent:     &holdPercent,
+		TargetPercent:   80,
+		ReadyByTime:     &readyByTime,
+		CarbonAwareHold: true,
+	}
+
+	_, ok := service.EstimateResumeTime(context.Background(), session)
+	assert.False(t, ok)
+}
+
 func TestSessionMonitoringService_StoreSOCSnapshot_SkipsDuplicate(t *testing.T) {
 	db := setupServiceTestDB(t)
 	sessRepo := repository.NewChargeSessionRepository(db)

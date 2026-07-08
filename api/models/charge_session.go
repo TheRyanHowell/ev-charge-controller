@@ -71,6 +71,10 @@ type ChargeSessionView struct {
 	EnergyAddedKwh *float64 `json:"energyAddedKwh,omitempty"`
 	Voltage        *float64 `json:"voltage,omitempty"`
 	Current        *float64 `json:"current,omitempty"`
+	// EstimatedResumeTime is the current best guess (HH:MM) for when a holding
+	// carbon-aware two-stage session will resume. Computed on read, not
+	// persisted, and only set while Status == holding.
+	EstimatedResumeTime *string `json:"estimatedResumeTime,omitempty"`
 }
 
 type PowerReading struct {

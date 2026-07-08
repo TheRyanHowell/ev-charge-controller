@@ -2027,6 +2027,77 @@ func TestChargeSessionService_GetActive_WithEnergy(t *testing.T) {
 	assert.NotNil(t, active.CurrentPercent)
 }
 
+func TestChargeSessionService_GetActive_HoldingCarbonAware_AttachesEstimatedResumeTime(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+
+	service := NewChargeSessionService(context.Background(), sessRepo, repository.NewVehicleRepository(db), nil, nil, nil, nil)
+	defer service.Shutdown()
+	service.SetCarbonAwareForecaster(&mockForecaster{})
+
+	// readyBy is only 1 minute away - any realistic estimated duration puts
+	// latestStart well before now, forcing the deadline-guard branch so the
+	// estimate doesn't depend on the exact charge-duration math.
+	mockNow := time.Date(2024, 1, 1, 23, 45, 0, 0, time.UTC)
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return mockNow }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	holdPercent := 64.0
+	readyByTime := "23:46"
+	session := &models.ChargeSession{
+		VehicleID:       testVehicleID,
+		UserID:          testUserIDPtr,
+		PlugID:          testPlugIDPtr,
+		StartPercent:    20,
+		StartKwh:        0.38,
+		TargetPercent:   80,
+		TargetKwh:       1.52,
+		Status:          models.SessionStatusHolding,
+		HoldPercent:     &holdPercent,
+		ReadyByTime:     &readyByTime,
+		CarbonAwareHold: true,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+
+	active, err := service.GetActive(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, active)
+	require.NotNil(t, active.EstimatedResumeTime, "holding carbon-aware session should expose an estimated resume time")
+	assert.Regexp(t, `^([01]\d|2[0-3]):[0-5]\d$`, *active.EstimatedResumeTime)
+}
+
+func TestChargeSessionService_GetActive_HoldingDailyOrigin_NoEstimatedResumeTime(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+
+	service := NewChargeSessionService(context.Background(), sessRepo, repository.NewVehicleRepository(db), nil, nil, nil, nil)
+	defer service.Shutdown()
+	service.SetCarbonAwareForecaster(&mockForecaster{})
+
+	holdPercent := 64.0
+	readyByTime := "23:59"
+	session := &models.ChargeSession{
+		VehicleID:       testVehicleID,
+		UserID:          testUserIDPtr,
+		PlugID:          testPlugIDPtr,
+		StartPercent:    20,
+		StartKwh:        0.38,
+		TargetPercent:   80,
+		TargetKwh:       1.52,
+		Status:          models.SessionStatusHolding,
+		HoldPercent:     &holdPercent,
+		ReadyByTime:     &readyByTime,
+		CarbonAwareHold: false,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+
+	active, err := service.GetActive(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, active)
+	assert.Nil(t, active.EstimatedResumeTime, "daily-origin holds have no forecast-based resume estimate")
+}
+
 func TestChargeSessionService_GetActive_VehicleConfigMissing(t *testing.T) {
 	db := setupServiceTestDB(t)
 

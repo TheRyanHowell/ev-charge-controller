@@ -202,14 +202,28 @@ func (s *ChargeSessionService) GetActiveByVehicle(ctx context.Context, vehicleID
 	return s.enrichSessionView(ctx, session), nil
 }
 
-// enrichSessionView builds a read-only ChargeSessionView from the stored session,
+// enrichSessionView builds a read-only ChargeSessionView from the stored session
+// and additionally attaches EstimatedResumeTime for a currently-holding
+// carbon-aware two-stage session, so the UI can show when charging is
+// expected to resume instead of a bare "Holding" status.
+func (s *ChargeSessionService) enrichSessionView(ctx context.Context, session *models.ChargeSession) *models.ChargeSessionView {
+	view := s.buildSessionView(ctx, session)
+	if view != nil && view.Status == models.SessionStatusHolding && view.CarbonAwareHold {
+		if resumeTime, ok := s.monitoring.EstimateResumeTime(ctx, session); ok {
+			view.EstimatedResumeTime = &resumeTime
+		}
+	}
+	return view
+}
+
+// buildSessionView builds a read-only ChargeSessionView from the stored session,
 // overlaying live MQTT energy data and the computed current SoC percent when
 // available. It is a pure read: LastBlendedKwh persistence is owned by the
 // energy-poller worker (via SOCWorker and CheckAndAutoStopReachingSession) and
 // must not be duplicated here - doing so would make GET endpoints perform DB
 // writes, violating REST idempotency and adding unnecessary lock contention on
 // the hot read path.
-func (s *ChargeSessionService) enrichSessionView(ctx context.Context, session *models.ChargeSession) *models.ChargeSessionView {
+func (s *ChargeSessionService) buildSessionView(ctx context.Context, session *models.ChargeSession) *models.ChargeSessionView {
 	if session == nil {
 		return nil
 	}

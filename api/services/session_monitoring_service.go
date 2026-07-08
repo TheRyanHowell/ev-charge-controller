@@ -472,6 +472,61 @@ func (s *SessionMonitoringService) CheckAndResumeHoldingSession(ctx context.Cont
 	// else: a better-balanced window exists later - keep holding.
 }
 
+// EstimateResumeTime mirrors CheckAndResumeHoldingSession's decision logic for
+// a currently-holding carbon-aware two-stage session, without any side
+// effects (no power changes, no status writes). Returns ok=false when no
+// confident estimate can be made - not holding, missing hold fields,
+// daily-origin (no forecast optimization applies), no forecaster, or the
+// forecast is unavailable.
+func (s *SessionMonitoringService) EstimateResumeTime(ctx context.Context, session *models.ChargeSession) (string, bool) {
+	if session == nil || session.Status != models.SessionStatusHolding || !session.CarbonAwareHold {
+		return "", false
+	}
+	if session.HoldPercent == nil || session.ReadyByTime == nil {
+		return "", false
+	}
+	if s.forecaster == nil {
+		return "", false
+	}
+
+	vehicle, err := s.vehicleRepo.FindByID(ctx, session.VehicleID)
+	if err != nil || vehicle == nil {
+		return "", false
+	}
+
+	now := scheduleNowFunc()
+	deadline, err := resolveDeadline(now, *session.ReadyByTime)
+	if err != nil {
+		return "", false
+	}
+
+	est := s.estimator
+	if est == nil {
+		est = chargeestimate.EstimateMinutes
+	}
+	d, estErr := est(vehicle, *session.HoldPercent, session.TargetPercent)
+	if estErr != nil {
+		return "", false
+	}
+
+	latestStart := deadline.Add(-time.Duration(d) * time.Minute)
+	if !now.Before(latestStart) {
+		return formatTime(latestStart.In(now.Location())), true
+	}
+
+	buckets, ferr := s.forecaster.GetForecast(ctx, now, deadline)
+	if ferr != nil || len(buckets) == 0 {
+		return "", false
+	}
+
+	optimalStart := findBalancedStart(buckets, now, latestStart, deadline, time.Duration(d)*time.Minute)
+	if optimalStart.IsZero() {
+		return "", false
+	}
+
+	return formatTime(optimalStart.In(now.Location())), true
+}
+
 // resumeHoldingSession powers the plug back on and transitions a holding
 // session back to active. Only transitions on confirmed power-on; an
 // unconfirmed attempt is retried on the next poll tick.
