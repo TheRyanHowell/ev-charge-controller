@@ -24,28 +24,27 @@ func (h *ScheduleHandler) Service() *services.ScheduleService {
 }
 
 // attachEstimatedStart populates EstimatedStartTime (carbon-aware
-// single-stage) or EstimatedPlan (any two-stage schedule) so the UI can show
-// when charging is actually expected to happen instead of just the ready-by
-// deadline. Carbon-aware estimates use the current carbon intensity
-// forecast; daily estimates are pure arithmetic (no forecast dependency).
+// single-stage), EstimatedPlan (any two-stage schedule), and
+// TargetUnreachable (any schedule with a deadline) so the UI can show when
+// charging is actually expected to happen - and whether it can finish in
+// time at all - instead of just the ready-by deadline. Carbon-aware
+// estimates use the current carbon intensity forecast; daily estimates and
+// the reachability check are pure arithmetic (no forecast dependency).
 func (h *ScheduleHandler) attachEstimatedStart(ctx context.Context, schedule *models.Schedule) {
 	if schedule.Type == models.ScheduleTypeCarbonAware {
 		if schedule.TwoStage {
 			if plan, ok := h.service.EstimateCarbonAwareTwoStagePlan(ctx, schedule); ok {
 				schedule.EstimatedPlan = &plan
 			}
-			return
-		}
-		if start, ok := h.service.EstimateCarbonAwareStart(ctx, schedule); ok {
+		} else if start, ok := h.service.EstimateCarbonAwareStart(ctx, schedule); ok {
 			schedule.EstimatedStartTime = &start
 		}
-		return
-	}
-	if schedule.ReadyBy != nil {
+	} else if schedule.ReadyBy != nil {
 		if plan, ok := h.service.EstimateDailyTwoStagePlan(ctx, schedule); ok {
 			schedule.EstimatedPlan = &plan
 		}
 	}
+	schedule.TargetUnreachable = !h.service.EstimateTargetReachable(ctx, schedule)
 }
 
 // UpsertByPlug handles PATCH /api/plugs/{id}/schedule.

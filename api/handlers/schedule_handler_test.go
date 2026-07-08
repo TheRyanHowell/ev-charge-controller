@@ -395,6 +395,88 @@ func TestScheduleHandler_GetByPlug_Daily_SingleStage_NoEstimatedPlan(t *testing.
 	assert.Nil(t, schedule.EstimatedPlan, "single-stage daily schedules have no two-stage plan to estimate")
 }
 
+func TestScheduleHandler_GetByPlug_Daily_TwoStage_InfeasibleWindow_TargetUnreachable(t *testing.T) {
+	handler, db := setupScheduleHandlerTest(t)
+	defer db.Close()
+	assignVehicleToSchedulePlug(t, db) // rm1 spec, current=20, target=80
+
+	// 5 minutes is nowhere near enough to charge 20%->64%->80% on any seeded vehicle.
+	reqBody := `{"type":"daily","time":"01:00","readyBy":"01:05","enabled":true}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/plugs/"+testSchedulePlugID+"/schedule", bytes.NewReader([]byte(reqBody)))
+	req.Header.Set("Content-Type", "application/json")
+	req = withPathValue(req, "id", testSchedulePlugID)
+	req = req.WithContext(internal.WithUserID(req.Context(), testScheduleUserID))
+	rr := httptest.NewRecorder()
+	handler.UpsertByPlug(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	req = httptest.NewRequest(http.MethodGet, "/api/plugs/"+testSchedulePlugID+"/schedule", nil)
+	req = withPathValue(req, "id", testSchedulePlugID)
+	req = req.WithContext(internal.WithUserID(req.Context(), testScheduleUserID))
+	rr = httptest.NewRecorder()
+	handler.GetByPlug(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	var schedule models.Schedule
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&schedule))
+	assert.True(t, schedule.TargetUnreachable, "a 5-minute window cannot fit a real two-stage charge")
+}
+
+func TestScheduleHandler_GetByPlug_CarbonAware_TwoStage_FeasibleWindow_NotUnreachable(t *testing.T) {
+	handler, db := setupScheduleHandlerTest(t)
+	defer db.Close()
+	assignVehicleToSchedulePlug(t, db)
+
+	reqBody := `{"type":"carbon_aware","windowStart":"00:00","windowEnd":"23:59","twoStage":true,"enabled":true}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/plugs/"+testSchedulePlugID+"/schedule", bytes.NewReader([]byte(reqBody)))
+	req.Header.Set("Content-Type", "application/json")
+	req = withPathValue(req, "id", testSchedulePlugID)
+	req = req.WithContext(internal.WithUserID(req.Context(), testScheduleUserID))
+	rr := httptest.NewRecorder()
+	handler.UpsertByPlug(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	req = httptest.NewRequest(http.MethodGet, "/api/plugs/"+testSchedulePlugID+"/schedule", nil)
+	req = withPathValue(req, "id", testSchedulePlugID)
+	req = req.WithContext(internal.WithUserID(req.Context(), testScheduleUserID))
+	rr = httptest.NewRecorder()
+	handler.GetByPlug(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	var schedule models.Schedule
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&schedule))
+	assert.False(t, schedule.TargetUnreachable, "a near-full-day window comfortably fits the charge")
+}
+
+func TestScheduleHandler_GetByPlug_Daily_SingleStage_NeverTargetUnreachable(t *testing.T) {
+	handler, db := setupScheduleHandlerTest(t)
+	defer db.Close()
+	assignVehicleToSchedulePlug(t, db)
+
+	reqBody := `{"type":"daily","time":"01:00","enabled":true}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/plugs/"+testSchedulePlugID+"/schedule", bytes.NewReader([]byte(reqBody)))
+	req.Header.Set("Content-Type", "application/json")
+	req = withPathValue(req, "id", testSchedulePlugID)
+	req = req.WithContext(internal.WithUserID(req.Context(), testScheduleUserID))
+	rr := httptest.NewRecorder()
+	handler.UpsertByPlug(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	req = httptest.NewRequest(http.MethodGet, "/api/plugs/"+testSchedulePlugID+"/schedule", nil)
+	req = withPathValue(req, "id", testSchedulePlugID)
+	req = req.WithContext(internal.WithUserID(req.Context(), testScheduleUserID))
+	rr = httptest.NewRecorder()
+	handler.GetByPlug(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	var schedule models.Schedule
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&schedule))
+	assert.False(t, schedule.TargetUnreachable, "single-stage daily has no deadline to violate")
+}
+
 func TestScheduleHandler_UpsertByPlug_CarbonAware_MissingWindow(t *testing.T) {
 	handler, db := setupScheduleHandlerTest(t)
 	defer db.Close()

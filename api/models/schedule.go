@@ -8,18 +8,19 @@ const (
 )
 
 type Schedule struct {
-	ID                 string                 `json:"id"`
-	PlugID             *string                `json:"plugId,omitempty"`
-	UserID             *string                `json:"userId,omitempty"`
-	Type               ScheduleType           `json:"type"`
-	Time               string                 `json:"time"`                         // HH:MM - daily fire time
-	WindowStart        *string                `json:"windowStart,omitempty"`        // HH:MM - carbon_aware earliest start
-	WindowEnd          *string                `json:"windowEnd,omitempty"`          // HH:MM - carbon_aware ready-by time
-	EstimatedStartTime *string                `json:"estimatedStartTime,omitempty"` // HH:MM - carbon_aware forecast-based start estimate; computed on read, not persisted
-	ReadyBy            *string                `json:"readyBy,omitempty"`            // HH:MM - daily two-stage ready-by deadline
-	TwoStage           bool                   `json:"twoStage,omitempty"`           // carbon_aware two-stage charging toggle
-	EstimatedPlan      *TwoStagePlanEstimate  `json:"estimatedPlan,omitempty"`      // carbon_aware two-stage forecast-based plan; computed on read, not persisted
-	Enabled            bool                   `json:"enabled"`
+	ID                 string                `json:"id"`
+	PlugID             *string               `json:"plugId,omitempty"`
+	UserID             *string               `json:"userId,omitempty"`
+	Type               ScheduleType          `json:"type"`
+	Time               string                `json:"time"`                         // HH:MM - daily fire time
+	WindowStart        *string               `json:"windowStart,omitempty"`        // HH:MM - carbon_aware earliest start
+	WindowEnd          *string               `json:"windowEnd,omitempty"`          // HH:MM - carbon_aware ready-by time
+	EstimatedStartTime *string               `json:"estimatedStartTime,omitempty"` // HH:MM - carbon_aware forecast-based start estimate; computed on read, not persisted
+	ReadyBy            *string               `json:"readyBy,omitempty"`            // HH:MM - daily two-stage ready-by deadline
+	TwoStage           bool                  `json:"twoStage,omitempty"`           // carbon_aware two-stage charging toggle
+	EstimatedPlan      *TwoStagePlanEstimate `json:"estimatedPlan,omitempty"`      // daily or carbon_aware two-stage plan estimate; computed on read, not persisted
+	TargetUnreachable  bool                  `json:"targetUnreachable,omitempty"`  // true when the estimated charge duration exceeds the time available before the deadline; computed on read, not persisted
+	Enabled            bool                  `json:"enabled"`
 }
 
 // TwoStagePlanEstimate describes the currently estimated timeline for a
