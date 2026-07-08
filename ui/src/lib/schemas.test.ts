@@ -192,6 +192,37 @@ describe("ChargeSessionResponseSchema", () => {
       }),
     ).toThrow();
   });
+
+  it("parses response with estimatedResumeTime", () => {
+    const data = ChargeSessionResponseSchema.parse({
+      id: "session-1",
+      vehicleId: "vehicle-1",
+      createdAt: "2024-01-01T10:00:00Z",
+      status: "holding",
+      startKwh: 10,
+      targetKwh: 15,
+      startPercent: 30,
+      targetPercent: 80,
+      estimatedResumeTime: "23:30",
+    });
+    expect(data.estimatedResumeTime).toBe("23:30");
+  });
+
+  it("rejects malformed estimatedResumeTime", () => {
+    expect(() =>
+      ChargeSessionResponseSchema.parse({
+        id: "session-1",
+        vehicleId: "vehicle-1",
+        createdAt: "2024-01-01T10:00:00Z",
+        status: "holding",
+        startKwh: 10,
+        targetKwh: 15,
+        startPercent: 30,
+        targetPercent: 80,
+        estimatedResumeTime: "not-a-time",
+      }),
+    ).toThrow();
+  });
 });
 
 describe("ScheduleSchema", () => {
@@ -267,6 +298,63 @@ describe("ScheduleSchema", () => {
         id: "plug",
         time: "01:00",
         readyBy: "not-a-time",
+        enabled: true,
+      }),
+    ).toThrow();
+  });
+
+  it("parses carbon_aware schedule with twoStage", () => {
+    const schedule = ScheduleSchema.parse({
+      id: "plug",
+      type: "carbon_aware",
+      time: "22:00",
+      windowStart: "22:00",
+      windowEnd: "06:00",
+      twoStage: true,
+      enabled: true,
+    });
+    expect(schedule.twoStage).toBe(true);
+  });
+
+  it("parses carbon_aware schedule with estimatedPlan", () => {
+    const schedule = ScheduleSchema.parse({
+      id: "plug",
+      type: "carbon_aware",
+      time: "22:00",
+      windowStart: "22:00",
+      windowEnd: "06:00",
+      twoStage: true,
+      estimatedPlan: {
+        stage1Start: "22:30",
+        stage1End: "23:15",
+        stage2Start: "04:50",
+        stage2End: "05:35",
+      },
+      enabled: true,
+    });
+    expect(schedule.estimatedPlan).toEqual({
+      stage1Start: "22:30",
+      stage1End: "23:15",
+      stage2Start: "04:50",
+      stage2End: "05:35",
+    });
+  });
+
+  it("rejects malformed estimatedPlan", () => {
+    expect(() =>
+      ScheduleSchema.parse({
+        id: "plug",
+        type: "carbon_aware",
+        time: "22:00",
+        windowStart: "22:00",
+        windowEnd: "06:00",
+        twoStage: true,
+        estimatedPlan: {
+          stage1Start: "not-a-time",
+          stage1End: "23:15",
+          stage2Start: "04:50",
+          stage2End: "05:35",
+        },
         enabled: true,
       }),
     ).toThrow();

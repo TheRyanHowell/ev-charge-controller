@@ -11,6 +11,7 @@ export interface SchedulePayload {
   windowStart?: string;
   windowEnd?: string;
   readyBy?: string;
+  twoStage?: boolean;
   enabled: boolean;
 }
 

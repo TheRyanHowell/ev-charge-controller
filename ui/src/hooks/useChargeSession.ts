@@ -16,6 +16,8 @@ export type ChargeSession =
       startedAt: number | null;
       voltage: number | null;
       current: number | null;
+      /** HH:MM best guess for when a holding session will resume; only ever set when status is "holding". */
+      estimatedResumeTime: string | null;
     }
   | { status: "error" };
 

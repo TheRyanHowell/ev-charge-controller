@@ -69,6 +69,32 @@ describe("useSessionPolling", () => {
     }
   });
 
+  it("initializes with holding session and estimatedResumeTime from initialSession", async () => {
+    const { result } = renderHook(() =>
+      useSessionPolling({
+        selectedVehicle: testVehicle,
+        initialSession: {
+          status: "holding",
+          powerDraw: 0,
+          startPercent: 20,
+          currentPercent: 64,
+          targetPercent: 80,
+          startedAt: "2024-01-01T10:00:00Z",
+          voltage: null,
+          current: null,
+          energyAddedKwh: 0.5,
+          estimatedResumeTime: "23:30",
+        },
+        isDraggingRef,
+      }),
+    );
+    await flushMicrotasks();
+    expect(result.current.session.status).toBe("holding");
+    if (result.current.session.status === "holding") {
+      expect(result.current.session.estimatedResumeTime).toBe("23:30");
+    }
+  });
+
   it("initializes with pending session from initialSession", async () => {
     const { result } = renderHook(() =>
       useSessionPolling({

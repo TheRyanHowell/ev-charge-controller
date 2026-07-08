@@ -51,6 +51,7 @@ interface SessionPollingDeps {
     voltage?: number | null;
     current?: number | null;
     energyAddedKwh?: number | null;
+    estimatedResumeTime?: string | null;
   } | null;
   isDraggingRef: RefObject<boolean>;
 }
@@ -73,6 +74,7 @@ export function useSessionPolling(deps: SessionPollingDeps) {
           voltage: initialSession.voltage ?? null,
           current: initialSession.current ?? null,
           energyAddedKwh: initialSession.energyAddedKwh ?? null,
+          estimatedResumeTime: initialSession.estimatedResumeTime ?? null,
         } as ChargeSessionResponse)
       : null,
   );
@@ -127,6 +129,7 @@ export function useSessionPolling(deps: SessionPollingDeps) {
         voltage: initialSession.voltage ?? null,
         current: initialSession.current ?? null,
         energyAddedKwh: initialSession.energyAddedKwh ?? null,
+        estimatedResumeTime: initialSession.estimatedResumeTime ?? null,
       } as ChargeSessionResponse)
     : undefined;
 
@@ -175,6 +178,7 @@ export function useSessionPolling(deps: SessionPollingDeps) {
         startedAt,
         voltage: queryData.voltage ?? null,
         current: queryData.current ?? null,
+        estimatedResumeTime: queryData.estimatedResumeTime ?? null,
       };
     }
     if (status === "pending") {

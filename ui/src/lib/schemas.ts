@@ -93,6 +93,8 @@ export const HistoryChargeSessionSchema = z.object({
   offPeakKwh: z.number().optional().nullable(),
 });
 
+const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
+
 export const ChargeSessionResponseSchema = z.object({
   id: z.string(),
   vehicleId: z.string(),
@@ -121,9 +123,17 @@ export const ChargeSessionResponseSchema = z.object({
   // Frozen electricity cost (pence) and off-peak wall energy share.
   costPence: z.number().optional().nullable(),
   offPeakKwh: z.number().optional().nullable(),
+  // Current best guess (HH:MM) for when a holding carbon-aware two-stage
+  // session will resume. Only set while status is "holding".
+  estimatedResumeTime: z.string().regex(timePattern).optional().nullable(),
 });
 
-const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
+const TwoStagePlanEstimateSchema = z.object({
+  stage1Start: z.string().regex(timePattern),
+  stage1End: z.string().regex(timePattern),
+  stage2Start: z.string().regex(timePattern),
+  stage2End: z.string().regex(timePattern),
+});
 
 export const ScheduleSchema = z.object({
   id: z.string(),
@@ -133,6 +143,8 @@ export const ScheduleSchema = z.object({
   windowEnd: z.string().regex(timePattern).optional().nullable(),
   estimatedStartTime: z.string().regex(timePattern).optional().nullable(),
   readyBy: z.string().regex(timePattern).optional().nullable(),
+  twoStage: z.boolean().optional(),
+  estimatedPlan: TwoStagePlanEstimateSchema.optional().nullable(),
   enabled: z.boolean(),
 });
 
@@ -213,6 +225,7 @@ export const InitialChargeSessionSchema = ChargeSessionResponseSchema.pick({
   voltage: true,
   current: true,
   energyAddedKwh: true,
+  estimatedResumeTime: true,
 }).extend({
   renderTimeMs: z.number(),
 });
