@@ -397,4 +397,44 @@ test.describe.serial("Schedule Persistence", () => {
       },
     );
   });
+
+  test("shows a target-unreachable warning for an infeasible window", async ({
+    page,
+    api,
+  }) => {
+    // A 5-minute window cannot fit any real charge on the seeded vehicle
+    // (20% current, real Maeving RM1 spec) - no forecast dependency, so
+    // this is deterministic.
+    const plugs = await api.getJson<{ id: string }[]>("/api/plugs");
+    const plugId = plugs[0]?.id;
+    if (!plugId) throw new Error("No plug found in seed data");
+
+    await api.patch(`/api/plugs/${plugId}/schedule`, {
+      type: "carbon_aware",
+      windowStart: "01:00",
+      windowEnd: "01:05",
+      enabled: true,
+    });
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("speedometer-gauge-svg")).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.waitForLoadState("load");
+
+    // Dashboard circle should show the at-a-glance amber warning state.
+    await expect(
+      page.getByTestId("schedule-circle"),
+      "Schedule circle should switch to the unreachable-target warning state",
+    ).toHaveAttribute("aria-label", /may not reach target/i, {
+      timeout: 5_000,
+    });
+
+    // Modal should also show the warning banner.
+    const dialog = await openScheduleModal(page);
+    await expect(
+      dialog.getByTestId("target-unreachable-warning"),
+      "Schedule modal should show the target-unreachable warning banner",
+    ).toBeVisible({ timeout: 5_000 });
+  });
 });
