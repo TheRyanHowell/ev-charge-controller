@@ -516,7 +516,7 @@ func TestSessionMonitoringService_CheckAndAutoStopReachingSession_TransitionsToH
 	}
 	require.NoError(t, sessRepo.Create(context.Background(), session))
 
-	ctrl.SetPower(context.Background(), testPlugID, true)
+	require.NoError(t, ctrl.SetPower(context.Background(), testPlugID, true))
 	// Plenty of energy to clear holdKwh (0.64*1.9=1.216); clamps at TargetKwh (1.52).
 	ctrl.SetEnergy(testPlugID, &tasmota.EnergyData{Total: 2000.0, Power: 600})
 
@@ -558,7 +558,7 @@ func TestSessionMonitoringService_CheckAndAutoStopReachingSession_HoldNotYetReac
 	}
 	require.NoError(t, sessRepo.Create(context.Background(), session))
 
-	ctrl.SetPower(context.Background(), testPlugID, true)
+	require.NoError(t, ctrl.SetPower(context.Background(), testPlugID, true))
 	// Tiny amount of energy - nowhere near holdKwh (1.216).
 	ctrl.SetEnergy(testPlugID, &tasmota.EnergyData{Total: 0.05, Power: 600})
 

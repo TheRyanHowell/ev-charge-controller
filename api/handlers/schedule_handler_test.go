@@ -121,6 +121,61 @@ func TestScheduleHandler_UpsertByPlug_InvalidTime(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 }
 
+func TestScheduleHandler_UpsertByPlug_ReadyBy(t *testing.T) {
+	handler, db := setupScheduleHandlerTest(t)
+	defer db.Close()
+
+	reqBody := `{"time": "03:00", "readyBy": "07:00", "enabled": true}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/plugs/"+testSchedulePlugID+"/schedule", bytes.NewReader([]byte(reqBody)))
+	req.Header.Set("Content-Type", "application/json")
+	req = withPathValue(req, "id", testSchedulePlugID)
+	req = req.WithContext(internal.WithUserID(req.Context(), testScheduleUserID))
+	rr := httptest.NewRecorder()
+
+	handler.UpsertByPlug(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	var schedule models.Schedule
+	err := json.NewDecoder(rr.Body).Decode(&schedule)
+	assert.NoError(t, err)
+	assert.Equal(t, "03:00", schedule.Time)
+	require.NotNil(t, schedule.ReadyBy)
+	assert.Equal(t, "07:00", *schedule.ReadyBy)
+}
+
+func TestScheduleHandler_UpsertByPlug_ReadyByEqualsTime(t *testing.T) {
+	handler, db := setupScheduleHandlerTest(t)
+	defer db.Close()
+
+	reqBody := `{"time": "03:00", "readyBy": "03:00", "enabled": true}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/plugs/"+testSchedulePlugID+"/schedule", bytes.NewReader([]byte(reqBody)))
+	req.Header.Set("Content-Type", "application/json")
+	req = withPathValue(req, "id", testSchedulePlugID)
+	req = req.WithContext(internal.WithUserID(req.Context(), testScheduleUserID))
+	rr := httptest.NewRecorder()
+
+	handler.UpsertByPlug(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+func TestScheduleHandler_UpsertByPlug_ReadyByInvalidFormat(t *testing.T) {
+	handler, db := setupScheduleHandlerTest(t)
+	defer db.Close()
+
+	reqBody := `{"time": "03:00", "readyBy": "25:00", "enabled": true}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/plugs/"+testSchedulePlugID+"/schedule", bytes.NewReader([]byte(reqBody)))
+	req.Header.Set("Content-Type", "application/json")
+	req = withPathValue(req, "id", testSchedulePlugID)
+	req = req.WithContext(internal.WithUserID(req.Context(), testScheduleUserID))
+	rr := httptest.NewRecorder()
+
+	handler.UpsertByPlug(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
 func TestScheduleHandler_GetByPlug(t *testing.T) {
 	handler, db := setupScheduleHandlerTest(t)
 	defer db.Close()
