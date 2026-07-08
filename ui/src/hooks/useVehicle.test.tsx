@@ -1,7 +1,14 @@
 import type { Vehicle } from "@/lib/schemas";
 
+import { queryKeys } from "@/lib/queryKeys";
 import { customRenderHook as renderHook, waitFor, act } from "@/test-utils";
 import { createVehicle } from "@/test/fixtures";
+import {
+  QueryClient,
+  QueryClientProvider,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { renderHook as rtlRenderHook } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import { useVehicle } from "./useVehicle";
@@ -265,6 +272,106 @@ describe("useVehicle", () => {
       },
       { timeout: 1000 },
     );
+  });
+
+  // Renders useVehicle with a QueryClient exposed to the test, so the schedule
+  // cache's invalidation state can be inspected directly (mirrors the pattern in
+  // useChargeActions.test.tsx, since customRenderHook's client isn't exposed).
+  function renderVehicleWithClient() {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, staleTime: 0 },
+        mutations: { retry: false },
+      },
+    });
+    function Wrapper({ children }: { children: React.ReactNode }) {
+      return (
+        <QueryClientProvider client={queryClient}>
+          {children}
+        </QueryClientProvider>
+      );
+    }
+    const rendered = rtlRenderHook(
+      () => {
+        const vehicle = useVehicle();
+        const client = useQueryClient();
+        return { ...vehicle, queryClient: client };
+      },
+      { wrapper: Wrapper },
+    );
+    return { ...rendered, queryClient };
+  }
+
+  it("updatePercents invalidates the plug's schedule cache when a plugId is given", async () => {
+    mockFetch.mockImplementation((url: string, opts?: any) => {
+      if (opts?.method === "PATCH" && url.includes("/api/vehicles/")) {
+        return Promise.resolve({ ok: true, status: 200 });
+      }
+      if (url.includes("/api/vehicles")) {
+        return Promise.resolve({ ok: true, json: async () => vehicles });
+      }
+      return Promise.resolve({ ok: false });
+    });
+
+    const { result } = renderVehicleWithClient();
+    const scheduleKey = queryKeys.plugs.schedule("plug-1");
+
+    await waitFor(() => {
+      expect(result.current.vehicles).toHaveLength(2);
+    });
+
+    act(() => {
+      result.current.queryClient.setQueryData(scheduleKey, {
+        id: "sched1",
+        type: "carbon_aware",
+        time: "01:00",
+        enabled: true,
+      });
+    });
+
+    await act(async () => {
+      await result.current.updatePercents("rm1", 45, 80, "plug-1");
+    });
+
+    expect(
+      result.current.queryClient.getQueryState(scheduleKey)?.isInvalidated,
+    ).toBe(true);
+  });
+
+  it("updatePercents does not touch any schedule cache when plugId is omitted", async () => {
+    mockFetch.mockImplementation((url: string, opts?: any) => {
+      if (opts?.method === "PATCH" && url.includes("/api/vehicles/")) {
+        return Promise.resolve({ ok: true, status: 200 });
+      }
+      if (url.includes("/api/vehicles")) {
+        return Promise.resolve({ ok: true, json: async () => vehicles });
+      }
+      return Promise.resolve({ ok: false });
+    });
+
+    const { result } = renderVehicleWithClient();
+    const scheduleKey = queryKeys.plugs.schedule("plug-1");
+
+    await waitFor(() => {
+      expect(result.current.vehicles).toHaveLength(2);
+    });
+
+    act(() => {
+      result.current.queryClient.setQueryData(scheduleKey, {
+        id: "sched1",
+        type: "carbon_aware",
+        time: "01:00",
+        enabled: true,
+      });
+    });
+
+    await act(async () => {
+      await result.current.updatePercents("rm1", 45, 80);
+    });
+
+    expect(
+      result.current.queryClient.getQueryState(scheduleKey)?.isInvalidated,
+    ).toBeFalsy();
   });
 
   it("updatePercents optimistically reflects new percents before the request resolves", async () => {

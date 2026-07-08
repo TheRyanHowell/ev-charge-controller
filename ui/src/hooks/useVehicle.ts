@@ -56,6 +56,7 @@ export function useVehicle({
       vehicleId: string;
       currentPercent: number;
       targetPercent: number;
+      plugId?: string | null;
     }) => {
       const ok = await apiPatchRaw(`/api/vehicles/${vehicleId}`, {
         currentPercent,
@@ -89,18 +90,32 @@ export function useVehicle({
       flashTempError("Failed to save battery levels. Please try again.");
       console.error("Failed to update vehicle percents:", err);
     },
-    onSettled: () => {
+    onSettled: (_data, _error, variables) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.vehicles.all });
+      // A new target percent changes how long charging will take, which changes
+      // the carbon-aware schedule's forecast-based start estimate - refresh it so
+      // the gauge doesn't show a stale time.
+      if (variables.plugId) {
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.plugs.schedule(variables.plugId),
+        });
+      }
     },
   });
 
   const updatePercents = useCallback(
-    async (vehicleId: string, currentPct: number, targetPct: number) => {
+    async (
+      vehicleId: string,
+      currentPct: number,
+      targetPct: number,
+      plugId?: string | null,
+    ) => {
       try {
         return await updatePercentsMutation.mutateAsync({
           vehicleId,
           currentPercent: currentPct,
           targetPercent: targetPct,
+          plugId,
         });
       } catch {
         // Rollback + user-facing error handled in the mutation's onError.

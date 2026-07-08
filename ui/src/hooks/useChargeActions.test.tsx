@@ -413,6 +413,95 @@ describe("useChargeActions", () => {
     expect(cacheData.targetPercent).toBe(80);
   });
 
+  it("handleTargetChargeUpdate invalidates the plug's schedule cache on settle", async () => {
+    mockFetch.mockImplementation((_url: string, init?: RequestInit) =>
+      init?.method === "PATCH"
+        ? Promise.resolve({ ok: true, status: 204 })
+        : Promise.resolve({ ok: false }),
+    );
+
+    const { result } = renderChargeActions({ sessionStatus: "charging" });
+    const scheduleKey = queryKeys.plugs.schedule("test-plug-id");
+    act(() => {
+      result.current.queryClient.setQueryData(scheduleKey, {
+        id: "sched1",
+        type: "carbon_aware",
+        time: "01:00",
+        windowStart: "01:00",
+        windowEnd: "06:00",
+        estimatedStartTime: "03:00",
+        enabled: true,
+      });
+    });
+
+    act(() => {
+      result.current.handleTargetChargeUpdate(40, 95);
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 350));
+    });
+
+    expect(
+      result.current.queryClient.getQueryState(scheduleKey)?.isInvalidated,
+    ).toBe(true);
+  });
+
+  it("handleTargetChargeUpdate invalidates the plug's schedule cache even when the PATCH fails", async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 503,
+      text: async () => "",
+    });
+
+    const { result } = renderChargeActions({ sessionStatus: "charging" });
+    const scheduleKey = queryKeys.plugs.schedule("test-plug-id");
+    act(() => {
+      result.current.queryClient.setQueryData(scheduleKey, {
+        id: "sched1",
+        type: "carbon_aware",
+        time: "01:00",
+        enabled: true,
+      });
+    });
+
+    act(() => {
+      result.current.handleTargetChargeUpdate(40, 95);
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 350));
+    });
+
+    expect(
+      result.current.queryClient.getQueryState(scheduleKey)?.isInvalidated,
+    ).toBe(true);
+  });
+
+  it("handleTargetChargeUpdate does not touch the schedule cache when plugId is null", async () => {
+    mockFetch.mockImplementation((_url: string, init?: RequestInit) =>
+      init?.method === "PATCH"
+        ? Promise.resolve({ ok: true, status: 204 })
+        : Promise.resolve({ ok: false }),
+    );
+
+    const { result } = renderChargeActions({
+      sessionStatus: "charging",
+      plugId: null,
+    });
+
+    act(() => {
+      result.current.handleTargetChargeUpdate(40, 95);
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 350));
+    });
+
+    // No plugId means no schedule query exists for this session - nothing to invalidate,
+    // and no crash from trying to build a query key with a null plugId.
+    expect(
+      result.current.queryClient.getQueryState(queryKeys.plugs.schedule("")),
+    ).toBeUndefined();
+  });
+
   it("handleTargetChargeUpdate holds the commit guard then releases it on settle", async () => {
     const setCommitting = vi.fn();
     mockFetch.mockImplementation((_url: string, init?: RequestInit) =>

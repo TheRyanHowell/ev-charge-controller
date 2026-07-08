@@ -248,6 +248,15 @@ export default function Dashboard({
     }
   }, [queryClient, selectVehicle]);
 
+  // Threads the current plug through to updatePercents so its onSettled can
+  // refresh the carbon-aware schedule's forecast-based start estimate - a new
+  // target percent changes how long charging will take.
+  const updatePercentsForCurrentPlug = useCallback(
+    (vehicleId: string, current: number, target: number) =>
+      updatePercents(vehicleId, current, target, chargingPlug?.id ?? null),
+    [updatePercents, chargingPlug],
+  );
+
   const handlers = useMemo(
     () => ({
       onStartCharging: startCharging,
@@ -256,7 +265,7 @@ export default function Dashboard({
       onChargeDragEnd: chargeOnDragEnd,
       clearError,
       handleTargetChargeUpdate,
-      updatePercents,
+      updatePercents: updatePercentsForCurrentPlug,
     }),
     [
       startCharging,
@@ -265,7 +274,7 @@ export default function Dashboard({
       chargeOnDragEnd,
       clearError,
       handleTargetChargeUpdate,
-      updatePercents,
+      updatePercentsForCurrentPlug,
     ],
   );
 

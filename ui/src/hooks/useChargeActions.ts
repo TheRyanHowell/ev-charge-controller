@@ -174,6 +174,16 @@ export function useChargeActions(deps: ChargeActionsDeps) {
         deps.onTargetUpdateError(msg);
       }
     },
+    onSettled: () => {
+      // A new target percent changes how long charging will take, which changes
+      // the carbon-aware schedule's forecast-based start estimate - refresh it so
+      // the gauge doesn't show a stale time.
+      if (plugId) {
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.plugs.schedule(plugId),
+        });
+      }
+    },
   });
 
   const setCommitting = deps.setCommitting;

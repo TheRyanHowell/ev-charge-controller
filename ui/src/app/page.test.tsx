@@ -665,7 +665,9 @@ describe("Home Page", () => {
     }
 
     expect(chargeOnDragEnd).toHaveBeenCalledWith(50, 75);
-    expect(updatePercents).toHaveBeenCalledWith("rm1", 50, 75);
+    // plugId is threaded through so onSettled can refresh the carbon-aware
+    // schedule's forecast-based start estimate after the target percent changes.
+    expect(updatePercents).toHaveBeenCalledWith("rm1", 50, 75, "plug-1");
   });
 
   it("handleDragEnd skips updatePercents without selected vehicle", async () => {
