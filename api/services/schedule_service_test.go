@@ -2279,3 +2279,63 @@ func TestWorthwhileTwoStage_PercentMatrix(t *testing.T) {
 func formatPercentPair(current, target float64) string {
 	return fmt.Sprintf("%.0f->%.0fpct", current, target)
 }
+
+// TestResolveWindow_TimeMatrix exhaustively sweeps windowStart at 30-minute
+// increments across a full 24h day, crossed with 3 representative window
+// durations (30m short, 8h typical overnight, 23h nearly-full-day - covering
+// both same-day and midnight-crossing shapes) and now at 30-minute
+// increments across the same day. This is the literal "30-minute increments
+// covering 24 hours + crossover" sweep requested during the edge-case audit:
+// every combination that pushes a window's end past midnight, crossed with
+// every possible now, appears somewhere in the grid.
+//
+// Rather than a hand-computed expected value per one of the 6,912 generated
+// cases, this checks an independently-derived invariant: given the window
+// recurs with an exact 24h period, "elapsed" (how far now is past the most
+// recent same-phase instance start) determines whether now is inside that
+// instance or must roll to the next one - this is an oracle reimplementation
+// of the recurrence, cross-checked against resolveWindow's actual output.
+func TestResolveWindow_TimeMatrix(t *testing.T) {
+	durations := []time.Duration{30 * time.Minute, 8 * time.Hour, 23 * time.Hour}
+	baseDate := time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC)
+	const dayMinutes = 24 * 60
+
+	for _, duration := range durations {
+		for startMin := 0; startMin < dayMinutes; startMin += 30 {
+			windowStartStr := fmt.Sprintf("%02d:%02d", startMin/60, startMin%60)
+			endMin := (startMin + int(duration.Minutes())) % dayMinutes
+			windowEndStr := fmt.Sprintf("%02d:%02d", endMin/60, endMin%60)
+			todayBaseStart := baseDate.Add(time.Duration(startMin) * time.Minute)
+
+			for nowMin := 0; nowMin < dayMinutes; nowMin += 30 {
+				now := baseDate.Add(time.Duration(nowMin) * time.Minute)
+				name := fmt.Sprintf("dur=%s/start=%s/now=%02d:%02d", duration, windowStartStr, nowMin/60, nowMin%60)
+
+				t.Run(name, func(t *testing.T) {
+					start, end, err := resolveWindow(now, windowStartStr, windowEndStr)
+					require.NoError(t, err)
+
+					assert.True(t, end.After(start), "end must be strictly after start")
+					assert.Equal(t, duration, end.Sub(start), "window length must be preserved exactly")
+
+					elapsed := now.Sub(todayBaseStart) % (24 * time.Hour)
+					if elapsed < 0 {
+						elapsed += 24 * time.Hour
+					}
+					lastInstanceStart := now.Add(-elapsed)
+
+					var wantStart, wantEnd time.Time
+					if elapsed < duration {
+						wantStart, wantEnd = lastInstanceStart, lastInstanceStart.Add(duration)
+					} else {
+						wantStart = lastInstanceStart.Add(24 * time.Hour)
+						wantEnd = wantStart.Add(duration)
+					}
+
+					assert.Equal(t, wantStart, start, "resolved start does not match the instance actually containing (or soonest after) now")
+					assert.Equal(t, wantEnd, end)
+				})
+			}
+		}
+	}
+}
