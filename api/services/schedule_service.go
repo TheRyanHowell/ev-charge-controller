@@ -567,6 +567,12 @@ func (s *ScheduleService) EstimateCarbonAwareTwoStagePlan(ctx context.Context, s
 	if err1 != nil || err2 != nil {
 		return models.TwoStagePlanEstimate{}, false
 	}
+	if d2 < models.MinTwoStageStageDurationMin {
+		// Consistent with worthwhileTwoStage: too small a deferred top-up to be
+		// worth a relay power-cycle, so activation would fall back to
+		// single-stage - don't show a plan preview that won't actually happen.
+		return models.TwoStagePlanEstimate{}, false
+	}
 
 	searchFrom := windowStart
 	if now.After(windowStart) {
