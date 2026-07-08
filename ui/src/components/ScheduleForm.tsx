@@ -237,6 +237,23 @@ export default function ScheduleForm({
                 />
               </div>
             )}
+            {twoStageEnabled && schedule?.estimatedPlan && (
+              <div
+                className="text-xs text-gray-400 bg-gray-800/60 rounded-md px-3 py-2 space-y-1"
+                data-testid="estimated-plan"
+              >
+                <p className="text-gray-300 font-medium">Estimated plan</p>
+                <p>
+                  Stage 1: {schedule.estimatedPlan.stage1Start} –{" "}
+                  {schedule.estimatedPlan.stage1End} (to 80%)
+                </p>
+                <p>Hold until {schedule.estimatedPlan.stage2Start}</p>
+                <p>
+                  Stage 2: {schedule.estimatedPlan.stage2Start} –{" "}
+                  {schedule.estimatedPlan.stage2End} (to 100%)
+                </p>
+              </div>
+            )}
           </div>
         ) : (
           <div className="space-y-3">

@@ -320,4 +320,55 @@ describe("ScheduleForm", () => {
     render(<ScheduleForm schedule={caSchedule} onSave={vi.fn()} />);
     expect(screen.queryByTestId("estimated-plan")).not.toBeInTheDocument();
   });
+
+  it("does not show the estimated plan on the daily tab when two-stage is off", () => {
+    const dailySchedule: Schedule = {
+      id: "s1",
+      type: "daily",
+      time: "01:00",
+      estimatedPlan: {
+        stage1Start: "01:00",
+        stage1End: "02:00",
+        stage2Start: "06:00",
+        stage2End: "07:00",
+      },
+      enabled: true,
+    };
+    render(<ScheduleForm schedule={dailySchedule} onSave={vi.fn()} />);
+    expect(screen.queryByTestId("estimated-plan")).not.toBeInTheDocument();
+  });
+
+  it("shows the estimated plan on the daily tab when two-stage is on and a plan is available", () => {
+    const dailySchedule: Schedule = {
+      id: "s1",
+      type: "daily",
+      time: "01:00",
+      readyBy: "07:00",
+      estimatedPlan: {
+        stage1Start: "01:00",
+        stage1End: "02:00",
+        stage2Start: "06:00",
+        stage2End: "07:00",
+      },
+      enabled: true,
+    };
+    render(<ScheduleForm schedule={dailySchedule} onSave={vi.fn()} />);
+    const plan = screen.getByTestId("estimated-plan");
+    expect(plan).toHaveTextContent("01:00");
+    expect(plan).toHaveTextContent("02:00");
+    expect(plan).toHaveTextContent("06:00");
+    expect(plan).toHaveTextContent("07:00");
+  });
+
+  it("does not show the estimated plan on the daily tab when two-stage is on but no plan is available yet", () => {
+    const dailySchedule: Schedule = {
+      id: "s1",
+      type: "daily",
+      time: "01:00",
+      readyBy: "07:00",
+      enabled: true,
+    };
+    render(<ScheduleForm schedule={dailySchedule} onSave={vi.fn()} />);
+    expect(screen.queryByTestId("estimated-plan")).not.toBeInTheDocument();
+  });
 });
