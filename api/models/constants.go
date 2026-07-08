@@ -69,6 +69,15 @@ const (
 	// during stage 1 before the plug is powered off and the session holds, ready
 	// to resume in time to reach 100% of the target by the schedule's ready-by time.
 	TwoStageHoldFraction = 0.8
+
+	// MinTwoStageStageDurationMin is the minimum estimated stage 2 (hold->target)
+	// charge duration, in minutes, for two-stage charging to be worthwhile. Below
+	// this, the deferred top-up is shorter than the overhead of a relay power-cycle
+	// and hold/resume state transition - the schedule falls back to a single-stage
+	// charge straight to target instead. Only stage 2 is gated: a small stage 1
+	// (current already close to the hold point) is not degenerate on its own,
+	// since stage 2 may still be substantial.
+	MinTwoStageStageDurationMin = 15
 )
 
 // LWT debounce and cooldown durations.
