@@ -25,6 +25,7 @@ var (
 	ErrWindowRequired         = errors.New("windowStart and windowEnd are required for carbon_aware schedule")
 	ErrWindowEqual            = errors.New("windowStart and windowEnd must differ")
 	ErrMaintenancePlugSchedule = errors.New("schedules are not supported for maintenance plugs")
+	ErrReadyByEqualsTime      = errors.New("readyBy must differ from time")
 )
 
 // scheduleThrottleDuration is the minimum time between schedule activations across all plugs.
@@ -128,10 +129,22 @@ func (s *ScheduleService) rejectMaintenancePlug(ctx context.Context, plugID stri
 	return nil
 }
 
-// UpsertByPlugID creates or updates a daily schedule for a specific plug.
-func (s *ScheduleService) UpsertByPlugID(ctx context.Context, plugID, userID, scheduleTime string, enabled bool) (*models.Schedule, error) {
+// UpsertByPlugID creates or updates a daily schedule for a specific plug. readyBy is
+// optional: when set, it enables two-stage charging (see tryActivateDaily) - the
+// vehicle charges to 80% of its target, holds, then resumes to reach 100% of target
+// by readyBy.
+func (s *ScheduleService) UpsertByPlugID(ctx context.Context, plugID, userID, scheduleTime string, readyBy *string, enabled bool) (*models.Schedule, error) {
 	if !isValidTimeFormat(scheduleTime) {
 		return nil, ErrInvalidScheduleTime
+	}
+
+	if readyBy != nil {
+		if !isValidTimeFormat(*readyBy) {
+			return nil, ErrInvalidScheduleTime
+		}
+		if *readyBy == scheduleTime {
+			return nil, ErrReadyByEqualsTime
+		}
 	}
 
 	if userID == "" {
@@ -146,6 +159,7 @@ func (s *ScheduleService) UpsertByPlugID(ctx context.Context, plugID, userID, sc
 		ID:      uuid.New().String(),
 		PlugID:  &plugID,
 		Time:    scheduleTime,
+		ReadyBy: readyBy,
 		Type:    models.ScheduleTypeDaily,
 		Enabled: enabled,
 		UserID:  &userID,
@@ -243,6 +257,10 @@ func (s *ScheduleService) CheckAndActivateAll(ctx context.Context) {
 }
 
 // tryActivateDaily fires a charge session when the current HH:MM matches the schedule time.
+// When sch.ReadyBy is set, activates two-stage charging: to 80% of the vehicle's
+// target now, holding there until CheckAndResumeHoldingSession resumes it in time
+// to reach 100% of target by ReadyBy. If the vehicle is already past the 80% mark,
+// there's nothing to hold for, so it falls back to a normal single-stage charge.
 func (s *ScheduleService) tryActivateDaily(ctx context.Context, sch models.Schedule, plugID string, now time.Time, lastAct time.Time) {
 	if sch.Time != formatTime(now) {
 		return
@@ -257,7 +275,13 @@ func (s *ScheduleService) tryActivateDaily(ctx context.Context, sch models.Sched
 		return
 	}
 
-	sess, err := s.chargeService.StartSession(ctx, plugID, cand.vehicle.ID, cand.vehicle.CurrentPercent, cand.vehicle.TargetPercent)
+	var sess *models.ChargeSession
+	var err error
+	if holdPercent := cand.vehicle.TargetPercent * models.TwoStageHoldFraction; sch.ReadyBy != nil && holdPercent > cand.vehicle.CurrentPercent {
+		sess, err = s.chargeService.StartTwoStageSession(ctx, plugID, cand.vehicle.ID, cand.vehicle.CurrentPercent, cand.vehicle.TargetPercent, holdPercent, *sch.ReadyBy)
+	} else {
+		sess, err = s.chargeService.StartSession(ctx, plugID, cand.vehicle.ID, cand.vehicle.CurrentPercent, cand.vehicle.TargetPercent)
+	}
 	if err != nil {
 		if errors.Is(err, ErrActiveSessionExists) {
 			return
@@ -501,6 +525,23 @@ func resolveWindow(now time.Time, windowStart, windowEnd string) (start, end tim
 	}
 
 	return
+}
+
+// resolveDeadline converts an HH:MM string to the next absolute timestamp at or
+// after now - single-timestamp counterpart to resolveWindow, used to resolve a
+// holding session's ready-by time relative to the current poll tick.
+func resolveDeadline(now time.Time, hhmm string) (time.Time, error) {
+	h, m, err := parseHHMM(hhmm)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	loc := now.Location()
+	deadline := time.Date(now.Year(), now.Month(), now.Day(), h, m, 0, 0, loc)
+	if deadline.Before(now) {
+		deadline = deadline.Add(24 * time.Hour)
+	}
+	return deadline, nil
 }
 
 // parseHHMM parses a "HH:MM" string into hour and minute integers.

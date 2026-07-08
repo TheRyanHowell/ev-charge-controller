@@ -50,7 +50,7 @@ func TestScheduleService_UpsertByPlugID(t *testing.T) {
 	service, db, _ := setupScheduleServiceTest(t)
 	defer db.Close()
 
-	schedule, err := service.UpsertByPlugID(t.Context(), testPlugID, testUserID, "03:00", true)
+	schedule, err := service.UpsertByPlugID(t.Context(), testPlugID, testUserID, "03:00", nil, true)
 	require.NoError(t, err)
 	require.NotNil(t, schedule)
 	assert.Equal(t, "03:00", schedule.Time)
@@ -62,7 +62,7 @@ func TestScheduleService_UpsertByPlugID_InvalidTime(t *testing.T) {
 	defer db.Close()
 
 	for _, invalidTime := range []string{"25:00", "3:00", "03:60", "abc", "", "03:00:00", "24:00"} {
-		_, err := service.UpsertByPlugID(t.Context(), testPlugID, testUserID, invalidTime, true)
+		_, err := service.UpsertByPlugID(t.Context(), testPlugID, testUserID, invalidTime, nil, true)
 		assert.ErrorIs(t, err, ErrInvalidScheduleTime, "expected error for time: %s", invalidTime)
 	}
 }
@@ -71,7 +71,7 @@ func TestScheduleService_UpsertByPlugID_EmptyUserID(t *testing.T) {
 	service, db, _ := setupScheduleServiceTest(t)
 	defer db.Close()
 
-	_, err := service.UpsertByPlugID(t.Context(), testPlugID, "", "03:00", true)
+	_, err := service.UpsertByPlugID(t.Context(), testPlugID, "", "03:00", nil, true)
 	assert.ErrorIs(t, err, ErrUserIDRequired)
 }
 
@@ -79,14 +79,44 @@ func TestScheduleService_UpsertByPlugID_UpdateExisting(t *testing.T) {
 	service, db, _ := setupScheduleServiceTest(t)
 	defer db.Close()
 
-	_, err := service.UpsertByPlugID(t.Context(), testPlugID, testUserID, "03:00", true)
+	_, err := service.UpsertByPlugID(t.Context(), testPlugID, testUserID, "03:00", nil, true)
 	require.NoError(t, err)
 
-	s2, err := service.UpsertByPlugID(t.Context(), testPlugID, testUserID, "04:00", false)
+	s2, err := service.UpsertByPlugID(t.Context(), testPlugID, testUserID, "04:00", nil, false)
 	require.NoError(t, err)
 
 	assert.Equal(t, "04:00", s2.Time)
 	assert.False(t, s2.Enabled)
+}
+
+func TestScheduleService_UpsertByPlugID_ReadyBy(t *testing.T) {
+	service, db, _ := setupScheduleServiceTest(t)
+	defer db.Close()
+
+	readyBy := "07:00"
+	schedule, err := service.UpsertByPlugID(t.Context(), testPlugID, testUserID, "03:00", &readyBy, true)
+	require.NoError(t, err)
+	require.NotNil(t, schedule)
+	require.NotNil(t, schedule.ReadyBy)
+	assert.Equal(t, "07:00", *schedule.ReadyBy)
+}
+
+func TestScheduleService_UpsertByPlugID_ReadyByInvalidFormat(t *testing.T) {
+	service, db, _ := setupScheduleServiceTest(t)
+	defer db.Close()
+
+	invalid := "25:00"
+	_, err := service.UpsertByPlugID(t.Context(), testPlugID, testUserID, "03:00", &invalid, true)
+	assert.ErrorIs(t, err, ErrInvalidScheduleTime)
+}
+
+func TestScheduleService_UpsertByPlugID_ReadyByEqualsTime(t *testing.T) {
+	service, db, _ := setupScheduleServiceTest(t)
+	defer db.Close()
+
+	sameTime := "03:00"
+	_, err := service.UpsertByPlugID(t.Context(), testPlugID, testUserID, "03:00", &sameTime, true)
+	assert.ErrorIs(t, err, ErrReadyByEqualsTime)
 }
 
 func TestScheduleService_GetByPlugID(t *testing.T) {
@@ -97,7 +127,7 @@ func TestScheduleService_GetByPlugID(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, schedule)
 
-	_, err = service.UpsertByPlugID(t.Context(), testPlugID, testUserID, "03:00", true)
+	_, err = service.UpsertByPlugID(t.Context(), testPlugID, testUserID, "03:00", nil, true)
 	require.NoError(t, err)
 
 	schedule, err = service.GetByPlugID(t.Context(), testPlugID)
@@ -123,7 +153,7 @@ func TestScheduleService_CheckAndActivateAll_Disabled(t *testing.T) {
 	defer db.Close()
 
 	currentTime := formatTime(time.Now())
-	_, err := service.UpsertByPlugID(t.Context(), testPlugID, testUserID, currentTime, false)
+	_, err := service.UpsertByPlugID(t.Context(), testPlugID, testUserID, currentTime, nil, false)
 	require.NoError(t, err)
 
 	service.CheckAndActivateAll(t.Context())
@@ -137,7 +167,7 @@ func TestScheduleService_CheckAndActivateAll_TimeMismatch(t *testing.T) {
 	service, db, chargeSvc := setupScheduleServiceTest(t)
 	defer db.Close()
 
-	_, err := service.UpsertByPlugID(t.Context(), testPlugID, testUserID, "23:59", true)
+	_, err := service.UpsertByPlugID(t.Context(), testPlugID, testUserID, "23:59", nil, true)
 	require.NoError(t, err)
 
 	service.CheckAndActivateAll(t.Context())
@@ -156,7 +186,7 @@ func TestScheduleService_CheckAndActivateAll_NoVehicleOnPlug(t *testing.T) {
 	require.NoError(t, err)
 
 	currentTime := formatTime(time.Now())
-	_, err = service.UpsertByPlugID(t.Context(), testPlugID, testUserID, currentTime, true)
+	_, err = service.UpsertByPlugID(t.Context(), testPlugID, testUserID, currentTime, nil, true)
 	require.NoError(t, err)
 
 	service.CheckAndActivateAll(t.Context())
@@ -171,7 +201,7 @@ func TestScheduleService_CheckAndActivateAll_SkipWhenActiveSession(t *testing.T)
 	defer db.Close()
 
 	currentTime := formatTime(time.Now())
-	_, err := service.UpsertByPlugID(t.Context(), testPlugID, testUserID, currentTime, true)
+	_, err := service.UpsertByPlugID(t.Context(), testPlugID, testUserID, currentTime, nil, true)
 	require.NoError(t, err)
 
 	// Create an active session for this plug to block activation
@@ -208,7 +238,7 @@ func TestScheduleService_CheckAndActivateAll_SkipWhenAtTarget(t *testing.T) {
 	require.NoError(t, err)
 
 	currentTime := formatTime(time.Now())
-	_, err = service.UpsertByPlugID(t.Context(), testPlugID, testUserID, currentTime, true)
+	_, err = service.UpsertByPlugID(t.Context(), testPlugID, testUserID, currentTime, nil, true)
 	require.NoError(t, err)
 
 	service.CheckAndActivateAll(t.Context())
@@ -223,7 +253,7 @@ func TestScheduleService_CheckAndActivateAll_Throttle(t *testing.T) {
 	defer db.Close()
 
 	currentTime := formatTime(time.Now())
-	_, err := service.UpsertByPlugID(t.Context(), testPlugID, testUserID, currentTime, true)
+	_, err := service.UpsertByPlugID(t.Context(), testPlugID, testUserID, currentTime, nil, true)
 	require.NoError(t, err)
 
 	// Set last activation to 30s ago (within 60s throttle window)
@@ -245,7 +275,7 @@ func TestScheduleService_CheckAndActivateAll_HappyPath(t *testing.T) {
 	require.NoError(t, err)
 
 	currentTime := formatTime(time.Now())
-	_, err = service.UpsertByPlugID(t.Context(), testPlugID, testUserID, currentTime, true)
+	_, err = service.UpsertByPlugID(t.Context(), testPlugID, testUserID, currentTime, nil, true)
 	require.NoError(t, err)
 
 	// Verify no active session before
@@ -263,6 +293,92 @@ func TestScheduleService_CheckAndActivateAll_HappyPath(t *testing.T) {
 
 	// Verify throttle was set
 	assert.WithinDuration(t, time.Now(), service.GetLastActivation(), 2*time.Second)
+}
+
+func TestScheduleService_CheckAndActivateAll_TwoStage_HoldsAtEightyPercentOfTarget(t *testing.T) {
+	service, db, chargeService := setupScheduleServiceTest(t)
+	defer db.Close()
+
+	// current=20, target=80 -> hold = 0.8*80 = 64, well above current.
+	_, err := db.Exec(`UPDATE vehicles SET current_percent = 20.0, target_percent = 80.0 WHERE id = ?`, "rm1")
+	require.NoError(t, err)
+
+	currentTime := formatTime(time.Now())
+	readyBy := "23:59"
+	_, err = service.UpsertByPlugID(t.Context(), testPlugID, testUserID, currentTime, &readyBy, true)
+	require.NoError(t, err)
+
+	service.CheckAndActivateAll(t.Context())
+
+	active, err := chargeService.sessionReader.GetActive(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, active, "expected a two-stage session to be created")
+	require.NotNil(t, active.HoldPercent)
+	assert.Equal(t, 64.0, *active.HoldPercent)
+	require.NotNil(t, active.ReadyByTime)
+	assert.Equal(t, "23:59", *active.ReadyByTime)
+	assert.Equal(t, 80.0, active.TargetPercent)
+}
+
+func TestScheduleService_CheckAndActivateAll_TwoStage_SkipsHoldWhenAlreadyPastEightyPercent(t *testing.T) {
+	service, db, chargeService := setupScheduleServiceTest(t)
+	defer db.Close()
+
+	// current=70, target=80 -> hold = 64, already below current: nothing to hold for.
+	_, err := db.Exec(`UPDATE vehicles SET current_percent = 70.0, target_percent = 80.0 WHERE id = ?`, "rm1")
+	require.NoError(t, err)
+
+	currentTime := formatTime(time.Now())
+	readyBy := "23:59"
+	_, err = service.UpsertByPlugID(t.Context(), testPlugID, testUserID, currentTime, &readyBy, true)
+	require.NoError(t, err)
+
+	service.CheckAndActivateAll(t.Context())
+
+	active, err := chargeService.sessionReader.GetActive(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, active, "expected a single-stage session to be created")
+	assert.Nil(t, active.HoldPercent)
+	assert.Nil(t, active.ReadyByTime)
+	assert.Equal(t, 80.0, active.TargetPercent)
+}
+
+func TestScheduleService_CheckAndActivateAll_NoReadyBy_StartsSingleStage(t *testing.T) {
+	service, db, chargeService := setupScheduleServiceTest(t)
+	defer db.Close()
+
+	_, err := db.Exec(`UPDATE vehicles SET current_percent = 20.0, target_percent = 80.0 WHERE id = ?`, "rm1")
+	require.NoError(t, err)
+
+	currentTime := formatTime(time.Now())
+	_, err = service.UpsertByPlugID(t.Context(), testPlugID, testUserID, currentTime, nil, true)
+	require.NoError(t, err)
+
+	service.CheckAndActivateAll(t.Context())
+
+	active, err := chargeService.sessionReader.GetActive(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, active)
+	assert.Nil(t, active.HoldPercent)
+	assert.Nil(t, active.ReadyByTime)
+}
+
+func TestResolveDeadline(t *testing.T) {
+	now := time.Date(2024, 1, 1, 20, 0, 0, 0, time.UTC)
+
+	// Later today.
+	deadline, err := resolveDeadline(now, "23:00")
+	require.NoError(t, err)
+	assert.Equal(t, time.Date(2024, 1, 1, 23, 0, 0, 0, time.UTC), deadline)
+
+	// Earlier clock time than now - rolls forward to tomorrow.
+	deadline, err = resolveDeadline(now, "07:00")
+	require.NoError(t, err)
+	assert.Equal(t, time.Date(2024, 1, 2, 7, 0, 0, 0, time.UTC), deadline)
+
+	// Invalid format.
+	_, err = resolveDeadline(now, "not-a-time")
+	assert.Error(t, err)
 }
 
 func TestIsValidTimeFormat(t *testing.T) {
@@ -302,7 +418,7 @@ func TestScheduleService_CheckAndActivateAll_EarlyMorningHour(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set schedule to "09:05" - zero-padded
-	_, err = service.UpsertByPlugID(t.Context(), testPlugID, testUserID, "09:05", true)
+	_, err = service.UpsertByPlugID(t.Context(), testPlugID, testUserID, "09:05", nil, true)
 	require.NoError(t, err)
 
 	// Verify formatTime produces zero-padded hour
@@ -317,7 +433,7 @@ func TestScheduleService_CheckAndActivateAll_EarlyMorningHour(t *testing.T) {
 
 	// Re-upsert with actual current time to trigger activation
 	actualTime := formatTime(time.Now())
-	_, err = service.UpsertByPlugID(t.Context(), testPlugID, testUserID, actualTime, true)
+	_, err = service.UpsertByPlugID(t.Context(), testPlugID, testUserID, actualTime, nil, true)
 	require.NoError(t, err)
 
 	service.CheckAndActivateAll(t.Context())
@@ -422,7 +538,7 @@ func TestScheduleService_UpsertByPlugID_RepoUpsertError(t *testing.T) {
 	svc, scheduleRepo, _, _, _ := newMockScheduleService()
 	scheduleRepo.upsertErr = assert.AnError
 
-	_, err := svc.UpsertByPlugID(t.Context(), testPlugID, testUserID, "03:00", true)
+	_, err := svc.UpsertByPlugID(t.Context(), testPlugID, testUserID, "03:00", nil, true)
 	assert.ErrorIs(t, err, assert.AnError)
 }
 
@@ -430,7 +546,7 @@ func TestScheduleService_UpsertByPlugID_RepoGetByPlugIDError(t *testing.T) {
 	svc, scheduleRepo, _, _, _ := newMockScheduleService()
 	scheduleRepo.getByPlugErr = assert.AnError
 
-	_, err := svc.UpsertByPlugID(t.Context(), testPlugID, testUserID, "03:00", true)
+	_, err := svc.UpsertByPlugID(t.Context(), testPlugID, testUserID, "03:00", nil, true)
 	assert.ErrorIs(t, err, assert.AnError)
 }
 

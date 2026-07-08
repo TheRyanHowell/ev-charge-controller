@@ -41,11 +41,12 @@ func (h *ScheduleHandler) UpsertByPlug(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Type        string `json:"type"`
-		Time        string `json:"time"`
-		WindowStart string `json:"windowStart"`
-		WindowEnd   string `json:"windowEnd"`
-		Enabled     bool   `json:"enabled"`
+		Type        string  `json:"type"`
+		Time        string  `json:"time"`
+		WindowStart string  `json:"windowStart"`
+		WindowEnd   string  `json:"windowEnd"`
+		ReadyBy     *string `json:"readyBy"`
+		Enabled     bool    `json:"enabled"`
 	}
 	if !decodeJSONStrict(w, r, &req) {
 		return
@@ -63,7 +64,7 @@ func (h *ScheduleHandler) UpsertByPlug(w http.ResponseWriter, r *http.Request) {
 
 	switch models.ScheduleType(req.Type) {
 	case models.ScheduleTypeDaily:
-		schedule, err = h.service.UpsertByPlugID(r.Context(), plugID, userID, req.Time, req.Enabled)
+		schedule, err = h.service.UpsertByPlugID(r.Context(), plugID, userID, req.Time, req.ReadyBy, req.Enabled)
 	case models.ScheduleTypeCarbonAware:
 		schedule, err = h.service.UpsertCarbonAware(r.Context(), plugID, userID, req.WindowStart, req.WindowEnd, req.Enabled)
 	default:
@@ -79,6 +80,8 @@ func (h *ScheduleHandler) UpsertByPlug(w http.ResponseWriter, r *http.Request) {
 			problemJSONDebug(w, http.StatusBadRequest, "about:blank#window-required", "Bad Request", "windowStart and windowEnd are required for carbon_aware schedule.", err.Error())
 		case errors.Is(err, services.ErrWindowEqual):
 			problemJSONDebug(w, http.StatusBadRequest, "about:blank#window-equal", "Bad Request", "windowStart and windowEnd must differ.", err.Error())
+		case errors.Is(err, services.ErrReadyByEqualsTime):
+			problemJSONDebug(w, http.StatusBadRequest, "about:blank#ready-by-equal", "Bad Request", "readyBy must differ from time.", err.Error())
 		case errors.Is(err, services.ErrMaintenancePlugSchedule):
 			problemJSON(w, http.StatusBadRequest, "about:blank#maintenance-plug-schedule", "Bad Request", "Schedules are not supported for maintenance plugs.")
 		default:
