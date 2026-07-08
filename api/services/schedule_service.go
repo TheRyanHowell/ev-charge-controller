@@ -320,34 +320,50 @@ func (s *ScheduleService) tryActivateCarbonAware(ctx context.Context, sch models
 		return
 	}
 
-	// Step 1: Estimate charge duration.
+	if sch.TwoStage {
+		holdPercent := cand.vehicle.TargetPercent * models.TwoStageHoldFraction
+		if holdPercent > cand.vehicle.CurrentPercent {
+			s.tryActivateCarbonAwareTwoStage(ctx, plugID, cand.vehicle, now, lastAct, windowEnd, holdPercent)
+			return
+		}
+		// Already past the hold point - nothing to hold for, single-stage to target.
+	}
+
+	s.tryActivateCarbonAwareSingleStage(ctx, plugID, cand.vehicle, now, lastAct, windowEnd)
+}
+
+// tryActivateCarbonAwareSingleStage runs the pure-carbon decision for a
+// carbon-aware schedule targeting the vehicle's real target percent directly
+// (no hold stage): estimate duration, deadline-guard, throttle, then pick the
+// cleanest window via findOptimalStart.
+func (s *ScheduleService) tryActivateCarbonAwareSingleStage(ctx context.Context, plugID string, vehicle *models.Vehicle, now, lastAct, windowEnd time.Time) {
 	est := s.estimator
 	if est == nil {
 		est = chargeestimate.EstimateMinutes
 	}
-	d, estimateErr := est(cand.vehicle, cand.vehicle.CurrentPercent, cand.vehicle.TargetPercent)
+	d, estimateErr := est(vehicle, vehicle.CurrentPercent, vehicle.TargetPercent)
 
 	if estimateErr != nil {
 		// Failsafe: start immediately, throttle-exempt.
 		slog.Warn("schedule: carbon_aware estimator error, starting now", "plugID", plugID, "err", estimateErr)
-		s.startCarbonAwareSession(ctx, plugID, cand.vehicle, now, windowEnd, 0, true)
+		s.startCarbonAwareSession(ctx, plugID, vehicle, now, windowEnd, 0, true)
 		return
 	}
 
-	// Step 2: Deadline guard - must start now if we've hit latestStart.
+	// Deadline guard - must start now if we've hit latestStart.
 	latestStart := windowEnd.Add(-time.Duration(d) * time.Minute)
 	if !now.Before(latestStart) {
 		slog.Info("schedule: carbon_aware deadline guard, starting now", "plugID", plugID, "latestStart", latestStart)
-		s.startCarbonAwareSession(ctx, plugID, cand.vehicle, now, windowEnd, d, true)
+		s.startCarbonAwareSession(ctx, plugID, vehicle, now, windowEnd, d, true)
 		return
 	}
 
-	// Step 3: Throttle check for non-forced path.
+	// Throttle check for non-forced path.
 	if now.Sub(lastAct) < scheduleThrottleDuration {
 		return
 	}
 
-	// Step 4: Forecast - defer if unavailable.
+	// Forecast - defer if unavailable.
 	if s.forecaster == nil {
 		return
 	}
@@ -363,9 +379,60 @@ func (s *ScheduleService) tryActivateCarbonAware(ctx context.Context, sch models
 
 	if optimalStart.IsZero() || !optimalStart.After(currentBucket) {
 		// Optimal start is the current bucket - start now.
-		s.startCarbonAwareSession(ctx, plugID, cand.vehicle, now, windowEnd, d, false)
+		s.startCarbonAwareSession(ctx, plugID, vehicle, now, windowEnd, d, false)
 	}
 	// else: a cleaner window exists later - wait.
+}
+
+// tryActivateCarbonAwareTwoStage mirrors tryActivateCarbonAwareSingleStage's
+// deadline-guard/forecast decision, but targets holdPercent (stage 1) instead
+// of the vehicle's real target, using findBalancedStart instead of
+// findOptimalStart so the chosen slot also minimizes high-SoC dwell time.
+// stage1LatestStart reserves enough runway after stage 1 for stage 2
+// (hold→target, handled later by CheckAndResumeHoldingSession) to still
+// complete by windowEnd even run back-to-back with zero dwell.
+func (s *ScheduleService) tryActivateCarbonAwareTwoStage(ctx context.Context, plugID string, vehicle *models.Vehicle, now, lastAct, windowEnd time.Time, holdPercent float64) {
+	est := s.estimator
+	if est == nil {
+		est = chargeestimate.EstimateMinutes
+	}
+	d1, err1 := est(vehicle, vehicle.CurrentPercent, holdPercent)
+	d2, err2 := est(vehicle, holdPercent, vehicle.TargetPercent)
+
+	if err1 != nil || err2 != nil {
+		// Failsafe: start immediately, throttle-exempt.
+		slog.Warn("schedule: carbon_aware two-stage estimator error, starting now", "plugID", plugID, "err1", err1, "err2", err2)
+		s.startCarbonAwareTwoStageSession(ctx, plugID, vehicle, now, windowEnd, holdPercent, true)
+		return
+	}
+
+	stage1LatestStart := windowEnd.Add(-time.Duration(d1+d2) * time.Minute)
+	if !now.Before(stage1LatestStart) {
+		slog.Info("schedule: carbon_aware two-stage deadline guard, starting now", "plugID", plugID, "stage1LatestStart", stage1LatestStart)
+		s.startCarbonAwareTwoStageSession(ctx, plugID, vehicle, now, windowEnd, holdPercent, true)
+		return
+	}
+
+	if now.Sub(lastAct) < scheduleThrottleDuration {
+		return
+	}
+
+	if s.forecaster == nil {
+		return
+	}
+	buckets, ferr := s.forecaster.GetForecast(ctx, now, windowEnd)
+	if ferr != nil || len(buckets) == 0 {
+		slog.Warn("schedule: carbon_aware two-stage forecast unavailable, deferring", "plugID", plugID, "err", ferr)
+		return
+	}
+
+	optimalStart := findBalancedStart(buckets, now, stage1LatestStart, windowEnd, time.Duration(d1)*time.Minute)
+	currentBucket := alignToHalfHour(now.UTC())
+
+	if optimalStart.IsZero() || !optimalStart.After(currentBucket) {
+		s.startCarbonAwareTwoStageSession(ctx, plugID, vehicle, now, windowEnd, holdPercent, false)
+	}
+	// else: a better-balanced window exists later - wait.
 }
 
 // EstimateCarbonAwareStart computes when an enabled carbon-aware schedule's charge
@@ -492,6 +559,29 @@ func (s *ScheduleService) startCarbonAwareSession(ctx context.Context, plugID st
 			s.notifier.NotifyShortfallProjected(ctx, sess, projPercent, vehicle.TargetPercent, readyBy)
 		}
 	}
+}
+
+// startCarbonAwareTwoStageSession starts stage 1 of a carbon-aware two-stage
+// session. No shortfall notification here (unlike startCarbonAwareSession):
+// stage1LatestStart already reserves both stages' estimated durations before
+// forcing a start, and stage 2's own deadline guard (CheckAndResumeHoldingSession)
+// independently guarantees windowEnd is met, so there's nothing uncertain to warn
+// about at stage-1 activation time.
+func (s *ScheduleService) startCarbonAwareTwoStageSession(ctx context.Context, plugID string, vehicle *models.Vehicle, now, windowEnd time.Time, holdPercent float64, throttleExempt bool) {
+	readyBy := formatTime(windowEnd.In(now.Location()))
+	_, err := s.chargeService.StartTwoStageSession(ctx, plugID, vehicle.ID, vehicle.CurrentPercent, vehicle.TargetPercent, holdPercent, readyBy, true)
+	if err != nil {
+		if errors.Is(err, ErrActiveSessionExists) {
+			return
+		}
+		slog.Error("schedule: carbon_aware two-stage start failed", "plugID", plugID, "vehicleID", vehicle.ID, "err", err)
+		return
+	}
+
+	s.lastActivationMu.Lock()
+	s.lastActivation = now
+	s.lastActivationMu.Unlock()
+	slog.Info("schedule: carbon_aware two-stage activated charge", "plugID", plugID, "vehicleID", vehicle.ID, "holdPercent", holdPercent, "throttleExempt", throttleExempt)
 }
 
 // resolveWindow converts HH:MM window strings to absolute timestamps relative to now.

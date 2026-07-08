@@ -1203,6 +1203,193 @@ func TestScheduleService_CarbonAware_ShortfallNotification(t *testing.T) {
 	assert.Contains(t, gotBody, "won't reach", "expected shortfall notification body to describe projected shortfall")
 }
 
+// --- Carbon-aware two-stage CheckAndActivateAll scenarios ---
+
+func carbonAwareTwoStageSchedule(windowStart, windowEnd string) models.Schedule {
+	plugID := testPlugID
+	return models.Schedule{
+		PlugID:      &plugID,
+		Type:        models.ScheduleTypeCarbonAware,
+		Time:        windowStart,
+		WindowStart: &windowStart,
+		WindowEnd:   &windowEnd,
+		TwoStage:    true,
+		Enabled:     true,
+	}
+}
+
+func TestScheduleService_CarbonAwareTwoStage_SkipsHoldWhenAlreadyPastHoldPercent(t *testing.T) {
+	svc, scheduleRepo, plugRepo, vehicleRepo, chargeAdapter := newMockScheduleService()
+
+	// current=70, target=80 -> hold=64, already below current: nothing to hold for.
+	// Window 09:00-10:30, D=60min -> latestStart=09:30; now=10:00 (past) -> deadline guard forces
+	// an immediate single-stage start.
+	scheduleRepo.listAllResult = []models.Schedule{carbonAwareTwoStageSchedule("09:00", "10:30")}
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 70, TargetPercent: 80}
+	chargeAdapter.createPendingResult = &models.ChargeSession{ID: "sess1"}
+
+	svc.SetCarbonAwareDeps(nil, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 60, nil
+	}, nil)
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return mockNow } // 10:00
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	svc.CheckAndActivateAll(t.Context())
+	assert.True(t, chargeAdapter.createPendingCalled, "expected single-stage start since vehicle is already past the hold point")
+	assert.False(t, chargeAdapter.twoStageCalled, "should not start a two-stage session")
+}
+
+func TestScheduleService_CarbonAwareTwoStage_DeadlineGuard_StartsNow(t *testing.T) {
+	svc, scheduleRepo, plugRepo, vehicleRepo, chargeAdapter := newMockScheduleService()
+
+	// current=20, target=80 -> hold=64. Window 09:00-10:30, d1=d2=60min ->
+	// stage1LatestStart = 10:30 - 120min = 08:30; now=10:00 is past it -> deadline guard.
+	scheduleRepo.listAllResult = []models.Schedule{carbonAwareTwoStageSchedule("09:00", "10:30")}
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 20, TargetPercent: 80}
+	chargeAdapter.twoStageResult = &models.ChargeSession{ID: "sess1"}
+
+	svc.SetCarbonAwareDeps(nil, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 60, nil
+	}, nil)
+	// Recent activation should be bypassed - deadline guard is throttle-exempt.
+	svc.SetLastActivation(mockNow.Add(-2 * time.Second))
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return mockNow } // 10:00
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	svc.CheckAndActivateAll(t.Context())
+	require.True(t, chargeAdapter.twoStageCalled, "deadline guard should force a two-stage start")
+	assert.Equal(t, 64.0, chargeAdapter.twoStageHoldArg)
+	assert.Equal(t, "10:30", chargeAdapter.twoStageReadyByArg)
+	assert.True(t, chargeAdapter.twoStageCarbonAwareArg, "session should be marked carbon-aware origin")
+}
+
+func TestScheduleService_CarbonAwareTwoStage_EstimatorError_FailsafeStart(t *testing.T) {
+	svc, scheduleRepo, plugRepo, vehicleRepo, chargeAdapter := newMockScheduleService()
+
+	scheduleRepo.listAllResult = []models.Schedule{carbonAwareTwoStageSchedule("09:00", "13:00")}
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 20, TargetPercent: 80}
+	chargeAdapter.twoStageResult = &models.ChargeSession{ID: "sess1"}
+
+	svc.SetCarbonAwareDeps(nil, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 0, errors.New("no estimate")
+	}, nil)
+	// Recent activation should be bypassed - estimator-error failsafe is throttle-exempt.
+	svc.SetLastActivation(mockNow.Add(-2 * time.Second))
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return mockNow }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	svc.CheckAndActivateAll(t.Context())
+	require.True(t, chargeAdapter.twoStageCalled, "estimator error should trigger the two-stage failsafe start")
+	assert.Equal(t, 64.0, chargeAdapter.twoStageHoldArg)
+}
+
+func TestScheduleService_CarbonAwareTwoStage_NoForecaster_Defers(t *testing.T) {
+	svc, scheduleRepo, plugRepo, vehicleRepo, chargeAdapter := newMockScheduleService()
+
+	scheduleRepo.listAllResult = []models.Schedule{carbonAwareTwoStageSchedule("09:00", "13:00")}
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 20, TargetPercent: 80}
+
+	// Estimator works fine, but no forecaster is configured.
+	svc.SetCarbonAwareDeps(nil, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 30, nil
+	}, nil)
+	svc.SetLastActivation(mockNow.Add(-2 * time.Minute))
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return mockNow }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	svc.CheckAndActivateAll(t.Context())
+	assert.False(t, chargeAdapter.twoStageCalled, "no forecaster should defer rather than start")
+}
+
+func TestScheduleService_CarbonAwareTwoStage_ThrottleBlocks_NonForced(t *testing.T) {
+	now := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
+	svc, scheduleRepo, plugRepo, vehicleRepo, chargeAdapter := newMockScheduleService()
+
+	scheduleRepo.listAllResult = []models.Schedule{carbonAwareTwoStageSchedule("09:00", "13:00")}
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 20, TargetPercent: 80}
+
+	svc.SetCarbonAwareDeps(&mockForecaster{buckets: makeBuckets(now, []int{100, 100, 100})}, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 60, nil
+	}, nil)
+	// Very recent activation - inside the throttle window, and not deadline-forced.
+	svc.SetLastActivation(now.Add(-2 * time.Second))
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return now }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	svc.CheckAndActivateAll(t.Context())
+	assert.False(t, chargeAdapter.twoStageCalled, "throttle should block a non-forced two-stage start")
+}
+
+func TestScheduleService_CarbonAwareTwoStage_BetterWindowLater_Waits(t *testing.T) {
+	now := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
+	svc, scheduleRepo, plugRepo, vehicleRepo, chargeAdapter := newMockScheduleService()
+
+	// current=20, target=80 -> hold=64. Window 09:00-13:00, d1=d2=30min ->
+	// stage1LatestStart = 13:00 - 60min = 12:00. Candidates every 30min from 10:00 to 12:00.
+	// Carbon [500,300,100,300,500] at [10:00,10:30,11:00,11:30,12:00] balances to a clear
+	// winner at 11:00 (see TestFindBalancedStart_BalancesCleanlinessAndLateness for the
+	// worked normalization - a uniform deadline shift doesn't change relative ranking).
+	scheduleRepo.listAllResult = []models.Schedule{carbonAwareTwoStageSchedule("09:00", "13:00")}
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 20, TargetPercent: 80}
+
+	buckets := makeBuckets(now, []int{500, 300, 100, 300, 500})
+	svc.SetCarbonAwareDeps(&mockForecaster{buckets: buckets}, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 30, nil
+	}, nil)
+	svc.SetLastActivation(mockNow.Add(-2 * time.Minute))
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return now }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	svc.CheckAndActivateAll(t.Context())
+	assert.False(t, chargeAdapter.twoStageCalled, "a better-balanced window later should defer starting")
+}
+
+func TestScheduleService_CarbonAwareTwoStage_SingleCandidateWindow_StartsNow(t *testing.T) {
+	now := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
+	svc, scheduleRepo, plugRepo, vehicleRepo, chargeAdapter := newMockScheduleService()
+
+	// current=20, target=80 -> hold=64. Window 09:00-11:15, d1=d2=30min ->
+	// stage1LatestStart = 11:15 - 60min = 10:15, strictly after now (so the deadline
+	// guard does NOT fire) but less than one bucket away, so the search range collapses
+	// to a single candidate (the current bucket) and the forecast path must start now.
+	scheduleRepo.listAllResult = []models.Schedule{carbonAwareTwoStageSchedule("09:00", "11:15")}
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 20, TargetPercent: 80}
+	chargeAdapter.twoStageResult = &models.ChargeSession{ID: "sess1"}
+
+	buckets := makeBuckets(now, []int{300})
+	svc.SetCarbonAwareDeps(&mockForecaster{buckets: buckets}, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 30, nil
+	}, nil)
+	svc.SetLastActivation(mockNow.Add(-2 * time.Minute))
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return now }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	svc.CheckAndActivateAll(t.Context())
+	require.True(t, chargeAdapter.twoStageCalled, "single feasible candidate should start now via the forecast path")
+	assert.Equal(t, 64.0, chargeAdapter.twoStageHoldArg)
+}
+
 // stringPtr is a local helper for creating string pointers in tests.
 func stringPtr(s string) *string { return &s }
 
