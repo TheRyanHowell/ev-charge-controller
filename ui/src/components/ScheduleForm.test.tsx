@@ -176,4 +176,148 @@ describe("ScheduleForm", () => {
       screen.getByText("Start and ready-by times must differ."),
     ).toBeInTheDocument();
   });
+
+  it("does not show a carbon-aware two-stage toggle on the daily tab", () => {
+    render(<ScheduleForm schedule={baseSchedule} onSave={vi.fn()} />);
+    expect(
+      screen.queryByRole("switch", { name: "Carbon-aware two-stage charging" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows a carbon-aware two-stage toggle, off by default", () => {
+    const caSchedule: Schedule = {
+      id: "s2",
+      type: "carbon_aware",
+      time: "06:00",
+      windowStart: "01:00",
+      windowEnd: "07:00",
+      enabled: true,
+    };
+    render(<ScheduleForm schedule={caSchedule} onSave={vi.fn()} />);
+    expect(
+      screen.getByRole("switch", { name: "Carbon-aware two-stage charging" }),
+    ).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("reflects schedule.twoStage in the carbon-aware toggle state", () => {
+    const caSchedule: Schedule = {
+      id: "s2",
+      type: "carbon_aware",
+      time: "06:00",
+      windowStart: "01:00",
+      windowEnd: "07:00",
+      twoStage: true,
+      enabled: true,
+    };
+    render(<ScheduleForm schedule={caSchedule} onSave={vi.fn()} />);
+    expect(
+      screen.getByRole("switch", { name: "Carbon-aware two-stage charging" }),
+    ).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("calls onSave with twoStage true when the carbon-aware toggle is on", () => {
+    const onSave = vi.fn();
+    const caSchedule: Schedule = {
+      id: "s2",
+      type: "carbon_aware",
+      time: "06:00",
+      windowStart: "01:00",
+      windowEnd: "07:00",
+      enabled: true,
+    };
+    render(
+      <ScheduleForm schedule={caSchedule} onSave={onSave} saveLabel="Save" />,
+    );
+    fireEvent.click(
+      screen.getByRole("switch", { name: "Carbon-aware two-stage charging" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(onSave).toHaveBeenCalledWith({
+      type: "carbon_aware",
+      windowStart: "01:00",
+      windowEnd: "07:00",
+      twoStage: true,
+      enabled: true,
+    });
+  });
+
+  it("calls onSave with twoStage false by default for carbon-aware", () => {
+    const onSave = vi.fn();
+    const caSchedule: Schedule = {
+      id: "s2",
+      type: "carbon_aware",
+      time: "06:00",
+      windowStart: "01:00",
+      windowEnd: "07:00",
+      enabled: true,
+    };
+    render(
+      <ScheduleForm schedule={caSchedule} onSave={onSave} saveLabel="Save" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(onSave).toHaveBeenCalledWith({
+      type: "carbon_aware",
+      windowStart: "01:00",
+      windowEnd: "07:00",
+      twoStage: false,
+      enabled: true,
+    });
+  });
+
+  it("does not show the estimated plan when two-stage is off", () => {
+    const caSchedule: Schedule = {
+      id: "s2",
+      type: "carbon_aware",
+      time: "06:00",
+      windowStart: "01:00",
+      windowEnd: "07:00",
+      estimatedPlan: {
+        stage1Start: "22:30",
+        stage1End: "23:15",
+        stage2Start: "04:50",
+        stage2End: "05:35",
+      },
+      enabled: true,
+    };
+    render(<ScheduleForm schedule={caSchedule} onSave={vi.fn()} />);
+    expect(screen.queryByTestId("estimated-plan")).not.toBeInTheDocument();
+  });
+
+  it("shows the estimated plan when two-stage is on and a plan is available", () => {
+    const caSchedule: Schedule = {
+      id: "s2",
+      type: "carbon_aware",
+      time: "06:00",
+      windowStart: "01:00",
+      windowEnd: "07:00",
+      twoStage: true,
+      estimatedPlan: {
+        stage1Start: "22:30",
+        stage1End: "23:15",
+        stage2Start: "04:50",
+        stage2End: "05:35",
+      },
+      enabled: true,
+    };
+    render(<ScheduleForm schedule={caSchedule} onSave={vi.fn()} />);
+    const plan = screen.getByTestId("estimated-plan");
+    expect(plan).toHaveTextContent("22:30");
+    expect(plan).toHaveTextContent("23:15");
+    expect(plan).toHaveTextContent("04:50");
+    expect(plan).toHaveTextContent("05:35");
+  });
+
+  it("does not show the estimated plan when two-stage is on but no plan is available yet", () => {
+    const caSchedule: Schedule = {
+      id: "s2",
+      type: "carbon_aware",
+      time: "06:00",
+      windowStart: "01:00",
+      windowEnd: "07:00",
+      twoStage: true,
+      enabled: true,
+    };
+    render(<ScheduleForm schedule={caSchedule} onSave={vi.fn()} />);
+    expect(screen.queryByTestId("estimated-plan")).not.toBeInTheDocument();
+  });
 });

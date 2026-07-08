@@ -123,7 +123,7 @@ describe("ScheduleModal", () => {
     render(<ScheduleModal {...baseProps} onSave={onSave} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Carbon-aware" }));
-    fireEvent.click(screen.getByRole("switch")); // enable
+    fireEvent.click(screen.getByRole("switch", { name: "Enabled" })); // enable
     fireEvent.change(screen.getByLabelText("Earliest"), {
       target: { value: "22:00" },
     });
@@ -136,6 +136,7 @@ describe("ScheduleModal", () => {
       type: "carbon_aware",
       windowStart: "22:00",
       windowEnd: "06:00",
+      twoStage: false,
       enabled: true,
     });
   });
@@ -243,7 +244,10 @@ describe("ScheduleModal", () => {
     );
     expect(screen.getByLabelText("Earliest")).toHaveValue("22:00");
     expect(screen.getByLabelText("Ready by")).toHaveValue("06:00");
-    expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByRole("switch", { name: "Enabled" })).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
   });
 
   // - External sync -
@@ -272,6 +276,9 @@ describe("ScheduleModal", () => {
 
     expect(screen.getByLabelText("Earliest")).toHaveValue("22:00");
     expect(screen.getByLabelText("Ready by")).toHaveValue("06:00");
-    expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("switch", { name: "Enabled" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
   });
 });

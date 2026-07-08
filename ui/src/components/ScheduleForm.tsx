@@ -76,6 +76,9 @@ export default function ScheduleForm({
     () => schedule?.readyBy != null,
   );
   const [readyBy, setReadyBy] = useState(() => schedule?.readyBy ?? "07:00");
+  const [carbonTwoStageEnabled, setCarbonTwoStageEnabled] = useState(
+    () => schedule?.twoStage ?? false,
+  );
   const [formError, setFormError] = useState<string | null>(null);
 
   const prevScheduleRef = useRef(schedule);
@@ -89,6 +92,7 @@ export default function ScheduleForm({
       setWindowEnd(schedule?.windowEnd ?? "06:00");
       setTwoStageEnabled(schedule?.readyBy != null);
       setReadyBy(schedule?.readyBy ?? "07:00");
+      setCarbonTwoStageEnabled(schedule?.twoStage ?? false);
     }
   }, [schedule]);
 
@@ -98,7 +102,13 @@ export default function ScheduleForm({
         setFormError("Start and ready-by times must differ.");
         return;
       }
-      onSave({ type: "carbon_aware", windowStart, windowEnd, enabled });
+      onSave({
+        type: "carbon_aware",
+        windowStart,
+        windowEnd,
+        twoStage: carbonTwoStageEnabled,
+        enabled,
+      });
     } else {
       if (twoStageEnabled && readyBy === dailyTime) {
         setFormError("Ready by must differ from start time.");
@@ -119,6 +129,7 @@ export default function ScheduleForm({
     windowEnd,
     twoStageEnabled,
     readyBy,
+    carbonTwoStageEnabled,
     onSave,
   ]);
 
@@ -194,7 +205,8 @@ export default function ScheduleForm({
                   Two-stage charging
                 </p>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  Charge to 80% now, hold, then finish by a ready-by time.
+                  Charge to 80% of your target now, hold, then finish to 100% of
+                  your target by the ready-by time.
                 </p>
               </div>
               <Toggle
@@ -274,6 +286,41 @@ export default function ScheduleForm({
                 />
               </div>
             </div>
+
+            <div className="flex items-center justify-between pt-1">
+              <div>
+                <p className="text-xs font-medium text-gray-300">
+                  Two-stage charging
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Charge to 80% of your target in the cleanest early slot, hold,
+                  then finish to 100% of your target before the ready-by time —
+                  balancing low carbon with less time spent at a high charge.
+                </p>
+              </div>
+              <Toggle
+                checked={carbonTwoStageEnabled}
+                onChange={setCarbonTwoStageEnabled}
+                label="Carbon-aware two-stage charging"
+              />
+            </div>
+            {carbonTwoStageEnabled && schedule?.estimatedPlan && (
+              <div
+                className="text-xs text-gray-400 bg-gray-800/60 rounded-md px-3 py-2 space-y-1"
+                data-testid="estimated-plan"
+              >
+                <p className="text-gray-300 font-medium">Estimated plan</p>
+                <p>
+                  Stage 1: {schedule.estimatedPlan.stage1Start} –{" "}
+                  {schedule.estimatedPlan.stage1End} (to 80%)
+                </p>
+                <p>Hold until {schedule.estimatedPlan.stage2Start}</p>
+                <p>
+                  Stage 2: {schedule.estimatedPlan.stage2Start} –{" "}
+                  {schedule.estimatedPlan.stage2End} (to 100%)
+                </p>
+              </div>
+            )}
           </div>
         )}
         {formError && (
