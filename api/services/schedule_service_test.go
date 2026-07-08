@@ -1551,6 +1551,137 @@ func TestScheduleService_EstimateCarbonAwareStart_BeforeWindow_ScansFromWindowSt
 	assert.Equal(t, "09:00", start, "should scan from windowStart since we're before it opens")
 }
 
+// --- EstimateCarbonAwareTwoStagePlan tests ---
+
+func TestScheduleService_EstimateCarbonAwareTwoStagePlan_NilSchedule(t *testing.T) {
+	svc, _, _, _, _ := newMockScheduleService()
+	_, ok := svc.EstimateCarbonAwareTwoStagePlan(t.Context(), nil)
+	assert.False(t, ok)
+}
+
+func TestScheduleService_EstimateCarbonAwareTwoStagePlan_NotTwoStage(t *testing.T) {
+	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 20, TargetPercent: 80}
+	svc.SetCarbonAwareDeps(&mockForecaster{}, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 60, nil
+	}, nil)
+	sch := carbonAwareSchedule("09:00", "13:00") // TwoStage defaults to false
+
+	_, ok := svc.EstimateCarbonAwareTwoStagePlan(t.Context(), &sch)
+	assert.False(t, ok, "single-stage schedules have no two-stage plan")
+}
+
+func TestScheduleService_EstimateCarbonAwareTwoStagePlan_NoForecaster(t *testing.T) {
+	svc, _, _, _, _ := newMockScheduleService()
+	sch := carbonAwareTwoStageSchedule("09:00", "13:00")
+	_, ok := svc.EstimateCarbonAwareTwoStagePlan(t.Context(), &sch)
+	assert.False(t, ok)
+}
+
+func TestScheduleService_EstimateCarbonAwareTwoStagePlan_AlreadyPastHoldPercent(t *testing.T) {
+	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 70, TargetPercent: 80} // hold=64 < 70
+	svc.SetCarbonAwareDeps(&mockForecaster{}, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 60, nil
+	}, nil)
+	sch := carbonAwareTwoStageSchedule("09:00", "13:00")
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return mockNow }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	_, ok := svc.EstimateCarbonAwareTwoStagePlan(t.Context(), &sch)
+	assert.False(t, ok, "no plan when there's nothing to hold for")
+}
+
+func TestScheduleService_EstimateCarbonAwareTwoStagePlan_EstimatorError(t *testing.T) {
+	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 20, TargetPercent: 80}
+	svc.SetCarbonAwareDeps(&mockForecaster{}, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 0, errors.New("no estimate")
+	}, nil)
+	sch := carbonAwareTwoStageSchedule("09:00", "13:00")
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return mockNow }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	_, ok := svc.EstimateCarbonAwareTwoStagePlan(t.Context(), &sch)
+	assert.False(t, ok)
+}
+
+func TestScheduleService_EstimateCarbonAwareTwoStagePlan_PastDeadline_UsesLatestStarts(t *testing.T) {
+	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 20, TargetPercent: 80} // hold=64
+	// Window 09:00-10:30, d1=d2=60min -> stage1LatestStart=10:30-120min=08:30.
+	// now=10:00 is past it for both stages, so both fall back to their deadline-guard times.
+	svc.SetCarbonAwareDeps(&mockForecaster{}, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 60, nil
+	}, nil)
+	sch := carbonAwareTwoStageSchedule("09:00", "10:30")
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return mockNow } // 10:00
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	plan, ok := svc.EstimateCarbonAwareTwoStagePlan(t.Context(), &sch)
+	require.True(t, ok)
+	assert.Equal(t, "08:30", plan.Stage1Start)
+	assert.Equal(t, "09:30", plan.Stage1End)
+	assert.Equal(t, "09:30", plan.Stage2Start)
+	assert.Equal(t, "10:30", plan.Stage2End)
+}
+
+func TestScheduleService_EstimateCarbonAwareTwoStagePlan_ForecastComputesBothStages(t *testing.T) {
+	now := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
+	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 20, TargetPercent: 80} // hold=64
+	// Window 09:00-13:00, d1=d2=30min -> stage1LatestStart=13:00-60min=12:00.
+	// Same buckets as TestFindBalancedStart_BalancesCleanlinessAndLateness: stage 1
+	// balances to 11:00 (ends 11:30). Stage 2 then searches [11:30,12:30] using the
+	// same fixed bucket set; the only two candidates with forecast coverage
+	// (11:30@300, 12:00@500) tie at a combined score of 1.0 and resolve to the
+	// later one (12:00) via the latest-wins tie break.
+	buckets := makeBuckets(now, []int{500, 300, 100, 300, 500})
+	svc.SetCarbonAwareDeps(&mockForecaster{buckets: buckets}, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 30, nil
+	}, nil)
+	sch := carbonAwareTwoStageSchedule("09:00", "13:00")
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return now }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	plan, ok := svc.EstimateCarbonAwareTwoStagePlan(t.Context(), &sch)
+	require.True(t, ok)
+	assert.Equal(t, "11:00", plan.Stage1Start)
+	assert.Equal(t, "11:30", plan.Stage1End)
+	assert.Equal(t, "12:00", plan.Stage2Start)
+	assert.Equal(t, "12:30", plan.Stage2End)
+}
+
+func TestScheduleService_EstimateCarbonAwareTwoStagePlan_ForecastError(t *testing.T) {
+	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 20, TargetPercent: 80}
+	svc.SetCarbonAwareDeps(&mockForecaster{err: errors.New("API down")}, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 30, nil
+	}, nil)
+	sch := carbonAwareTwoStageSchedule("09:00", "13:00")
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return mockNow }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	_, ok := svc.EstimateCarbonAwareTwoStagePlan(t.Context(), &sch)
+	assert.False(t, ok)
+}
+
 func TestScheduleService_formatTime_MatchesUpsertFormat(t *testing.T) {
 	// Regression test: formatTime must produce zero-padded hours ("09:05")
 	// so it matches the time stored by UpsertByPlugID ("09:05"). Previously

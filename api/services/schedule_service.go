@@ -497,6 +497,103 @@ func (s *ScheduleService) EstimateCarbonAwareStart(ctx context.Context, sch *mod
 	return formatTime(optimalStart.In(now.Location())), true
 }
 
+// EstimateCarbonAwareTwoStagePlan computes the currently estimated stage 1 and
+// stage 2 timing for an enabled carbon-aware two-stage schedule, mirroring the
+// decision logic in tryActivateCarbonAwareTwoStage / CheckAndResumeHoldingSession
+// without any side effects. Returns ok=false when no confident estimate can be
+// made (missing deps, forecast unavailable, vehicle already past the hold
+// point, etc.).
+func (s *ScheduleService) EstimateCarbonAwareTwoStagePlan(ctx context.Context, sch *models.Schedule) (models.TwoStagePlanEstimate, bool) {
+	if sch == nil || sch.Type != models.ScheduleTypeCarbonAware || !sch.Enabled || !sch.TwoStage {
+		return models.TwoStagePlanEstimate{}, false
+	}
+	if sch.PlugID == nil || sch.WindowStart == nil || sch.WindowEnd == nil {
+		return models.TwoStagePlanEstimate{}, false
+	}
+	if s.forecaster == nil {
+		return models.TwoStagePlanEstimate{}, false
+	}
+
+	now := scheduleNowFunc()
+	windowStart, windowEnd, err := resolveWindow(now, *sch.WindowStart, *sch.WindowEnd)
+	if err != nil {
+		return models.TwoStagePlanEstimate{}, false
+	}
+
+	cand := s.loadCandidate(ctx, *sch.PlugID)
+	if cand == nil {
+		return models.TwoStagePlanEstimate{}, false
+	}
+
+	holdPercent := cand.vehicle.TargetPercent * models.TwoStageHoldFraction
+	if holdPercent <= cand.vehicle.CurrentPercent {
+		return models.TwoStagePlanEstimate{}, false
+	}
+
+	est := s.estimator
+	if est == nil {
+		est = chargeestimate.EstimateMinutes
+	}
+	d1, err1 := est(cand.vehicle, cand.vehicle.CurrentPercent, holdPercent)
+	d2, err2 := est(cand.vehicle, holdPercent, cand.vehicle.TargetPercent)
+	if err1 != nil || err2 != nil {
+		return models.TwoStagePlanEstimate{}, false
+	}
+
+	searchFrom := windowStart
+	if now.After(windowStart) {
+		searchFrom = now
+	}
+
+	stage1LatestStart := windowEnd.Add(-time.Duration(d1+d2) * time.Minute)
+	stage1Start, ok := s.estimateBalancedStageStart(ctx, searchFrom, stage1LatestStart, windowEnd, d1)
+	if !ok {
+		return models.TwoStagePlanEstimate{}, false
+	}
+	stage1End := stage1Start.Add(time.Duration(d1) * time.Minute)
+
+	// Stage 2 searches the window remaining after stage 1 finishes, same
+	// reasoning CheckAndResumeHoldingSession applies once actually holding.
+	stage2SearchFrom := stage1End
+	if stage2SearchFrom.Before(searchFrom) {
+		stage2SearchFrom = searchFrom
+	}
+	stage2LatestStart := windowEnd.Add(-time.Duration(d2) * time.Minute)
+	stage2Start, ok := s.estimateBalancedStageStart(ctx, stage2SearchFrom, stage2LatestStart, windowEnd, d2)
+	if !ok {
+		return models.TwoStagePlanEstimate{}, false
+	}
+	stage2End := stage2Start.Add(time.Duration(d2) * time.Minute)
+
+	loc := now.Location()
+	return models.TwoStagePlanEstimate{
+		Stage1Start: formatTime(stage1Start.In(loc)),
+		Stage1End:   formatTime(stage1End.In(loc)),
+		Stage2Start: formatTime(stage2Start.In(loc)),
+		Stage2End:   formatTime(stage2End.In(loc)),
+	}, true
+}
+
+// estimateBalancedStageStart returns the estimated start of a two-stage
+// segment within [searchFrom, latestStart] via findBalancedStart, falling
+// back to latestStart itself (the eventual deadline-guard force-start point)
+// once searchFrom has reached or passed it. Returns ok=false only when the
+// forecast is genuinely unavailable.
+func (s *ScheduleService) estimateBalancedStageStart(ctx context.Context, searchFrom, latestStart, windowEnd time.Time, durMin int) (time.Time, bool) {
+	if !searchFrom.Before(latestStart) {
+		return latestStart, true
+	}
+	buckets, ferr := s.forecaster.GetForecast(ctx, searchFrom, windowEnd)
+	if ferr != nil || len(buckets) == 0 {
+		return time.Time{}, false
+	}
+	start := findBalancedStart(buckets, searchFrom, latestStart, windowEnd, time.Duration(durMin)*time.Minute)
+	if start.IsZero() {
+		return time.Time{}, false
+	}
+	return start, true
+}
+
 // candidate holds the resolved plug and vehicle for an activation check.
 type candidate struct {
 	vehicle *models.Vehicle

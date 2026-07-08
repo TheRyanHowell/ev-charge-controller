@@ -23,10 +23,17 @@ func (h *ScheduleHandler) Service() *services.ScheduleService {
 	return h.service
 }
 
-// attachEstimatedStart populates EstimatedStartTime on enabled carbon-aware schedules
-// using the current carbon intensity forecast, so the gauge can show when charging is
-// actually expected to begin instead of just the ready-by deadline.
+// attachEstimatedStart populates EstimatedStartTime (single-stage) or
+// EstimatedPlan (two-stage) on enabled carbon-aware schedules using the
+// current carbon intensity forecast, so the UI can show when charging is
+// actually expected to happen instead of just the ready-by deadline.
 func (h *ScheduleHandler) attachEstimatedStart(ctx context.Context, schedule *models.Schedule) {
+	if schedule.TwoStage {
+		if plan, ok := h.service.EstimateCarbonAwareTwoStagePlan(ctx, schedule); ok {
+			schedule.EstimatedPlan = &plan
+		}
+		return
+	}
 	if start, ok := h.service.EstimateCarbonAwareStart(ctx, schedule); ok {
 		schedule.EstimatedStartTime = &start
 	}
