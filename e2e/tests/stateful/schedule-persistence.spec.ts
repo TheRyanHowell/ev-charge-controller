@@ -142,6 +142,64 @@ test.describe.serial("Schedule Persistence", () => {
     ).toHaveValue("07:00");
   });
 
+  test("saving a daily schedule with two-stage charging shows the estimated plan", async ({
+    page,
+    api,
+  }) => {
+    // Unlike carbon-aware, daily two-stage has no forecast dependency - the
+    // estimate is pure arithmetic against the vehicle's spec, so it's safe
+    // to assert real rendered values here. Rather than hand-predicting the
+    // vehicle-spec-dependent minutes (fragile if seed data ever changes),
+    // read the backend's own computed plan from the PATCH response and
+    // assert the UI renders exactly that. stage1Start and stage2End are
+    // additionally pinned to exact values since those never depend on the
+    // vehicle's charge-duration estimate (formatTime strips the calendar
+    // day, so "next occurrence of 01:00" is always literally "01:00").
+    const plugs = await api.getJson<{ id: string }[]>("/api/plugs");
+    const plugId = plugs[0]?.id;
+    if (!plugId) throw new Error("No plug found in seed data");
+
+    const saveRes = await api.patch(`/api/plugs/${plugId}/schedule`, {
+      type: "daily",
+      time: "01:00",
+      readyBy: "07:00",
+      enabled: true,
+    });
+    const saved = (await saveRes.json()) as {
+      estimatedPlan?: {
+        stage1Start: string;
+        stage1End: string;
+        stage2Start: string;
+        stage2End: string;
+      };
+    };
+    const plan = saved.estimatedPlan;
+    if (!plan) throw new Error("Expected estimatedPlan in the PATCH response");
+    expect(plan.stage1Start).toBe("01:00");
+    expect(plan.stage2End).toBe("07:00");
+    const timeRe = /^([01]\d|2[0-3]):[0-5]\d$/;
+    expect(plan.stage1End).toMatch(timeRe);
+    expect(plan.stage2Start).toMatch(timeRe);
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("speedometer-gauge-svg")).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.waitForLoadState("load");
+
+    const dialog = await openScheduleModal(page);
+    const planPanel = dialog.getByTestId("estimated-plan");
+    await expect(
+      planPanel,
+      "Estimated plan panel should render for a daily two-stage schedule matching the backend's computed plan",
+    ).toBeVisible({ timeout: 5_000 });
+    await expect(planPanel).toContainText(`Stage 1: ${plan.stage1Start}`);
+    await expect(planPanel).toContainText(plan.stage1End);
+    await expect(planPanel).toContainText(`Hold until ${plan.stage2Start}`);
+    await expect(planPanel).toContainText(`Stage 2: ${plan.stage2Start}`);
+    await expect(planPanel).toContainText(plan.stage2End);
+  });
+
   test("daily readyBy equal to start time shows a validation error", async ({
     page,
   }) => {
