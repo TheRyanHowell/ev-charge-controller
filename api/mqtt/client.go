@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/eclipse/paho.golang/autopaho"
@@ -29,6 +30,16 @@ type ClientConfig struct {
 type Client struct {
 	cm         *autopaho.ConnectionManager
 	dispatcher *Dispatcher
+
+	// subscribed is closed once the initial wildcard subscription is
+	// acknowledged by the broker. autopaho signals "connection up" (what
+	// AwaitConnection normally waits on) before running OnConnectionUp,
+	// where the subscribe happens - so a caller acting immediately after a
+	// bare connection-wait can race the broker's SUBACK and miss early
+	// messages. AwaitConnection waits on this too so callers only ever see
+	// a fully-subscribed connection.
+	subscribed     chan struct{}
+	subscribedOnce sync.Once
 }
 
 // NewClient creates and starts an MQTT client that routes messages through dispatcher.
@@ -45,7 +56,7 @@ func NewClient(ctx context.Context, cfg ClientConfig, dispatcher *Dispatcher) (*
 		cfg.ClientID = "ev-charge-api"
 	}
 
-	c := &Client{dispatcher: dispatcher}
+	c := &Client{dispatcher: dispatcher, subscribed: make(chan struct{})}
 
 	ccfg := autopaho.ClientConfig{
 		BrokerUrls:        []*url.URL{brokerURL},
@@ -60,7 +71,9 @@ func NewClient(ctx context.Context, cfg ClientConfig, dispatcher *Dispatcher) (*
 			}
 			if _, err := cm.Subscribe(ctx, sub); err != nil {
 				slog.Error("mqtt: subscribe failed", "err", err)
+				return
 			}
+			c.subscribedOnce.Do(func() { close(c.subscribed) })
 		},
 		OnConnectError: func(err error) {
 			slog.Warn("mqtt: connection error", "err", err)
@@ -95,9 +108,22 @@ func NewClient(ctx context.Context, cfg ClientConfig, dispatcher *Dispatcher) (*
 	return c, nil
 }
 
-// AwaitConnection blocks until the broker connection is established or ctx is cancelled.
+// AwaitConnection blocks until the broker connection is established and the
+// initial topic subscription is confirmed, or ctx is cancelled. Waiting for
+// the transport connection alone is not enough to safely act on: it comes up
+// before the subscription is in place (see the subscribed field), so a caller
+// that published or expected inbound messages right after a bare
+// connection-wait could race the broker's SUBACK.
 func (c *Client) AwaitConnection(ctx context.Context) error {
-	return c.cm.AwaitConnection(ctx)
+	if err := c.cm.AwaitConnection(ctx); err != nil {
+		return err
+	}
+	select {
+	case <-c.subscribed:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // Disconnect cleanly disconnects from the broker.

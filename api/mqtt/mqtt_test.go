@@ -155,26 +155,33 @@ func TestPlugCache_Invalidate_ClearsEntry(t *testing.T) {
 
 // --- Publisher tests via embedded broker ---
 
-func TestPublisher_SetPower_PublishesToCorrectTopic(t *testing.T) {
-	brokerURL := mqtttest.BrokerURL(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+// subscribeAndAwait opens an autopaho connection subscribed to topic and
+// blocks until the subscription is acknowledged by the broker.
+//
+// autopaho's AwaitConnection only waits for the transport connection to come
+// up; it returns before OnConnectionUp (where the subscribe happens) has even
+// run, let alone completed. A caller that publishes right after AwaitConnection
+// races the broker's SUBACK: most of the time the subscribe wins, but under
+// load (e.g. the extra scheduling overhead of `go test -race`) the publish can
+// occasionally land first and the message is silently dropped, since MQTT
+// does not redeliver to a subscriber that wasn't yet registered. Waiting for
+// an explicit "subscribed" signal (closed only once cm.Subscribe returns
+// successfully) closes that window.
+func subscribeAndAwait(t *testing.T, ctx context.Context, brokerURL *url.URL, clientID, topic string, received chan<- string) *autopaho.ConnectionManager {
+	t.Helper()
 
-	u, err := url.Parse(brokerURL)
-	require.NoError(t, err)
-
-	received := make(chan string, 1)
-	subConn, err := autopaho.NewConnection(ctx, autopaho.ClientConfig{
-		BrokerUrls: []*url.URL{u},
+	subscribed := make(chan struct{})
+	conn, err := autopaho.NewConnection(ctx, autopaho.ClientConfig{
+		BrokerUrls: []*url.URL{brokerURL},
 		OnConnectionUp: func(cm *autopaho.ConnectionManager, _ *pahopkg.Connack) {
-			_, _ = cm.Subscribe(ctx, &pahopkg.Subscribe{
-				Subscriptions: []pahopkg.SubscribeOptions{
-					{Topic: "evcc/#", QoS: 1},
-				},
-			})
+			if _, err := cm.Subscribe(ctx, &pahopkg.Subscribe{
+				Subscriptions: []pahopkg.SubscribeOptions{{Topic: topic, QoS: 1}},
+			}); err == nil {
+				close(subscribed)
+			}
 		},
 		ClientConfig: pahopkg.ClientConfig{
-			ClientID: "test-sub",
+			ClientID: clientID,
 			OnPublishReceived: []func(pahopkg.PublishReceived) (bool, error){
 				func(pr pahopkg.PublishReceived) (bool, error) {
 					received <- pr.Packet.Topic
@@ -184,8 +191,28 @@ func TestPublisher_SetPower_PublishesToCorrectTopic(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	require.NoError(t, subConn.AwaitConnection(ctx))
-	t.Cleanup(func() { _ = subConn.Disconnect(context.Background()) })
+	require.NoError(t, conn.AwaitConnection(ctx))
+	t.Cleanup(func() { _ = conn.Disconnect(context.Background()) })
+
+	select {
+	case <-subscribed:
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for subscription to be established")
+	}
+
+	return conn
+}
+
+func TestPublisher_SetPower_PublishesToCorrectTopic(t *testing.T) {
+	brokerURL := mqtttest.BrokerURL(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	u, err := url.Parse(brokerURL)
+	require.NoError(t, err)
+
+	received := make(chan string, 1)
+	subscribeAndAwait(t, ctx, u, "test-sub", "evcc/#", received)
 
 	pubConn, err := autopaho.NewConnection(ctx, autopaho.ClientConfig{
 		BrokerUrls:   []*url.URL{u},
@@ -217,26 +244,7 @@ func TestController_SetPower_AndLastEnergy(t *testing.T) {
 	require.NoError(t, err)
 
 	received := make(chan string, 1)
-	subConn, err := autopaho.NewConnection(ctx, autopaho.ClientConfig{
-		BrokerUrls: []*url.URL{u},
-		OnConnectionUp: func(cm *autopaho.ConnectionManager, _ *pahopkg.Connack) {
-			_, _ = cm.Subscribe(ctx, &pahopkg.Subscribe{
-				Subscriptions: []pahopkg.SubscribeOptions{{Topic: "evcc/#", QoS: 1}},
-			})
-		},
-		ClientConfig: pahopkg.ClientConfig{
-			ClientID: "ctrl-test-sub",
-			OnPublishReceived: []func(pahopkg.PublishReceived) (bool, error){
-				func(pr pahopkg.PublishReceived) (bool, error) {
-					received <- pr.Packet.Topic
-					return true, nil
-				},
-			},
-		},
-	})
-	require.NoError(t, err)
-	require.NoError(t, subConn.AwaitConnection(ctx))
-	t.Cleanup(func() { _ = subConn.Disconnect(context.Background()) })
+	subscribeAndAwait(t, ctx, u, "ctrl-test-sub", "evcc/#", received)
 
 	pubConn, err := autopaho.NewConnection(ctx, autopaho.ClientConfig{
 		BrokerUrls:   []*url.URL{u},
@@ -281,6 +289,59 @@ func TestClient_AwaitConnection(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, client.AwaitConnection(ctx))
 	client.Disconnect(context.Background())
+}
+
+// TestClient_AwaitConnection_SubscriptionActiveOnReturn guards against a race
+// between the transport connecting and the client's wildcard subscription
+// being acknowledged. autopaho signals "connection up" (what AwaitConnection
+// waits on) before running OnConnectionUp, where Client subscribes - so a
+// caller that publishes right after AwaitConnection returns can race the
+// broker's SUBACK and have its message silently dropped. AwaitConnection must
+// not return until the initial subscription is confirmed.
+func TestClient_AwaitConnection_SubscriptionActiveOnReturn(t *testing.T) {
+	const (
+		namespace = "ns-ready"
+		slug      = "plug"
+		plugID    = "ready-plug-1"
+	)
+
+	brokerURL := mqtttest.BrokerURL(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	cache := newTestPlugCache(namespace, slug, plugID)
+	dispatcher := mqtt.NewDispatcher(cache, nil, nil, nil)
+	client, err := mqtt.NewClient(ctx, mqtt.ClientConfig{BrokerURL: brokerURL}, dispatcher)
+	require.NoError(t, err)
+	t.Cleanup(func() { client.Disconnect(context.Background()) })
+	require.NoError(t, client.AwaitConnection(ctx))
+
+	// Publish a stat/POWER message from an independent connection immediately
+	// after AwaitConnection returns. If the client's own subscription isn't
+	// active yet, the broker has nobody to deliver it to and it's dropped
+	// for good - waiting longer would not help, unlike a merely slow delivery.
+	confirmCh := dispatcher.RegisterPowerConfirm(plugID)
+	defer dispatcher.RemovePowerConfirm(plugID)
+
+	u, err := url.Parse(brokerURL)
+	require.NoError(t, err)
+	pubConn, err := autopaho.NewConnection(ctx, autopaho.ClientConfig{
+		BrokerUrls:   []*url.URL{u},
+		ClientConfig: pahopkg.ClientConfig{ClientID: "ready-check-pub"},
+	})
+	require.NoError(t, err)
+	require.NoError(t, pubConn.AwaitConnection(ctx))
+	t.Cleanup(func() { _ = pubConn.Disconnect(context.Background()) })
+
+	topic := fmt.Sprintf("evcc/%s/stat/%s/POWER", namespace, slug)
+	_, err = pubConn.Publish(ctx, &pahopkg.Publish{Topic: topic, QoS: 1, Payload: []byte("ON")})
+	require.NoError(t, err)
+
+	select {
+	case <-confirmCh:
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for dispatcher to observe stat/POWER published right after AwaitConnection returned")
+	}
 }
 
 func TestClient_NewClient_InvalidURL(t *testing.T) {
