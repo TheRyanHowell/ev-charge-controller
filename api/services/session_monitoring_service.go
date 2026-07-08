@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"ev-charge-controller/api/chargeestimate"
 	"ev-charge-controller/api/internal"
 	"ev-charge-controller/api/models"
 	"ev-charge-controller/api/tasmota"
@@ -29,6 +30,17 @@ type SessionMonitoringService struct {
 	socGenerator     *SOCGenerator
 	socWorker        *SOCWorker
 	lock             *sessionLock
+
+	// estimator computes two-stage resume timing. Defaults to
+	// chargeestimate.EstimateMinutes; overridable via SetEstimator for tests.
+	estimator DurationEstimator
+}
+
+// SetEstimator injects a custom charge-duration estimator for two-stage resume
+// timing. Used in tests to stub duration estimates; production callers may leave
+// it unset to use the chargeestimate.EstimateMinutes default.
+func (s *SessionMonitoringService) SetEstimator(est DurationEstimator) {
+	s.estimator = est
 }
 
 // NewSessionMonitoringService creates a new SessionMonitoringService.
@@ -317,6 +329,18 @@ func (s *SessionMonitoringService) CheckAndAutoStopReachingSession(ctx context.C
 		slog.Warn("failed to update last blended kWh for session", "sessionID", activeSession.ID, "err", err)
 	}
 
+	// Two-stage (ready-by) session still charging toward its intermediate hold
+	// point: compare against holdKwh instead of the real target. Once resumed,
+	// HoldPercent is cleared (see ResumeHolding) and the block below runs as normal.
+	if activeSession.HoldPercent != nil {
+		holdKwh := vehicle.CapacityKwh * *activeSession.HoldPercent / 100
+		slog.Info("[AUTO-STOP] Two-stage hold check", "sessionID", activeSession.ID, "blendedKwh", progress.BlendedKwh, "holdKwh", holdKwh, "holdPercent", *activeSession.HoldPercent)
+		if progress.BlendedKwh >= holdKwh {
+			s.holdSession(ctx, activeSession)
+		}
+		return
+	}
+
 	if progress.BlendedKwh >= activeSession.TargetKwh {
 		slog.Info("[AUTO-STOP] TRIGGERED", "sessionID", activeSession.ID, "blendedKwh", progress.BlendedKwh, "targetKwh", activeSession.TargetKwh, "currentPercent", progress.CurrentPercent, "targetPercent", activeSession.TargetPercent)
 		// 100% target: enter conditioning phase instead of stopping immediately.
@@ -342,6 +366,90 @@ func (s *SessionMonitoringService) CheckAndAutoStopReachingSession(ctx context.C
 		}
 	} else {
 		slog.Info("[AUTO-STOP] Not yet at target", "blendedKwh", progress.BlendedKwh, "targetKwh", activeSession.TargetKwh, "gap", activeSession.TargetKwh-progress.BlendedKwh, "currentPercent", progress.CurrentPercent, "targetPercent", activeSession.TargetPercent)
+	}
+}
+
+// holdSession powers off the plug and transitions a two-stage session to holding
+// once it reaches its intermediate hold point. Only transitions on confirmed
+// power-off; an unconfirmed attempt is retried on the next poll tick.
+func (s *SessionMonitoringService) holdSession(ctx context.Context, session *models.ChargeSession) {
+	if s.plugCtrl == nil || session.PlugID == nil {
+		return
+	}
+	confirmed, err := s.plugCtrl.SetPowerAndWait(ctx, *session.PlugID, false, models.PowerConfirmationTimeout)
+	if !confirmed {
+		slog.Warn("[AUTO-STOP] Two-stage hold power-off not confirmed, retrying next tick", "sessionID", session.ID, "err", err)
+		return
+	}
+
+	s.lock.Lock()
+	holdErr := s.sessionWriter.UpdateStatus(ctx, session.ID, models.SessionStatusHolding)
+	s.lock.Unlock()
+	if holdErr != nil {
+		slog.Error("[AUTO-STOP] Error transitioning to holding", "err", holdErr)
+	} else {
+		slog.Info("[AUTO-STOP] Session transitioned to holding", "sessionID", session.ID)
+	}
+}
+
+// CheckAndResumeHoldingSession resumes a holding two-stage session once it's time
+// to charge from HoldPercent to TargetPercent in order to reach ReadyByTime.
+// Mirrors the carbon-aware deadline guard: resumes at the last safe moment, or
+// immediately (failsafe) if the duration estimator errors.
+func (s *SessionMonitoringService) CheckAndResumeHoldingSession(ctx context.Context) {
+	session, err := s.sessionReader.GetActive(ctx)
+	if err != nil || session == nil || session.Status != models.SessionStatusHolding {
+		return
+	}
+	if session.HoldPercent == nil || session.ReadyByTime == nil {
+		slog.Warn("[HOLD-RESUME] Holding session missing hold fields", "sessionID", session.ID)
+		return
+	}
+
+	vehicle, err := s.vehicleRepo.FindByID(ctx, session.VehicleID)
+	if err != nil || vehicle == nil {
+		slog.Warn("[HOLD-RESUME] Cannot resolve vehicle", "sessionID", session.ID, "err", err)
+		return
+	}
+
+	now := scheduleNowFunc()
+	deadline, err := resolveDeadline(now, *session.ReadyByTime)
+	if err != nil {
+		slog.Error("[HOLD-RESUME] Invalid ready-by time", "sessionID", session.ID, "err", err)
+		return
+	}
+
+	est := s.estimator
+	if est == nil {
+		est = chargeestimate.EstimateMinutes
+	}
+	d, estErr := est(vehicle, *session.HoldPercent, session.TargetPercent)
+
+	resumeNow := estErr != nil
+	if !resumeNow {
+		latestStart := deadline.Add(-time.Duration(d) * time.Minute)
+		resumeNow = !now.Before(latestStart)
+	}
+	if !resumeNow {
+		return
+	}
+
+	if s.plugCtrl == nil || session.PlugID == nil {
+		return
+	}
+	confirmed, confErr := s.plugCtrl.SetPowerAndWait(ctx, *session.PlugID, true, models.PowerConfirmationTimeout)
+	if !confirmed {
+		slog.Warn("[HOLD-RESUME] Power-on not confirmed, retrying next tick", "sessionID", session.ID, "err", confErr)
+		return
+	}
+
+	s.lock.Lock()
+	resumeErr := s.sessionWriter.ResumeHolding(ctx, session.ID)
+	s.lock.Unlock()
+	if resumeErr != nil {
+		slog.Error("[HOLD-RESUME] Error resuming session", "err", resumeErr)
+	} else {
+		slog.Info("[HOLD-RESUME] Session resumed", "sessionID", session.ID)
 	}
 }
 

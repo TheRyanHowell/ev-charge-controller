@@ -366,6 +366,13 @@ func (s *ChargeSessionService) CheckAndStopConditioningSession(ctx context.Conte
 	s.monitoring.CheckAndStopConditioningSession(ctx, s)
 }
 
+// CheckAndResumeHoldingSession resumes a two-stage session held at its
+// intermediate percent once it's time to reach the real target by the
+// schedule's ready-by deadline.
+func (s *ChargeSessionService) CheckAndResumeHoldingSession(ctx context.Context) {
+	s.monitoring.CheckAndResumeHoldingSession(ctx)
+}
+
 // CheckAndCancelDisconnectedSession cancels an active or conditioning session
 // if the plug appears to have been disconnected or switched off.
 // Safe to call when Tasmota reports zero power or after consecutive HTTP errors.
