@@ -296,6 +296,50 @@ func TestScheduleService_CheckAndActivateAll_HappyPath(t *testing.T) {
 	assert.WithinDuration(t, time.Now(), service.GetLastActivation(), 2*time.Second)
 }
 
+// TestScheduleService_Daily_TwoStage_MinDurationBoundary pins the exact
+// boundary of the worthwhileTwoStage guard using a mock estimator (fixed
+// return value, independent of chargeestimate internals): d2 just below the
+// threshold falls back to single-stage, exactly at and just above it stays
+// two-stage - confirming the guard uses >= not >.
+func TestScheduleService_Daily_TwoStage_MinDurationBoundary(t *testing.T) {
+	tests := []struct {
+		name          string
+		d2            int
+		expectTwoStage bool
+	}{
+		{"below threshold", models.MinTwoStageStageDurationMin - 1, false},
+		{"at threshold", models.MinTwoStageStageDurationMin, true},
+		{"above threshold", models.MinTwoStageStageDurationMin + 1, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc, scheduleRepo, plugRepo, vehicleRepo, chargeAdapter := newMockScheduleService()
+			plugID := testPlugID
+			readyBy := "23:59"
+			scheduleRepo.listAllResult = []models.Schedule{
+				{PlugID: &plugID, Time: formatTime(mockNow), ReadyBy: &readyBy, Enabled: true},
+			}
+			plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+			vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 20, TargetPercent: 80}
+			chargeAdapter.createPendingResult = &models.ChargeSession{ID: "sess1"}
+			chargeAdapter.twoStageResult = &models.ChargeSession{ID: "sess1"}
+
+			svc.SetCarbonAwareDeps(nil, func(_ *models.Vehicle, _, _ float64) (int, error) {
+				return tt.d2, nil
+			}, nil)
+			svc.SetLastActivation(mockNow.Add(-2 * time.Minute))
+
+			old := scheduleNowFunc
+			scheduleNowFunc = func() time.Time { return mockNow }
+			t.Cleanup(func() { scheduleNowFunc = old })
+
+			svc.CheckAndActivateAll(t.Context())
+			assert.Equal(t, tt.expectTwoStage, chargeAdapter.twoStageCalled)
+			assert.Equal(t, !tt.expectTwoStage, chargeAdapter.createPendingCalled)
+		})
+	}
+}
+
 func TestScheduleService_CheckAndActivateAll_TwoStage_HoldsAtEightyPercentOfTarget(t *testing.T) {
 	service, db, chargeService := setupScheduleServiceTest(t)
 	defer db.Close()
@@ -1423,6 +1467,126 @@ func TestScheduleService_CarbonAwareTwoStage_SkipsWhenStage2TooShort(t *testing.
 	assert.False(t, chargeAdapter.twoStageCalled, "stage 2 duration is too short to be worthwhile")
 }
 
+// TestScheduleService_CarbonAwareTwoStage_MinDurationBoundary is the
+// carbon-aware counterpart to the daily boundary test, pinning the same
+// >= not > semantics for the worthwhileTwoStage guard.
+func TestScheduleService_CarbonAwareTwoStage_MinDurationBoundary(t *testing.T) {
+	tests := []struct {
+		name           string
+		d2             int
+		expectTwoStage bool
+	}{
+		{"below threshold", models.MinTwoStageStageDurationMin - 1, false},
+		{"at threshold", models.MinTwoStageStageDurationMin, true},
+		{"above threshold", models.MinTwoStageStageDurationMin + 1, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc, scheduleRepo, plugRepo, vehicleRepo, chargeAdapter := newMockScheduleService()
+			// Window 09:00-10:30, now=10:20 - close enough to windowEnd that the
+			// deadline guard forces an immediate decision for both the two-stage
+			// path (d1+d2 up to 32min) and the single-stage fallback path (d=14min),
+			// regardless of which branch is taken, so this test isolates the
+			// worthwhileTwoStage decision itself rather than deadline-guard timing.
+			scheduleRepo.listAllResult = []models.Schedule{carbonAwareTwoStageSchedule("09:00", "10:30")}
+			plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+			vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 20, TargetPercent: 80}
+			chargeAdapter.createPendingResult = &models.ChargeSession{ID: "sess1"}
+			chargeAdapter.twoStageResult = &models.ChargeSession{ID: "sess1"}
+
+			svc.SetCarbonAwareDeps(nil, func(_ *models.Vehicle, _, _ float64) (int, error) {
+				return tt.d2, nil
+			}, nil)
+
+			now := time.Date(2024, 1, 1, 10, 20, 0, 0, time.UTC)
+			old := scheduleNowFunc
+			scheduleNowFunc = func() time.Time { return now }
+			t.Cleanup(func() { scheduleNowFunc = old })
+
+			svc.CheckAndActivateAll(t.Context())
+			assert.Equal(t, tt.expectTwoStage, chargeAdapter.twoStageCalled)
+			assert.Equal(t, !tt.expectTwoStage, chargeAdapter.createPendingCalled)
+		})
+	}
+}
+
+// TestScheduleService_CarbonAwareTwoStage_SmallStage1DoesNotBlockTwoStage
+// proves stage 1 is intentionally never gated: a tiny stage 1 (current
+// already close to the hold point) alongside a substantial stage 2 must
+// still proceed as two-stage.
+func TestScheduleService_CarbonAwareTwoStage_SmallStage1DoesNotBlockTwoStage(t *testing.T) {
+	svc, scheduleRepo, plugRepo, vehicleRepo, chargeAdapter := newMockScheduleService()
+
+	// current=63, target=80 -> hold=64. Stage 1 (63->64) is tiny; stage 2
+	// (64->80) is substantial. Both stages get the same mock duration (60min)
+	// to isolate stage 1 size from the worthwhileness decision, which only
+	// looks at stage 2.
+	scheduleRepo.listAllResult = []models.Schedule{carbonAwareTwoStageSchedule("09:00", "10:30")}
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 63, TargetPercent: 80}
+	chargeAdapter.twoStageResult = &models.ChargeSession{ID: "sess1"}
+
+	svc.SetCarbonAwareDeps(nil, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 60, nil
+	}, nil)
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return mockNow } // 10:00, past latestStart -> deadline guard
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	svc.CheckAndActivateAll(t.Context())
+	assert.True(t, chargeAdapter.twoStageCalled, "small stage 1 must not block two-stage when stage 2 is substantial")
+	assert.Equal(t, 64.0, chargeAdapter.twoStageHoldArg)
+}
+
+// TestScheduleService_CheckAndActivateAll_TwoStage_79To80_AlreadyPastHold
+// confirms the user's 79%->80% example resolves via the pre-existing
+// "already past hold" branch, not the new duration guard: hold=64% is below
+// current=79%, so there's nothing to hold for regardless of stage 2's size.
+func TestScheduleService_CheckAndActivateAll_TwoStage_79To80_AlreadyPastHold(t *testing.T) {
+	service, db, chargeService := setupScheduleServiceTest(t)
+	defer db.Close()
+
+	_, err := db.Exec(`UPDATE vehicles SET current_percent = 79.0, target_percent = 80.0 WHERE id = ?`, "rm1")
+	require.NoError(t, err)
+
+	currentTime := formatTime(time.Now())
+	readyBy := "23:59"
+	_, err = service.UpsertByPlugID(t.Context(), testPlugID, testUserID, currentTime, &readyBy, true)
+	require.NoError(t, err)
+
+	service.CheckAndActivateAll(t.Context())
+
+	active, err := chargeService.sessionReader.GetActive(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, active, "expected a single-stage session to be created")
+	assert.Nil(t, active.HoldPercent, "already past the 64%% hold point, nothing to hold for")
+}
+
+// TestScheduleService_CheckAndActivateAll_TwoStage_50To80_StaysTwoStage
+// confirms the user's 50%->80% example stays two-stage: hold=64%, stage 2
+// (64->80, ~28min on the seeded RM1 spec) comfortably clears the threshold.
+func TestScheduleService_CheckAndActivateAll_TwoStage_50To80_StaysTwoStage(t *testing.T) {
+	service, db, chargeService := setupScheduleServiceTest(t)
+	defer db.Close()
+
+	_, err := db.Exec(`UPDATE vehicles SET current_percent = 50.0, target_percent = 80.0 WHERE id = ?`, "rm1")
+	require.NoError(t, err)
+
+	currentTime := formatTime(time.Now())
+	readyBy := "23:59"
+	_, err = service.UpsertByPlugID(t.Context(), testPlugID, testUserID, currentTime, &readyBy, true)
+	require.NoError(t, err)
+
+	service.CheckAndActivateAll(t.Context())
+
+	active, err := chargeService.sessionReader.GetActive(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, active, "expected a two-stage session to be created")
+	require.NotNil(t, active.HoldPercent)
+	assert.Equal(t, 64.0, *active.HoldPercent)
+}
+
 func TestScheduleService_CarbonAwareTwoStage_DeadlineGuard_StartsNow(t *testing.T) {
 	svc, scheduleRepo, plugRepo, vehicleRepo, chargeAdapter := newMockScheduleService()
 
@@ -1877,6 +2041,41 @@ func TestScheduleService_EstimateCarbonAwareTwoStagePlan_EstimatorError(t *testi
 
 	_, ok := svc.EstimateCarbonAwareTwoStagePlan(t.Context(), &sch)
 	assert.False(t, ok)
+}
+
+// TestScheduleService_EstimateCarbonAwareTwoStagePlan_MinDurationBoundary
+// pins the same >= not > boundary for the plan-preview mirror.
+func TestScheduleService_EstimateCarbonAwareTwoStagePlan_MinDurationBoundary(t *testing.T) {
+	tests := []struct {
+		name   string
+		d2     int
+		wantOk bool
+	}{
+		{"below threshold", models.MinTwoStageStageDurationMin - 1, false},
+		{"at threshold", models.MinTwoStageStageDurationMin, true},
+		{"above threshold", models.MinTwoStageStageDurationMin + 1, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+			plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+			vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 20, TargetPercent: 80}
+			// Window 09:00-10:30, now=10:00 (mockNow) - past latestStart for
+			// both stages, so the deadline-guard-fallback path is used and no
+			// forecast data is needed.
+			svc.SetCarbonAwareDeps(&mockForecaster{}, func(_ *models.Vehicle, _, _ float64) (int, error) {
+				return tt.d2, nil
+			}, nil)
+			sch := carbonAwareTwoStageSchedule("09:00", "10:30")
+
+			old := scheduleNowFunc
+			scheduleNowFunc = func() time.Time { return mockNow }
+			t.Cleanup(func() { scheduleNowFunc = old })
+
+			_, ok := svc.EstimateCarbonAwareTwoStagePlan(t.Context(), &sch)
+			assert.Equal(t, tt.wantOk, ok)
+		})
+	}
 }
 
 func TestScheduleService_EstimateCarbonAwareTwoStagePlan_PastDeadline_UsesLatestStarts(t *testing.T) {
