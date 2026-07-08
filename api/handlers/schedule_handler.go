@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -20,6 +21,15 @@ func NewScheduleHandler(service *services.ScheduleService) *ScheduleHandler {
 
 func (h *ScheduleHandler) Service() *services.ScheduleService {
 	return h.service
+}
+
+// attachEstimatedStart populates EstimatedStartTime on enabled carbon-aware schedules
+// using the current carbon intensity forecast, so the gauge can show when charging is
+// actually expected to begin instead of just the ready-by deadline.
+func (h *ScheduleHandler) attachEstimatedStart(ctx context.Context, schedule *models.Schedule) {
+	if start, ok := h.service.EstimateCarbonAwareStart(ctx, schedule); ok {
+		schedule.EstimatedStartTime = &start
+	}
 }
 
 // UpsertByPlug handles PATCH /api/plugs/{id}/schedule.
@@ -77,6 +87,8 @@ func (h *ScheduleHandler) UpsertByPlug(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.attachEstimatedStart(r.Context(), schedule)
+
 	if err := writeJSON(w, http.StatusOK, schedule); err != nil {
 		slog.Error("error encoding response", append(logReq(r), "err", err)...)
 	}
@@ -101,6 +113,8 @@ func (h *ScheduleHandler) GetByPlug(w http.ResponseWriter, r *http.Request) {
 		problemJSON(w, http.StatusNotFound, "about:blank#schedule-not-found", "Not Found", "Schedule not found.")
 		return
 	}
+
+	h.attachEstimatedStart(r.Context(), schedule)
 
 	if err := writeJSON(w, http.StatusOK, schedule); err != nil {
 		slog.Error("error encoding response", append(logReq(r), "err", err)...)

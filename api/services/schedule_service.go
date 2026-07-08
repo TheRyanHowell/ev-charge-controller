@@ -339,6 +339,68 @@ func (s *ScheduleService) tryActivateCarbonAware(ctx context.Context, sch models
 	// else: a cleaner window exists later - wait.
 }
 
+// EstimateCarbonAwareStart computes when an enabled carbon-aware schedule's charge
+// session is expected to start, based on the current carbon intensity forecast. This
+// mirrors the decision logic in tryActivateCarbonAware but only reports the answer -
+// it never starts a session. Returns ok=false when no confident estimate can be made
+// (missing deps, forecast unavailable, vehicle already at target, etc.), so callers can
+// fall back to displaying the ready-by (windowEnd) time instead.
+func (s *ScheduleService) EstimateCarbonAwareStart(ctx context.Context, sch *models.Schedule) (start string, ok bool) {
+	if sch == nil || sch.Type != models.ScheduleTypeCarbonAware || !sch.Enabled {
+		return "", false
+	}
+	if sch.PlugID == nil || sch.WindowStart == nil || sch.WindowEnd == nil {
+		return "", false
+	}
+	if s.forecaster == nil {
+		return "", false
+	}
+
+	now := scheduleNowFunc()
+	windowStart, windowEnd, err := resolveWindow(now, *sch.WindowStart, *sch.WindowEnd)
+	if err != nil {
+		return "", false
+	}
+
+	cand := s.loadCandidate(ctx, *sch.PlugID)
+	if cand == nil {
+		return "", false
+	}
+
+	est := s.estimator
+	if est == nil {
+		est = chargeestimate.EstimateMinutes
+	}
+	d, estimateErr := est(cand.vehicle, cand.vehicle.CurrentPercent, cand.vehicle.TargetPercent)
+	if estimateErr != nil {
+		return "", false
+	}
+
+	latestStart := windowEnd.Add(-time.Duration(d) * time.Minute)
+
+	// If we're already inside the window, only future starts matter. Before the
+	// window opens, scan the whole window from its start.
+	searchFrom := windowStart
+	if now.After(windowStart) {
+		searchFrom = now
+	}
+	if !searchFrom.Before(latestStart) {
+		return formatTime(latestStart.In(now.Location())), true
+	}
+
+	buckets, ferr := s.forecaster.GetForecast(ctx, searchFrom, windowEnd)
+	if ferr != nil || len(buckets) == 0 {
+		return "", false
+	}
+
+	optimalStart := findOptimalStart(buckets, searchFrom, latestStart, time.Duration(d)*time.Minute)
+	if optimalStart.IsZero() {
+		return "", false
+	}
+
+	return formatTime(optimalStart.In(now.Location())), true
+}
+
 // candidate holds the resolved plug and vehicle for an activation check.
 type candidate struct {
 	vehicle *models.Vehicle

@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"ev-charge-controller/api/carbonintensity"
 	"ev-charge-controller/api/internal"
 	"ev-charge-controller/api/models"
 	"ev-charge-controller/api/repository"
@@ -271,4 +273,130 @@ func TestScheduleHandler_UpsertByPlug_InvalidType(t *testing.T) {
 func withPathValue(r *http.Request, key, value string) *http.Request {
 	r.SetPathValue(key, value)
 	return r
+}
+
+// mockCarbonForecaster implements internal.CarbonForecaster for handler-level tests.
+type mockCarbonForecaster struct {
+	buckets []carbonintensity.ForecastBucket
+}
+
+func (m *mockCarbonForecaster) GetForecast(context.Context, time.Time, time.Time) ([]carbonintensity.ForecastBucket, error) {
+	return m.buckets, nil
+}
+
+// assignVehicleToSchedulePlug seeds a vehicle below its target and assigns it to the
+// schedule test plug, so carbon-aware estimation has a candidate to work with.
+func assignVehicleToSchedulePlug(t *testing.T, db *sql.DB) {
+	t.Helper()
+	_, err := db.Exec(`INSERT INTO vehicles (id, user_id, model_id, name, current_percent, target_percent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"sched-veh", testScheduleUserID, "rm1", "Schedule Vehicle", 20.0, 80.0, time.Now())
+	require.NoError(t, err)
+	_, err = db.Exec(`UPDATE plugs SET vehicle_id = ? WHERE id = ?`, "sched-veh", testSchedulePlugID)
+	require.NoError(t, err)
+}
+
+// flatForecastBuckets returns 48 hours of equal-intensity 30-min buckets starting a day
+// before now, so any window around "now" is covered regardless of test execution time.
+func flatForecastBuckets(now time.Time) []carbonintensity.ForecastBucket {
+	from := now.Add(-24 * time.Hour).Truncate(30 * time.Minute)
+	buckets := make([]carbonintensity.ForecastBucket, 0, 96)
+	for i := 0; i < 96; i++ {
+		buckets = append(buckets, carbonintensity.ForecastBucket{
+			From:         from.Add(time.Duration(i) * 30 * time.Minute),
+			To:           from.Add(time.Duration(i+1) * 30 * time.Minute),
+			ForecastGCo2: 100,
+		})
+	}
+	return buckets
+}
+
+func TestScheduleHandler_GetByPlug_CarbonAware_AttachesEstimatedStart(t *testing.T) {
+	handler, db := setupScheduleHandlerTest(t)
+	defer db.Close()
+	assignVehicleToSchedulePlug(t, db)
+
+	reqBody := `{"type":"carbon_aware","windowStart":"00:00","windowEnd":"23:59","enabled":true}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/plugs/"+testSchedulePlugID+"/schedule", bytes.NewReader([]byte(reqBody)))
+	req.Header.Set("Content-Type", "application/json")
+	req = withPathValue(req, "id", testSchedulePlugID)
+	req = req.WithContext(internal.WithUserID(req.Context(), testScheduleUserID))
+	rr := httptest.NewRecorder()
+	handler.UpsertByPlug(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	handler.Service().SetCarbonAwareDeps(
+		&mockCarbonForecaster{buckets: flatForecastBuckets(time.Now())},
+		func(_ *models.Vehicle, _, _ float64) (int, error) { return 30, nil },
+		nil,
+	)
+
+	req = httptest.NewRequest(http.MethodGet, "/api/plugs/"+testSchedulePlugID+"/schedule", nil)
+	req = withPathValue(req, "id", testSchedulePlugID)
+	req = req.WithContext(internal.WithUserID(req.Context(), testScheduleUserID))
+	rr = httptest.NewRecorder()
+	handler.GetByPlug(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	var schedule models.Schedule
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&schedule))
+	require.NotNil(t, schedule.EstimatedStartTime, "expected estimatedStartTime to be populated")
+	assert.Regexp(t, `^([01]\d|2[0-3]):[0-5]\d$`, *schedule.EstimatedStartTime)
+}
+
+func TestScheduleHandler_UpsertByPlug_CarbonAware_AttachesEstimatedStart(t *testing.T) {
+	handler, db := setupScheduleHandlerTest(t)
+	defer db.Close()
+	assignVehicleToSchedulePlug(t, db)
+
+	handler.Service().SetCarbonAwareDeps(
+		&mockCarbonForecaster{buckets: flatForecastBuckets(time.Now())},
+		func(_ *models.Vehicle, _, _ float64) (int, error) { return 30, nil },
+		nil,
+	)
+
+	reqBody := `{"type":"carbon_aware","windowStart":"00:00","windowEnd":"23:59","enabled":true}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/plugs/"+testSchedulePlugID+"/schedule", bytes.NewReader([]byte(reqBody)))
+	req.Header.Set("Content-Type", "application/json")
+	req = withPathValue(req, "id", testSchedulePlugID)
+	req = req.WithContext(internal.WithUserID(req.Context(), testScheduleUserID))
+	rr := httptest.NewRecorder()
+	handler.UpsertByPlug(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	var schedule models.Schedule
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&schedule))
+	require.NotNil(t, schedule.EstimatedStartTime, "expected estimatedStartTime in PATCH response")
+	assert.Regexp(t, `^([01]\d|2[0-3]):[0-5]\d$`, *schedule.EstimatedStartTime)
+}
+
+func TestScheduleHandler_GetByPlug_Daily_NoEstimatedStart(t *testing.T) {
+	handler, db := setupScheduleHandlerTest(t)
+	defer db.Close()
+	assignVehicleToSchedulePlug(t, db)
+
+	handler.Service().SetCarbonAwareDeps(
+		&mockCarbonForecaster{buckets: flatForecastBuckets(time.Now())},
+		func(_ *models.Vehicle, _, _ float64) (int, error) { return 30, nil },
+		nil,
+	)
+
+	reqBody := `{"time": "03:00", "enabled": true}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/plugs/"+testSchedulePlugID+"/schedule", bytes.NewReader([]byte(reqBody)))
+	req.Header.Set("Content-Type", "application/json")
+	req = withPathValue(req, "id", testSchedulePlugID)
+	req = req.WithContext(internal.WithUserID(req.Context(), testScheduleUserID))
+	rr := httptest.NewRecorder()
+	handler.UpsertByPlug(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	req = httptest.NewRequest(http.MethodGet, "/api/plugs/"+testSchedulePlugID+"/schedule", nil)
+	req = withPathValue(req, "id", testSchedulePlugID)
+	rr = httptest.NewRecorder()
+	handler.GetByPlug(rr, req)
+
+	var schedule models.Schedule
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&schedule))
+	assert.Nil(t, schedule.EstimatedStartTime, "daily schedules should never get an estimated start time")
 }

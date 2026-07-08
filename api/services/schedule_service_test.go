@@ -1004,6 +1004,164 @@ func TestScheduleService_CarbonAware_ShortfallNotification(t *testing.T) {
 // stringPtr is a local helper for creating string pointers in tests.
 func stringPtr(s string) *string { return &s }
 
+// --- EstimateCarbonAwareStart tests ---
+
+func TestScheduleService_EstimateCarbonAwareStart_NilSchedule(t *testing.T) {
+	svc, _, _, _, _ := newMockScheduleService()
+	_, ok := svc.EstimateCarbonAwareStart(t.Context(), nil)
+	assert.False(t, ok)
+}
+
+func TestScheduleService_EstimateCarbonAwareStart_NotCarbonAware(t *testing.T) {
+	svc, _, _, _, _ := newMockScheduleService()
+	sch := &models.Schedule{Type: models.ScheduleTypeDaily, Time: "03:00", Enabled: true}
+	_, ok := svc.EstimateCarbonAwareStart(t.Context(), sch)
+	assert.False(t, ok)
+}
+
+func TestScheduleService_EstimateCarbonAwareStart_Disabled(t *testing.T) {
+	svc, _, _, _, _ := newMockScheduleService()
+	sch := carbonAwareSchedule("09:00", "13:00")
+	sch.Enabled = false
+	_, ok := svc.EstimateCarbonAwareStart(t.Context(), &sch)
+	assert.False(t, ok)
+}
+
+func TestScheduleService_EstimateCarbonAwareStart_MissingWindow(t *testing.T) {
+	svc, _, _, _, _ := newMockScheduleService()
+	plugID := testPlugID
+	sch := &models.Schedule{PlugID: &plugID, Type: models.ScheduleTypeCarbonAware, Enabled: true}
+	_, ok := svc.EstimateCarbonAwareStart(t.Context(), sch)
+	assert.False(t, ok)
+}
+
+func TestScheduleService_EstimateCarbonAwareStart_NoForecaster(t *testing.T) {
+	svc, _, _, _, _ := newMockScheduleService()
+	sch := carbonAwareSchedule("09:00", "13:00")
+	_, ok := svc.EstimateCarbonAwareStart(t.Context(), &sch)
+	assert.False(t, ok)
+}
+
+func TestScheduleService_EstimateCarbonAwareStart_EstimatorError(t *testing.T) {
+	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 20, TargetPercent: 80}
+	svc.SetCarbonAwareDeps(&mockForecaster{}, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 0, errors.New("no estimate")
+	}, nil)
+	sch := carbonAwareSchedule("09:00", "13:00")
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return mockNow }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	_, ok := svc.EstimateCarbonAwareStart(t.Context(), &sch)
+	assert.False(t, ok)
+}
+
+func TestScheduleService_EstimateCarbonAwareStart_AlreadyAtTarget(t *testing.T) {
+	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 80, TargetPercent: 80}
+	svc.SetCarbonAwareDeps(&mockForecaster{}, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 60, nil
+	}, nil)
+	sch := carbonAwareSchedule("09:00", "13:00")
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return mockNow }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	_, ok := svc.EstimateCarbonAwareStart(t.Context(), &sch)
+	assert.False(t, ok)
+}
+
+func TestScheduleService_EstimateCarbonAwareStart_PastDeadline_ReturnsLatestStart(t *testing.T) {
+	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 20, TargetPercent: 80}
+	// Window 09:00-10:30, D=60min → latestStart=09:30. now=10:00 (past latestStart).
+	svc.SetCarbonAwareDeps(&mockForecaster{}, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 60, nil
+	}, nil)
+	sch := carbonAwareSchedule("09:00", "10:30")
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return mockNow } // 10:00
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	start, ok := svc.EstimateCarbonAwareStart(t.Context(), &sch)
+	require.True(t, ok)
+	assert.Equal(t, "09:30", start)
+}
+
+func TestScheduleService_EstimateCarbonAwareStart_ForecastError(t *testing.T) {
+	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 20, TargetPercent: 80}
+	svc.SetCarbonAwareDeps(&mockForecaster{err: errors.New("API down")}, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 60, nil
+	}, nil)
+	sch := carbonAwareSchedule("09:00", "13:00")
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return mockNow } // 10:00, well before latestStart 12:00
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	_, ok := svc.EstimateCarbonAwareStart(t.Context(), &sch)
+	assert.False(t, ok)
+}
+
+func TestScheduleService_EstimateCarbonAwareStart_InsideWindow_ScansFromNow(t *testing.T) {
+	now := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
+	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 20, TargetPercent: 80}
+
+	// Window 09:00-13:00, D=60min → latestStart=12:00.
+	// Buckets from 10:00: 10:00=500, 10:30=350, 11:00=100, 11:30=450, 12:00=500, 12:30=500
+	// start@10:30 → (350+100)/2=225 is the unambiguous minimum.
+	buckets := makeBuckets(now, []int{500, 350, 100, 450, 500, 500})
+	svc.SetCarbonAwareDeps(&mockForecaster{buckets: buckets}, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 60, nil
+	}, nil)
+	sch := carbonAwareSchedule("09:00", "13:00")
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return now }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	start, ok := svc.EstimateCarbonAwareStart(t.Context(), &sch)
+	require.True(t, ok)
+	assert.Equal(t, "10:30", start, "should pick the cleanest window starting at 10:30")
+}
+
+func TestScheduleService_EstimateCarbonAwareStart_BeforeWindow_ScansFromWindowStart(t *testing.T) {
+	// now is 07:00, window opens at 09:00 - search should start at windowStart, not now,
+	// otherwise a clean bucket before the window opens could be picked incorrectly.
+	now := time.Date(2024, 1, 1, 7, 0, 0, 0, time.UTC)
+	windowStartTime := time.Date(2024, 1, 1, 9, 0, 0, 0, time.UTC)
+	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 20, TargetPercent: 80}
+
+	// Window 09:00-13:00, D=60min → latestStart=12:00.
+	// Buckets from windowStart(09:00): 09:00=50 (clean), rest=400.
+	buckets := makeBuckets(windowStartTime, []int{50, 400, 400, 400, 400, 400, 400, 400})
+	svc.SetCarbonAwareDeps(&mockForecaster{buckets: buckets}, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 60, nil
+	}, nil)
+	sch := carbonAwareSchedule("09:00", "13:00")
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return now }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	start, ok := svc.EstimateCarbonAwareStart(t.Context(), &sch)
+	require.True(t, ok)
+	assert.Equal(t, "09:00", start, "should scan from windowStart since we're before it opens")
+}
+
 func TestScheduleService_formatTime_MatchesUpsertFormat(t *testing.T) {
 	// Regression test: formatTime must produce zero-padded hours ("09:05")
 	// so it matches the time stored by UpsertByPlugID ("09:05"). Previously
