@@ -197,6 +197,71 @@ test.describe.serial("Schedule Persistence", () => {
     ).toHaveValue("08:00");
   });
 
+  test("saving a carbon-aware schedule with two-stage charging persists twoStage after reload", async ({
+    page,
+  }) => {
+    const dialog = await openScheduleModal(page);
+
+    await dialog.getByRole("button", { name: "Carbon-aware" }).click();
+    await dialog.getByLabel("Earliest").fill("22:00");
+    await dialog.getByLabel("Ready by").fill("06:00");
+    await dialog
+      .getByRole("switch", { name: "Carbon-aware two-stage charging" })
+      .click();
+
+    await dialog.getByRole("button", { name: "Save" }).click();
+    await expect(
+      page.locator("dialog[open]"),
+      "Modal should close after saving",
+    ).toHaveCount(0, { timeout: 5_000 });
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("speedometer-gauge-svg")).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.waitForLoadState("load");
+
+    // Reopening pre-fills from the saved schedule.type=carbon_aware, so the
+    // Carbon-aware tab is already selected without needing to click it.
+    const reopened = await openScheduleModal(page);
+    await expect(
+      reopened.getByRole("switch", { name: "Carbon-aware two-stage charging" }),
+      "Carbon-aware two-stage toggle should still be enabled after reload",
+    ).toHaveAttribute("aria-checked", "true");
+  });
+
+  test("opening modal pre-fills twoStage for an existing carbon-aware two-stage schedule", async ({
+    page,
+    api,
+  }) => {
+    // Seed a two-stage carbon-aware schedule via API so the UI can be verified in isolation.
+    const plugs = await api.getJson<{ id: string }[]>("/api/plugs");
+    const plugId = plugs[0]?.id;
+    if (!plugId) throw new Error("No plug found in seed data");
+
+    await api.patch(`/api/plugs/${plugId}/schedule`, {
+      type: "carbon_aware",
+      windowStart: "22:00",
+      windowEnd: "06:00",
+      twoStage: true,
+      enabled: true,
+    });
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("speedometer-gauge-svg")).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.waitForLoadState("load");
+
+    // schedule.type is already carbon_aware, so that tab is pre-selected.
+    const dialog = await openScheduleModal(page);
+
+    await expect(
+      dialog.getByRole("switch", { name: "Carbon-aware two-stage charging" }),
+      "Carbon-aware two-stage toggle should reflect the saved twoStage flag",
+    ).toHaveAttribute("aria-checked", "true");
+  });
+
   test("opening modal pre-fills saved values for an existing schedule", async ({
     page,
     api,

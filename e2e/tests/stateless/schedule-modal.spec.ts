@@ -133,6 +133,47 @@ test.describe("Schedule Modal UI", () => {
     ).toBeVisible();
   });
 
+  test("Carbon-aware tab shows a Two-stage charging toggle, off by default", async ({
+    page,
+  }) => {
+    await page.getByTestId("schedule-circle").click();
+    const dialog = page.locator("dialog[open]");
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+
+    await dialog.getByRole("button", { name: "Carbon-aware" }).click();
+
+    // Seed schedule is daily with no twoStage set; switching tabs should not
+    // carry over the daily toggle's checked state.
+    await expect(
+      dialog.getByRole("switch", { name: "Carbon-aware two-stage charging" }),
+      "Carbon-aware two-stage toggle should be present",
+    ).toBeVisible();
+    await expect(
+      dialog.getByRole("switch", { name: "Carbon-aware two-stage charging" }),
+      "Carbon-aware two-stage toggle should be off by default",
+    ).toHaveAttribute("aria-checked", "false");
+  });
+
+  test("Daily and Carbon-aware two-stage toggles are independent", async ({
+    page,
+  }) => {
+    await page.getByTestId("schedule-circle").click();
+    const dialog = page.locator("dialog[open]");
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+
+    // Turn on the Daily tab's toggle.
+    await dialog.getByRole("switch", { name: "Two-stage charging" }).click();
+    await expect(
+      dialog.getByRole("switch", { name: "Two-stage charging" }),
+    ).toHaveAttribute("aria-checked", "true");
+
+    // Switching to Carbon-aware should not carry the Daily toggle's state over.
+    await dialog.getByRole("button", { name: "Carbon-aware" }).click();
+    await expect(
+      dialog.getByRole("switch", { name: "Carbon-aware two-stage charging" }),
+    ).toHaveAttribute("aria-checked", "false");
+  });
+
   test("Skip button closes the modal", async ({ page }) => {
     await page.getByTestId("schedule-circle").click();
     const dialog = page.locator("dialog[open]");
