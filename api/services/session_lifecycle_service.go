@@ -71,6 +71,17 @@ func NewSessionLifecycleService(
 // On success, transitions pending→active inline. On failure, cancels the pending
 // session and best-effort turns the plug OFF.
 func (s *SessionLifecycleService) StartSession(ctx context.Context, plugID, vehicleID string, startPercent, targetPercent float64) (*models.ChargeSession, error) {
+	return s.startSession(ctx, plugID, vehicleID, startPercent, targetPercent, nil, nil)
+}
+
+// StartTwoStageSession starts a ready-by two-stage session: charges to holdPercent,
+// holds there, then resumes to reach targetPercent by readyByTime. Shares the same
+// pending→MQTT-confirm→active flow as StartSession.
+func (s *SessionLifecycleService) StartTwoStageSession(ctx context.Context, plugID, vehicleID string, startPercent, targetPercent, holdPercent float64, readyByTime string) (*models.ChargeSession, error) {
+	return s.startSession(ctx, plugID, vehicleID, startPercent, targetPercent, &holdPercent, &readyByTime)
+}
+
+func (s *SessionLifecycleService) startSession(ctx context.Context, plugID, vehicleID string, startPercent, targetPercent float64, holdPercent *float64, readyByTime *string) (*models.ChargeSession, error) {
 	if err := s.validateVehicleExists(ctx, vehicleID); err != nil {
 		return nil, err
 	}
@@ -89,7 +100,7 @@ func (s *SessionLifecycleService) StartSession(ctx context.Context, plugID, vehi
 	}
 
 	// Create pending session in DB FIRST so it survives browser refresh or API crash.
-	session, err := s.createSessionFromPercent(ctx, plugID, vehicleID, startPercent, targetPercent, startTotalKwh)
+	session, err := s.createSessionFromPercent(ctx, plugID, vehicleID, startPercent, targetPercent, startTotalKwh, holdPercent, readyByTime)
 	if err != nil {
 		return nil, err
 	}
@@ -574,7 +585,8 @@ func (s *SessionLifecycleService) captureEnergyBaseline(_ context.Context, plugI
 }
 
 // createSessionFromPercent creates a new charge session with percent-based start/end values.
-func (s *SessionLifecycleService) createSessionFromPercent(ctx context.Context, plugID, vehicleID string, startPercent, targetPercent float64, startTotalKwh *float64) (*models.ChargeSession, error) {
+// holdPercent and readyByTime are non-nil only for two-stage (ready-by) sessions.
+func (s *SessionLifecycleService) createSessionFromPercent(ctx context.Context, plugID, vehicleID string, startPercent, targetPercent float64, startTotalKwh, holdPercent *float64, readyByTime *string) (*models.ChargeSession, error) {
 	vehicle, err := s.vehicleRepo.FindByID(ctx, vehicleID)
 	if err != nil {
 		return nil, err
@@ -589,6 +601,8 @@ func (s *SessionLifecycleService) createSessionFromPercent(ctx context.Context, 
 		Status:        models.SessionStatusPending,
 		CreatedAt:     time.Now(),
 		StartTotalKwh: startTotalKwh,
+		HoldPercent:   holdPercent,
+		ReadyByTime:   readyByTime,
 	}
 
 	if userID, ok := internal.UserIDFromContext(ctx); ok {

@@ -299,6 +299,12 @@ func (s *ChargeSessionService) StartSession(ctx context.Context, plugID, vehicle
 	return s.lifecycle.StartSession(ctx, plugID, vehicleID, startPercent, targetPercent)
 }
 
+// StartTwoStageSession starts a ready-by two-stage session. See
+// SessionLifecycleService.StartTwoStageSession for details.
+func (s *ChargeSessionService) StartTwoStageSession(ctx context.Context, plugID, vehicleID string, startPercent, targetPercent, holdPercent float64, readyByTime string) (*models.ChargeSession, error) {
+	return s.lifecycle.StartTwoStageSession(ctx, plugID, vehicleID, startPercent, targetPercent, holdPercent, readyByTime)
+}
+
 
 type StopResult struct {
 	Stopped    bool   `json:"stopped"`

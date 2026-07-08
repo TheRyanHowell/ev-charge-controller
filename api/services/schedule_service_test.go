@@ -385,6 +385,12 @@ type mockChargeServiceAdapter struct {
 	createPendingErr      error
 	createPendingResult   *models.ChargeSession
 	createPendingCalled   bool
+
+	twoStageErr        error
+	twoStageResult     *models.ChargeSession
+	twoStageCalled     bool
+	twoStageHoldArg    float64
+	twoStageReadyByArg string
 }
 
 func (m *mockChargeServiceAdapter) GetActiveByPlug(context.Context, string) (*models.ChargeSession, error) {
@@ -394,6 +400,13 @@ func (m *mockChargeServiceAdapter) GetActiveByPlug(context.Context, string) (*mo
 func (m *mockChargeServiceAdapter) StartSession(context.Context, string, string, float64, float64) (*models.ChargeSession, error) {
 	m.createPendingCalled = true
 	return m.createPendingResult, m.createPendingErr
+}
+
+func (m *mockChargeServiceAdapter) StartTwoStageSession(_ context.Context, _, _ string, _, _, holdPercent float64, readyByTime string) (*models.ChargeSession, error) {
+	m.twoStageCalled = true
+	m.twoStageHoldArg = holdPercent
+	m.twoStageReadyByArg = readyByTime
+	return m.twoStageResult, m.twoStageErr
 }
 
 func newMockScheduleService() (*ScheduleService, *mockScheduleRepo, *mockPlugRepo, *mockVehicleRepo, *mockChargeServiceAdapter) {

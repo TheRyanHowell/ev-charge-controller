@@ -41,6 +41,7 @@ type DurationEstimator func(v *models.Vehicle, current, target float64) (int, er
 type ChargeServiceAdapter interface {
 	GetActiveByPlug(ctx context.Context, plugID string) (*models.ChargeSession, error)
 	StartSession(ctx context.Context, plugID, vehicleID string, startPercent, targetPercent float64) (*models.ChargeSession, error)
+	StartTwoStageSession(ctx context.Context, plugID, vehicleID string, startPercent, targetPercent, holdPercent float64, readyByTime string) (*models.ChargeSession, error)
 }
 
 // chargeSessionServiceAdapter wraps *ChargeSessionService to satisfy ChargeServiceAdapter.
@@ -54,6 +55,10 @@ func (a *chargeSessionServiceAdapter) GetActiveByPlug(ctx context.Context, plugI
 
 func (a *chargeSessionServiceAdapter) StartSession(ctx context.Context, plugID, vehicleID string, startPercent, targetPercent float64) (*models.ChargeSession, error) {
 	return a.svc.StartSession(ctx, plugID, vehicleID, startPercent, targetPercent)
+}
+
+func (a *chargeSessionServiceAdapter) StartTwoStageSession(ctx context.Context, plugID, vehicleID string, startPercent, targetPercent, holdPercent float64, readyByTime string) (*models.ChargeSession, error) {
+	return a.svc.StartTwoStageSession(ctx, plugID, vehicleID, startPercent, targetPercent, holdPercent, readyByTime)
 }
 
 // scheduleNowFunc returns the current time. Overridable in tests.

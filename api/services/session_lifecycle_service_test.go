@@ -93,6 +93,51 @@ func TestSessionLifecycleService_StartSession_ActiveSessionExists(t *testing.T) 
 	assert.Nil(t, session)
 }
 
+func TestSessionLifecycleService_StartTwoStageSession_Success(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	notifier := NewChargeNotifier(context.Background(), nil, vehicleRepo, nil)
+	lock := newSessionLock()
+
+	service := NewSessionLifecycleService(sessRepo, sessRepo, vehicleRepo, nil, ctrl, sessRepo, notifier, lock)
+
+	session, err := service.StartTwoStageSession(context.Background(), testPlugID, testVehicleID, 20, 80, 64, "07:00")
+	require.NoError(t, err)
+	require.NotNil(t, session)
+	assert.Equal(t, testVehicleID, session.VehicleID)
+	assert.Equal(t, models.SessionStatusActive, session.Status)
+	assert.Equal(t, 80.0, session.TargetPercent)
+	require.NotNil(t, session.HoldPercent)
+	assert.Equal(t, 64.0, *session.HoldPercent)
+	require.NotNil(t, session.ReadyByTime)
+	assert.Equal(t, "07:00", *session.ReadyByTime)
+
+	// Persisted values must round-trip, not just the in-memory struct.
+	found, err := sessRepo.FindByID(context.Background(), session.ID)
+	require.NoError(t, err)
+	require.NotNil(t, found.HoldPercent)
+	assert.Equal(t, 64.0, *found.HoldPercent)
+	require.NotNil(t, found.ReadyByTime)
+	assert.Equal(t, "07:00", *found.ReadyByTime)
+}
+
+func TestSessionLifecycleService_StartTwoStageSession_VehicleNotFound(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	notifier := NewChargeNotifier(context.Background(), nil, vehicleRepo, nil)
+	lock := newSessionLock()
+
+	service := NewSessionLifecycleService(sessRepo, sessRepo, vehicleRepo, nil, ctrl, sessRepo, notifier, lock)
+
+	session, err := service.StartTwoStageSession(context.Background(), testPlugID, "nonexistent", 20, 80, 64, "07:00")
+	assert.Error(t, err)
+	assert.Nil(t, session)
+}
+
 func TestSessionLifecycleService_ActivatePending_Success(t *testing.T) {
 	db := setupServiceTestDB(t)
 	sessRepo := repository.NewChargeSessionRepository(db)
@@ -746,7 +791,7 @@ func TestSessionLifecycleService_createSessionFromPercent_NoPlugFallback(t *test
 	service := NewSessionLifecycleService(sessRepo, sessRepo, vehicleRepo, plugRepo, ctrl, sessRepo, notifier, lock)
 
 	ctx := internal.WithUserID(context.Background(), testUserID)
-	session, err := service.createSessionFromPercent(ctx, "", testVehicleID, 20, 80, nil)
+	session, err := service.createSessionFromPercent(ctx, "", testVehicleID, 20, 80, nil, nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, session)
 	assert.NotNil(t, session.PlugID)
@@ -764,7 +809,7 @@ func TestSessionLifecycleService_createSessionFromPercent_WithPlug(t *testing.T)
 	service := NewSessionLifecycleService(sessRepo, sessRepo, vehicleRepo, plugRepo, ctrl, sessRepo, notifier, lock)
 
 	ctx := internal.WithUserID(context.Background(), testUserID)
-	session, err := service.createSessionFromPercent(ctx, testPlugID, testVehicleID, 20, 80, nil)
+	session, err := service.createSessionFromPercent(ctx, testPlugID, testVehicleID, 20, 80, nil, nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, session)
 	assert.Equal(t, testPlugID, *session.PlugID)
