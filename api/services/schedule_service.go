@@ -683,8 +683,10 @@ func (s *ScheduleService) startCarbonAwareTwoStageSession(ctx context.Context, p
 }
 
 // resolveWindow converts HH:MM window strings to absolute timestamps relative to now.
-// Handles midnight crossing (windowEnd < windowStart → add 24h to end).
-// If now is past the window end, rolls both forward 24h so the caller sees "before window".
+// Handles midnight crossing (windowEnd < windowStart → add 24h to end). If now
+// falls before today's computed start but inside yesterday's still-open
+// instance of an overnight window, returns that instance instead. If now is
+// past the window end, rolls both forward 24h so the caller sees "before window".
 func resolveWindow(now time.Time, windowStart, windowEnd string) (start, end time.Time, err error) {
 	startH, startM, err := parseHHMM(windowStart)
 	if err != nil {
@@ -704,6 +706,18 @@ func resolveWindow(now time.Time, windowStart, windowEnd string) (start, end tim
 	// Midnight crossing: windowEnd wraps to the next day.
 	if !end.After(start) {
 		end = end.Add(24 * time.Hour)
+	}
+
+	// now is before today's computed start - check whether it instead falls
+	// inside yesterday's instance of this window (relevant for overnight
+	// windows evaluated after local midnight, e.g. window 22:00-06:00 checked
+	// at 02:00: today's start is 22:00 today, still in the future, but now is
+	// really inside the window that opened at 22:00 yesterday).
+	if now.Before(start) {
+		yesterdayStart, yesterdayEnd := start.Add(-24*time.Hour), end.Add(-24*time.Hour)
+		if now.Before(yesterdayEnd) {
+			return yesterdayStart, yesterdayEnd, nil
+		}
 	}
 
 	// Window already passed today - roll forward 24h so we fall into "before window".

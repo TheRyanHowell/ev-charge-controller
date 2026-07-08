@@ -740,6 +740,23 @@ func TestResolveWindow_MidnightCrossing(t *testing.T) {
 	assert.Equal(t, time.Date(2024, 1, 2, 6, 0, 0, 0, time.UTC), end)
 }
 
+// TestResolveWindow_OvernightWindow_AfterMidnight is a regression test for a bug
+// where resolveWindow always anchored "today" to now's calendar date. For an
+// overnight window like 22:00-06:00 checked at 02:00 (still inside the window
+// that opened the previous evening), the old code computed today's 22:00 as the
+// start - hours in the future - making the caller think the window hadn't
+// started yet, when in reality only 4 hours remained until the real 06:00
+// deadline. This silently abandoned the ready-by guarantee every night an
+// overnight schedule was still open past midnight.
+func TestResolveWindow_OvernightWindow_AfterMidnight(t *testing.T) {
+	now := time.Date(2024, 1, 2, 2, 0, 0, 0, time.UTC)
+	start, end, err := resolveWindow(now, "22:00", "06:00")
+	require.NoError(t, err)
+	assert.Equal(t, time.Date(2024, 1, 1, 22, 0, 0, 0, time.UTC), start, "should resolve to yesterday's window instance, not tonight's")
+	assert.Equal(t, time.Date(2024, 1, 2, 6, 0, 0, 0, time.UTC), end)
+	assert.True(t, now.Before(end), "now must still be inside the resolved window")
+}
+
 func TestResolveWindow_RollForwardWhenPast(t *testing.T) {
 	// now is past the window end - both should roll forward 24h.
 	now := time.Date(2024, 1, 1, 14, 0, 0, 0, time.UTC)
