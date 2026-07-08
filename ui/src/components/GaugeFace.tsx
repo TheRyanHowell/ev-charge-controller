@@ -21,7 +21,13 @@ function makeArcPath(fromPct: number, toPct: number, radius = PROGRESS_R) {
 interface GaugeFaceProps {
   currentPercent: number;
   startPercent: number;
-  status: "idle" | "charging" | "pending" | "conditioning" | "error";
+  status:
+    | "idle"
+    | "charging"
+    | "pending"
+    | "conditioning"
+    | "holding"
+    | "error";
 }
 
 export function GaugeFace({

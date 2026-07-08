@@ -22,7 +22,13 @@ interface SpeedometerGaugeProps {
   startPercent: number;
   currentPercent: number;
   targetPercent: number;
-  status: "idle" | "charging" | "pending" | "conditioning" | "error";
+  status:
+    | "idle"
+    | "charging"
+    | "pending"
+    | "conditioning"
+    | "holding"
+    | "error";
   onStartStop: () => void;
   isActionPending?: boolean;
   onDragStart?: () => void;
@@ -156,7 +162,11 @@ function SpeedometerGauge({
         if (field === "target") {
           const next = Math.min(100, snapPercentage(targetPercent + STEP_SIZE));
           setPercents(currentPercent, next);
-        } else if (status !== "charging" && status !== "conditioning") {
+        } else if (
+          status !== "charging" &&
+          status !== "conditioning" &&
+          status !== "holding"
+        ) {
           const next = Math.min(
             targetPercent,
             snapPercentage(currentPercent + STEP_SIZE),
@@ -168,13 +178,21 @@ function SpeedometerGauge({
         const field = e.shiftKey ? "current" : "target";
         if (field === "target") {
           const next = Math.max(0, snapPercentage(targetPercent - STEP_SIZE));
-          if (status === "charging" || status === "conditioning") {
+          if (
+            status === "charging" ||
+            status === "conditioning" ||
+            status === "holding"
+          ) {
             const eff = Math.max(next, currentPercent);
             setPercents(currentPercent, eff);
           } else {
             setPercents(currentPercent, next);
           }
-        } else if (status !== "charging" && status !== "conditioning") {
+        } else if (
+          status !== "charging" &&
+          status !== "conditioning" &&
+          status !== "holding"
+        ) {
           const next = Math.max(0, snapPercentage(currentPercent - STEP_SIZE));
           setPercents(next, targetPercent);
         }

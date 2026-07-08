@@ -19,7 +19,13 @@ export interface ChargeActionsDeps {
   plugId: string | null;
   currentPercent: number;
   targetPercent: number;
-  sessionStatus: "idle" | "charging" | "pending" | "conditioning" | "error";
+  sessionStatus:
+    | "idle"
+    | "charging"
+    | "pending"
+    | "conditioning"
+    | "holding"
+    | "error";
   onError: (msg: string) => void;
   onTargetUpdateError?: (msg: string) => void;
   // Suppresses inbound gauge syncs while a target commit is in flight.
@@ -195,6 +201,8 @@ export function useChargeActions(deps: ChargeActionsDeps) {
       setCommitting?.(true);
       updateTimerRef.current = setTimeout(async () => {
         const status = sessionStatusRef.current;
+        // "holding" intentionally excluded: the backend rejects target updates
+        // mid-hold (UpdateTarget requires status=active), so there's nothing to commit.
         if (status !== "charging" && status !== "conditioning") {
           setCommitting?.(false);
           return;

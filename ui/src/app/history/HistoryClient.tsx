@@ -215,7 +215,9 @@ function SessionCard({
   const isDeletable =
     session.status === "completed" || session.status === "cancelled";
   const isActiveSession =
-    session.status === "active" || session.status === "conditioning";
+    session.status === "active" ||
+    session.status === "conditioning" ||
+    session.status === "holding";
   const vehicleName = vehicle?.name ?? session.vehicleId;
   const hasRange =
     vehicle != null && (vehicle.rangeMinMi > 0 || vehicle.rangeMaxMi > 0);

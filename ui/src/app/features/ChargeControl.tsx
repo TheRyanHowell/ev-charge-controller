@@ -8,7 +8,13 @@ interface GaugeState {
   currentPercent: number;
   targetPercent: number;
   startPercent: number | null;
-  status: "idle" | "charging" | "pending" | "conditioning" | "error";
+  status:
+    | "idle"
+    | "charging"
+    | "pending"
+    | "conditioning"
+    | "holding"
+    | "error";
 }
 
 interface SessionState {

@@ -44,6 +44,8 @@ export function getStatusColor(status: string): string {
       return "bg-blue-500";
     case "conditioning":
       return "bg-amber-500";
+    case "holding":
+      return "bg-purple-500";
     default:
       return "bg-gray-500";
   }
@@ -61,6 +63,8 @@ export function getStatusBadgeClass(status: string): string {
       return "bg-blue-500/20 text-blue-400 border-blue-500/30";
     case "conditioning":
       return "bg-amber-500/20 text-amber-400 border-amber-500/30";
+    case "holding":
+      return "bg-purple-500/20 text-purple-400 border-purple-500/30";
     default:
       return "bg-gray-500/20 text-gray-400 border-gray-500/30";
   }

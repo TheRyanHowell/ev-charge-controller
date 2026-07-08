@@ -90,7 +90,10 @@ export default function StatsPanel({
 
   const progressRange = targetPercent - startPercent;
   const progressPct =
-    (status === "charging" || status === "conditioning") && progressRange > 0
+    (status === "charging" ||
+      status === "conditioning" ||
+      status === "holding") &&
+    progressRange > 0
       ? Math.max(
           0,
           Math.min(

@@ -10,7 +10,7 @@ export type ChargeSession =
   | { status: "idle" }
   | { status: "pending"; startedAt: number | null }
   | {
-      status: "charging" | "conditioning";
+      status: "charging" | "conditioning" | "holding";
       powerDraw: number;
       energyAddedKwh: number | null;
       startedAt: number | null;
@@ -58,9 +58,12 @@ export function useChargeSession(
   const prevStatusRef = useRef(session.status);
   useEffect(() => {
     if (
-      (session.status === "charging" || session.status === "conditioning") &&
+      (session.status === "charging" ||
+        session.status === "conditioning" ||
+        session.status === "holding") &&
       prevStatusRef.current !== "charging" &&
       prevStatusRef.current !== "conditioning" &&
+      prevStatusRef.current !== "holding" &&
       chargeStartPercent == null
     ) {
       setChargeStartPercent(currentPercent);
@@ -126,6 +129,7 @@ export function useChargeSession(
     sessionStartTime:
       session.status === "charging" ||
       session.status === "conditioning" ||
+      session.status === "holding" ||
       session.status === "pending"
         ? session.startedAt
         : null,

@@ -53,6 +53,32 @@ describe("GaugeOverlay", () => {
     expect(screen.getByText("Charging")).toBeInTheDocument();
   });
 
+  it("displays Holding status when holding", () => {
+    render(
+      <GaugeOverlay
+        status="holding"
+        currentPercent={64}
+        targetPercent={80}
+        onStartStop={() => {}}
+      />,
+    );
+    expect(screen.getByText("Holding")).toBeInTheDocument();
+  });
+
+  it("shows STOP button when holding", () => {
+    render(
+      <GaugeOverlay
+        status="holding"
+        currentPercent={64}
+        targetPercent={80}
+        onStartStop={() => {}}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Stop charging" }),
+    ).toHaveTextContent("STOP");
+  });
+
   it("shows START button when idle", () => {
     render(
       <GaugeOverlay

@@ -11,6 +11,10 @@ describe("mapBackendStatus", () => {
     expect(mapBackendStatus("pending")).toBe("pending");
   });
 
+  it("maps 'holding' to 'holding'", () => {
+    expect(mapBackendStatus("holding")).toBe("holding");
+  });
+
   it("maps 'cancelled' to 'error'", () => {
     expect(mapBackendStatus("cancelled")).toBe("error");
   });

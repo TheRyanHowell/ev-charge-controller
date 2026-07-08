@@ -53,7 +53,13 @@ function getAngleFromPointer(
 }
 
 interface UseGaugeDragOptions {
-  status: "idle" | "charging" | "pending" | "conditioning" | "error";
+  status:
+    | "idle"
+    | "charging"
+    | "pending"
+    | "conditioning"
+    | "holding"
+    | "error";
   onDragStart?: () => void;
   onDragEnd?: (current: number, target: number) => void;
   svgRef: React.RefObject<SVGSVGElement | null>;
@@ -124,8 +130,12 @@ export function useGaugeDrag({
       const { currentPercent: cur, targetPercent: tgt } =
         useGaugeStore.getState();
 
-      // When charging/conditioning, only target is draggable
-      if (status === "charging" || status === "conditioning") {
+      // When charging/conditioning/holding, only target is draggable
+      if (
+        status === "charging" ||
+        status === "conditioning" ||
+        status === "holding"
+      ) {
         const dist = angularDistance(mouseAngle, percentageToAngle(tgt));
         return dist < HIT_RAD ? "target" : null;
       }
@@ -169,7 +179,12 @@ export function useGaugeDrag({
       const { currentPercent: current, targetPercent: target } =
         useGaugeStore.getState();
       if (dragging === "start") {
-        if (status === "charging" || status === "conditioning") return;
+        if (
+          status === "charging" ||
+          status === "conditioning" ||
+          status === "holding"
+        )
+          return;
         // When current is dragged past target, auto-bump target to next 5% increment.
         // This prevents user from being stuck with target < current.
         const bumpCond =
@@ -189,7 +204,11 @@ export function useGaugeDrag({
           }
         }
       } else {
-        if (status === "charging" || status === "conditioning") {
+        if (
+          status === "charging" ||
+          status === "conditioning" ||
+          status === "holding"
+        ) {
           const eff = Math.max(clamped, current);
           if (eff !== target) {
             useGaugeStore.getState().setPercents(current, eff);

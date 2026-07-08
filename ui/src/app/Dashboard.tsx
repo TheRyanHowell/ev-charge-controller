@@ -185,9 +185,12 @@ export default function Dashboard({
   const isChargingOrPending =
     session.status === "charging" ||
     session.status === "pending" ||
-    session.status === "conditioning";
+    session.status === "conditioning" ||
+    session.status === "holding";
   const isActive =
-    session.status === "charging" || session.status === "conditioning";
+    session.status === "charging" ||
+    session.status === "conditioning" ||
+    session.status === "holding";
   const powerDraw = isActive ? session.powerDraw : 0;
   const energyAddedKwh = isActive ? session.energyAddedKwh : null;
   const voltage = isActive ? session.voltage : null;
@@ -322,6 +325,7 @@ export default function Dashboard({
                 | "charging"
                 | "pending"
                 | "conditioning"
+                | "holding"
                 | "error",
             }}
             session={{

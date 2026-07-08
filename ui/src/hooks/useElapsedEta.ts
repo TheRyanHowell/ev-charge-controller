@@ -8,6 +8,7 @@ export type ChargeStatus =
   | "charging"
   | "pending"
   | "conditioning"
+  | "holding"
   | "error";
 
 interface UseElapsedEtaParams {

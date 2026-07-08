@@ -8,7 +8,13 @@ interface MaintenancePlugState {
 }
 
 interface GaugeOverlayProps {
-  status: "idle" | "charging" | "pending" | "conditioning" | "error";
+  status:
+    | "idle"
+    | "charging"
+    | "pending"
+    | "conditioning"
+    | "holding"
+    | "error";
   currentPercent: number;
   targetPercent: number;
   onStartStop: () => void;
@@ -58,12 +64,16 @@ export function GaugeOverlay({
   const isCharged = currentPercent >= targetPercent;
 
   const isChargingOrPending =
-    status === "charging" || status === "pending" || status === "conditioning";
+    status === "charging" ||
+    status === "pending" ||
+    status === "conditioning" ||
+    status === "holding";
   const isDisabled =
     isActionPending ||
     (status !== "charging" &&
       status !== "pending" &&
       status !== "conditioning" &&
+      status !== "holding" &&
       (isCharged || tasmotaConnected === false));
 
   const scheduleActive = schedule?.enabled ?? false;
@@ -83,6 +93,7 @@ export function GaugeOverlay({
           <div className="text-xs text-gray-400 mt-1.5 uppercase tracking-[0.25em] font-medium">
             {status === "charging" && "Charging"}
             {status === "conditioning" && "Conditioning"}
+            {status === "holding" && "Holding"}
             {status === "pending" && "Pending"}
             {status === "idle" &&
               !isCharged &&

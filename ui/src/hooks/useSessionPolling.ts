@@ -7,6 +7,7 @@ const FRONTEND_STATUSES = new Set([
   "charging",
   "pending",
   "conditioning",
+  "holding",
   "error",
 ] as const);
 import { queryKeys } from "@/lib/queryKeys";
@@ -162,7 +163,11 @@ export function useSessionPolling(deps: SessionPollingDeps) {
     const startedAt = queryData.startedAt
       ? new Date(queryData.startedAt).getTime()
       : null;
-    if (status === "charging" || status === "conditioning") {
+    if (
+      status === "charging" ||
+      status === "conditioning" ||
+      status === "holding"
+    ) {
       return {
         status,
         powerDraw: queryData.powerDraw ?? chargerOutputW,

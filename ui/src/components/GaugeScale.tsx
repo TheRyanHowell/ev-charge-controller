@@ -10,7 +10,13 @@ const PROGRESS_R = ARC_R;
 
 interface GaugeScaleProps {
   targetPercent: number;
-  status: "idle" | "charging" | "pending" | "conditioning" | "error";
+  status:
+    | "idle"
+    | "charging"
+    | "pending"
+    | "conditioning"
+    | "holding"
+    | "error";
   startPercent?: number;
 }
 
