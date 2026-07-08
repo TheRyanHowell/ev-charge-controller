@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"ev-charge-controller/api/carbonintensity"
+	"ev-charge-controller/api/chargeestimate"
 	"ev-charge-controller/api/database"
 	"ev-charge-controller/api/models"
 	"ev-charge-controller/api/repository"
@@ -341,6 +342,34 @@ func TestScheduleService_CheckAndActivateAll_TwoStage_SkipsHoldWhenAlreadyPastEi
 	assert.Nil(t, active.HoldPercent)
 	assert.Nil(t, active.ReadyByTime)
 	assert.Equal(t, 80.0, active.TargetPercent)
+}
+
+// TestScheduleService_CheckAndActivateAll_TwoStage_SkipsWhenStage2TooShort is a
+// regression test for two-stage triggering on degenerate splits: with
+// current=1, target=2, hold=1.6 - stage 2 (1.6->2.0) is only a couple of
+// minutes, far too short to justify a relay power-cycle and hold/resume
+// transition. Uses the real seeded RM1 vehicle spec (2.026kWh/600W/0.8 eff),
+// so the duration numbers are grounded, not assumed.
+func TestScheduleService_CheckAndActivateAll_TwoStage_SkipsWhenStage2TooShort(t *testing.T) {
+	service, db, chargeService := setupScheduleServiceTest(t)
+	defer db.Close()
+
+	_, err := db.Exec(`UPDATE vehicles SET current_percent = 1.0, target_percent = 2.0 WHERE id = ?`, "rm1")
+	require.NoError(t, err)
+
+	currentTime := formatTime(time.Now())
+	readyBy := "23:59"
+	_, err = service.UpsertByPlugID(t.Context(), testPlugID, testUserID, currentTime, &readyBy, true)
+	require.NoError(t, err)
+
+	service.CheckAndActivateAll(t.Context())
+
+	active, err := chargeService.sessionReader.GetActive(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, active, "expected a single-stage session to be created")
+	assert.Nil(t, active.HoldPercent, "stage 2 duration is too short to be worthwhile")
+	assert.Nil(t, active.ReadyByTime)
+	assert.Equal(t, 2.0, active.TargetPercent)
 }
 
 func TestScheduleService_CheckAndActivateAll_NoReadyBy_StartsSingleStage(t *testing.T) {
@@ -1363,6 +1392,35 @@ func TestScheduleService_CarbonAwareTwoStage_SkipsHoldWhenAlreadyPastHoldPercent
 	assert.False(t, chargeAdapter.twoStageCalled, "should not start a two-stage session")
 }
 
+// TestScheduleService_CarbonAwareTwoStage_SkipsWhenStage2TooShort is a
+// regression test for two-stage triggering on degenerate splits: with
+// current=1, target=2, holdPercent=1.6 - stage 2 (1.6->2.0) is only a couple
+// of minutes, far too short to justify a relay power-cycle and hold/resume
+// transition. Uses the real chargeestimate.EstimateMinutes (no mock) against
+// the seeded RM1 spec so the numbers are grounded, not assumed.
+func TestScheduleService_CarbonAwareTwoStage_SkipsWhenStage2TooShort(t *testing.T) {
+	svc, scheduleRepo, plugRepo, vehicleRepo, chargeAdapter := newMockScheduleService()
+
+	scheduleRepo.listAllResult = []models.Schedule{carbonAwareTwoStageSchedule("22:00", "06:00")}
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{
+		ID: "v1", CurrentPercent: 1, TargetPercent: 2,
+		CapacityKwh: 2.026, ChargerOutputW: 600, ChargingEfficiency: 0.8, // matches seeded RM1 spec
+	}
+	chargeAdapter.createPendingResult = &models.ChargeSession{ID: "sess1"}
+
+	svc.SetCarbonAwareDeps(nil, chargeestimate.EstimateMinutes, nil)
+
+	nowInsideWindow := time.Date(2024, 1, 1, 23, 0, 0, 0, time.UTC)
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return nowInsideWindow }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	svc.CheckAndActivateAll(t.Context())
+	assert.True(t, chargeAdapter.createPendingCalled, "expected a single-stage start")
+	assert.False(t, chargeAdapter.twoStageCalled, "stage 2 duration is too short to be worthwhile")
+}
+
 func TestScheduleService_CarbonAwareTwoStage_DeadlineGuard_StartsNow(t *testing.T) {
 	svc, scheduleRepo, plugRepo, vehicleRepo, chargeAdapter := newMockScheduleService()
 
@@ -1773,6 +1831,33 @@ func TestScheduleService_EstimateCarbonAwareTwoStagePlan_AfterMidnight_StillCons
 	assert.Equal(t, "23:30", plan.Stage1End)
 	assert.Equal(t, "23:30", plan.Stage2Start)
 	assert.Equal(t, "00:30", plan.Stage2End)
+}
+
+// TestScheduleService_EstimateCarbonAwareTwoStagePlan_SkipsWhenStage2TooShort
+// is the estimate-mirror counterpart: it must not show a plan preview for a
+// schedule whose activation would actually fall back to single-stage.
+func TestScheduleService_EstimateCarbonAwareTwoStagePlan_SkipsWhenStage2TooShort(t *testing.T) {
+	svc, _, plugRepo, vehicleRepo, _ := newMockScheduleService()
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{
+		ID: "v1", CurrentPercent: 1, TargetPercent: 2,
+		CapacityKwh: 2.026, ChargerOutputW: 600, ChargingEfficiency: 0.8,
+	}
+	// Real forecast data spanning the window, so a pre-fix run (with no
+	// duration guard) would successfully compute a plan via the forecaster
+	// instead of accidentally returning ok=false for the unrelated reason of
+	// having no forecast data - this test must fail red before the fix.
+	now := time.Date(2024, 1, 1, 23, 0, 0, 0, time.UTC)
+	buckets := makeBuckets(now.Truncate(30*time.Minute), []int{200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200})
+	svc.SetCarbonAwareDeps(&mockForecaster{buckets: buckets}, chargeestimate.EstimateMinutes, nil)
+	sch := carbonAwareTwoStageSchedule("22:00", "06:00")
+
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return now }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	_, ok := svc.EstimateCarbonAwareTwoStagePlan(t.Context(), &sch)
+	assert.False(t, ok, "stage 2 duration is too short to be worthwhile")
 }
 
 func TestScheduleService_EstimateCarbonAwareTwoStagePlan_EstimatorError(t *testing.T) {
