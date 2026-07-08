@@ -34,6 +34,10 @@ type SessionMonitoringService struct {
 	// estimator computes two-stage resume timing. Defaults to
 	// chargeestimate.EstimateMinutes; overridable via SetEstimator for tests.
 	estimator DurationEstimator
+	// forecaster supplies carbon intensity forecasts for carbon-aware two-stage
+	// resume timing. Unset by default; without it, carbon-aware-origin holds
+	// fall back to plain deadline-guard resume, same as daily-origin holds.
+	forecaster internal.CarbonForecaster
 }
 
 // SetEstimator injects a custom charge-duration estimator for two-stage resume
@@ -41,6 +45,13 @@ type SessionMonitoringService struct {
 // it unset to use the chargeestimate.EstimateMinutes default.
 func (s *SessionMonitoringService) SetEstimator(est DurationEstimator) {
 	s.estimator = est
+}
+
+// SetForecaster injects the carbon intensity forecaster used to pick a
+// balanced (clean + late) resume time for carbon-aware two-stage sessions.
+// Wired from server.go alongside ScheduleService's carbon-aware deps.
+func (s *SessionMonitoringService) SetForecaster(f internal.CarbonForecaster) {
+	s.forecaster = f
 }
 
 // NewSessionMonitoringService creates a new SessionMonitoringService.
@@ -393,9 +404,13 @@ func (s *SessionMonitoringService) holdSession(ctx context.Context, session *mod
 }
 
 // CheckAndResumeHoldingSession resumes a holding two-stage session once it's time
-// to charge from HoldPercent to TargetPercent in order to reach ReadyByTime.
-// Mirrors the carbon-aware deadline guard: resumes at the last safe moment, or
-// immediately (failsafe) if the duration estimator errors.
+// to charge from HoldPercent to TargetPercent in order to reach ReadyByTime. The
+// deadline guard (resume immediately once the last safe moment is reached, or on
+// a duration-estimator error) always applies. For carbon-aware-origin sessions
+// with a forecaster configured, resuming earlier than the deadline is further
+// gated by findBalancedStart, so stage 2 also favors clean, late power the same
+// way stage 1's activation did. Daily-origin sessions (and carbon-aware sessions
+// without a forecaster wired) keep the plain deadline-guard-only behavior.
 func (s *SessionMonitoringService) CheckAndResumeHoldingSession(ctx context.Context) {
 	session, err := s.sessionReader.GetActive(ctx)
 	if err != nil || session == nil || session.Status != models.SessionStatusHolding {
@@ -424,16 +439,43 @@ func (s *SessionMonitoringService) CheckAndResumeHoldingSession(ctx context.Cont
 		est = chargeestimate.EstimateMinutes
 	}
 	d, estErr := est(vehicle, *session.HoldPercent, session.TargetPercent)
-
-	resumeNow := estErr != nil
-	if !resumeNow {
-		latestStart := deadline.Add(-time.Duration(d) * time.Minute)
-		resumeNow = !now.Before(latestStart)
-	}
-	if !resumeNow {
+	if estErr != nil {
+		slog.Warn("[HOLD-RESUME] estimator error, resuming now", "sessionID", session.ID, "err", estErr)
+		s.resumeHoldingSession(ctx, session)
 		return
 	}
 
+	latestStart := deadline.Add(-time.Duration(d) * time.Minute)
+	if !now.Before(latestStart) {
+		slog.Info("[HOLD-RESUME] deadline guard, resuming now", "sessionID", session.ID, "latestStart", latestStart)
+		s.resumeHoldingSession(ctx, session)
+		return
+	}
+
+	if !session.CarbonAwareHold || s.forecaster == nil {
+		// Daily-origin (or carbon-aware without a forecaster wired): plain
+		// deadline guard only, not yet due - keep holding.
+		return
+	}
+
+	buckets, ferr := s.forecaster.GetForecast(ctx, now, deadline)
+	if ferr != nil || len(buckets) == 0 {
+		slog.Warn("[HOLD-RESUME] forecast unavailable, deferring", "sessionID", session.ID, "err", ferr)
+		return
+	}
+
+	optimalStart := findBalancedStart(buckets, now, latestStart, deadline, time.Duration(d)*time.Minute)
+	currentBucket := alignToHalfHour(now.UTC())
+	if optimalStart.IsZero() || !optimalStart.After(currentBucket) {
+		s.resumeHoldingSession(ctx, session)
+	}
+	// else: a better-balanced window exists later - keep holding.
+}
+
+// resumeHoldingSession powers the plug back on and transitions a holding
+// session back to active. Only transitions on confirmed power-on; an
+// unconfirmed attempt is retried on the next poll tick.
+func (s *SessionMonitoringService) resumeHoldingSession(ctx context.Context, session *models.ChargeSession) {
 	if s.plugCtrl == nil || session.PlugID == nil {
 		return
 	}

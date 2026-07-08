@@ -127,6 +127,13 @@ func (s *ChargeSessionService) SetTariffProvider(p TariffProvider) {
 	s.lifecycle.SetTariffProvider(p)
 }
 
+// SetCarbonAwareForecaster wires the carbon intensity forecaster used to pick
+// a balanced resume time for carbon-aware two-stage holding sessions. Called
+// from server.go alongside ScheduleService.SetCarbonAwareDeps.
+func (s *ChargeSessionService) SetCarbonAwareForecaster(f internal.CarbonForecaster) {
+	s.monitoring.SetForecaster(f)
+}
+
 // SetPlugController wires in the MQTT plug controller after it connects at startup.
 func (s *ChargeSessionService) SetPlugController(ctrl internal.PlugController) {
 	s.plugCtrl = ctrl

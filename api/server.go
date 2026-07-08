@@ -177,6 +177,7 @@ func initServices(ctx context.Context, db *sql.DB, cfg *internal.Config) *server
 	scheduleService := services.NewScheduleService(scheduleRepo, plugRepo, vehicleRepo, chargeService)
 	if !cfg.CarbonIntensityDisabled {
 		scheduleService.SetCarbonAwareDeps(carbonIntensityClient, chargeestimate.EstimateMinutes, chargeService.Notifier())
+		chargeService.SetCarbonAwareForecaster(carbonIntensityClient)
 	}
 	chartDataService := services.NewChartDataService(chargeRepo)
 	historyService := services.NewHistoryService(chargeRepo, chargeRepo)
