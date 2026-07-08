@@ -70,6 +70,7 @@ type ScheduleOpts struct {
 	PlugID  string
 	UserID  string
 	Time    string
+	ReadyBy string
 	Enabled bool
 }
 
@@ -188,8 +189,12 @@ func InsertSchedule(db *sql.DB, opts *ScheduleOpts) error {
 	if opts.Enabled {
 		enabled = 1
 	}
-	_, err := db.Exec(`INSERT INTO schedules (id, plug_id, user_id, time, enabled) VALUES (?, ?, ?, ?, ?)`,
-		opts.ID, opts.PlugID, opts.UserID, opts.Time, enabled)
+	var readyBy any
+	if opts.ReadyBy != "" {
+		readyBy = opts.ReadyBy
+	}
+	_, err := db.Exec(`INSERT INTO schedules (id, plug_id, user_id, time, ready_by, enabled) VALUES (?, ?, ?, ?, ?, ?)`,
+		opts.ID, opts.PlugID, opts.UserID, opts.Time, readyBy, enabled)
 	return err
 }
 

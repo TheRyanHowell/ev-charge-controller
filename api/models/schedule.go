@@ -16,5 +16,6 @@ type Schedule struct {
 	WindowStart        *string      `json:"windowStart,omitempty"`        // HH:MM - carbon_aware earliest start
 	WindowEnd          *string      `json:"windowEnd,omitempty"`          // HH:MM - carbon_aware ready-by time
 	EstimatedStartTime *string      `json:"estimatedStartTime,omitempty"` // HH:MM - carbon_aware forecast-based start estimate; computed on read, not persisted
+	ReadyBy            *string      `json:"readyBy,omitempty"`            // HH:MM - daily two-stage ready-by deadline
 	Enabled            bool         `json:"enabled"`
 }

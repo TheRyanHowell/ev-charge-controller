@@ -43,6 +43,50 @@ func TestScheduleRepository_Get(t *testing.T) {
 	assert.True(t, schedule.Enabled)
 }
 
+func TestScheduleRepository_Get_ReadyBy(t *testing.T) {
+	db := setupScheduleTestDB(t)
+
+	repo := NewScheduleRepository(db)
+
+	plugID := "plug"
+	require.NoError(t, testdb.InsertPlug(db, plugID, "test-user", "Test Plug", "ns-test", "test"))
+	require.NoError(t, testdb.InsertSchedule(db, &testdb.ScheduleOpts{
+		ID:      "plug",
+		PlugID:  plugID,
+		UserID:  "test-user",
+		Time:    "03:00",
+		ReadyBy: "07:00",
+		Enabled: true,
+	}))
+
+	schedule, err := repo.Get(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, schedule)
+	require.NotNil(t, schedule.ReadyBy)
+	assert.Equal(t, "07:00", *schedule.ReadyBy)
+}
+
+func TestScheduleRepository_Get_ReadyByNull(t *testing.T) {
+	db := setupScheduleTestDB(t)
+
+	repo := NewScheduleRepository(db)
+
+	plugID := "plug"
+	require.NoError(t, testdb.InsertPlug(db, plugID, "test-user", "Test Plug", "ns-test", "test"))
+	require.NoError(t, testdb.InsertSchedule(db, &testdb.ScheduleOpts{
+		ID:      "plug",
+		PlugID:  plugID,
+		UserID:  "test-user",
+		Time:    "03:00",
+		Enabled: true,
+	}))
+
+	schedule, err := repo.Get(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, schedule)
+	assert.Nil(t, schedule.ReadyBy)
+}
+
 func TestScheduleRepository_Get_Empty(t *testing.T) {
 	db := setupScheduleTestDB(t)
 
@@ -78,6 +122,44 @@ func TestScheduleRepository_Upsert_Insert(t *testing.T) {
 	require.NotNil(t, found)
 	assert.Equal(t, "02:30", found.Time)
 	assert.True(t, found.Enabled)
+}
+
+func TestScheduleRepository_Upsert_ReadyBy(t *testing.T) {
+	db := setupScheduleTestDB(t)
+
+	repo := NewScheduleRepository(db)
+
+	plugID := "plug"
+	userID := "test-user"
+	require.NoError(t, testdb.InsertPlug(db, plugID, userID, "Test Plug", "ns-test", "test"))
+	readyBy := "07:00"
+	schedule := &models.Schedule{
+		ID:      "plug",
+		PlugID:  &plugID,
+		UserID:  &userID,
+		Time:    "02:30",
+		ReadyBy: &readyBy,
+		Enabled: true,
+	}
+
+	err := repo.Upsert(t.Context(), schedule)
+	require.NoError(t, err)
+
+	found, err := repo.Get(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, found)
+	require.NotNil(t, found.ReadyBy)
+	assert.Equal(t, "07:00", *found.ReadyBy)
+
+	// Upsert again clearing readyBy - must null the column, not leave it stale.
+	schedule.ReadyBy = nil
+	err = repo.Upsert(t.Context(), schedule)
+	require.NoError(t, err)
+
+	found, err = repo.Get(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, found)
+	assert.Nil(t, found.ReadyBy)
 }
 
 func TestScheduleRepository_Upsert_Update(t *testing.T) {
@@ -179,6 +261,45 @@ func TestScheduleRepository_UpsertByPlugID(t *testing.T) {
 	assert.False(t, found.Enabled)
 }
 
+func TestScheduleRepository_UpsertByPlugID_ReadyBy(t *testing.T) {
+	db := setupScheduleTestDB(t)
+
+	repo := NewScheduleRepository(db)
+
+	plugID := "plug-upsert-readyby"
+	userID := "test-user"
+	require.NoError(t, testdb.InsertPlug(db, plugID, userID, "Test", "ns", "t"))
+
+	readyBy := "07:00"
+	sched := &models.Schedule{
+		ID:      "s1",
+		PlugID:  &plugID,
+		UserID:  &userID,
+		Time:    "06:00",
+		ReadyBy: &readyBy,
+		Enabled: true,
+	}
+
+	err := repo.UpsertByPlugID(t.Context(), sched)
+	require.NoError(t, err)
+
+	found, err := repo.GetByPlugID(t.Context(), plugID)
+	require.NoError(t, err)
+	require.NotNil(t, found)
+	require.NotNil(t, found.ReadyBy)
+	assert.Equal(t, "07:00", *found.ReadyBy)
+
+	// Upsert again clearing readyBy - must null the column.
+	sched.ReadyBy = nil
+	err = repo.UpsertByPlugID(t.Context(), sched)
+	require.NoError(t, err)
+
+	found, err = repo.GetByPlugID(t.Context(), plugID)
+	require.NoError(t, err)
+	require.NotNil(t, found)
+	assert.Nil(t, found.ReadyBy)
+}
+
 func TestScheduleRepository_ListAll(t *testing.T) {
 	db := setupScheduleTestDB(t)
 
@@ -195,6 +316,7 @@ func TestScheduleRepository_ListAll(t *testing.T) {
 		PlugID:  plugID1,
 		UserID:  "test-user",
 		Time:    "05:00",
+		ReadyBy: "09:00",
 		Enabled: true,
 	}))
 	require.NoError(t, testdb.InsertSchedule(db, &testdb.ScheduleOpts{
@@ -208,5 +330,8 @@ func TestScheduleRepository_ListAll(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, list, 2)
 	assert.Equal(t, plugID1, *list[0].PlugID)
+	require.NotNil(t, list[0].ReadyBy)
+	assert.Equal(t, "09:00", *list[0].ReadyBy)
 	assert.Equal(t, plugID2, *list[1].PlugID)
+	assert.Nil(t, list[1].ReadyBy)
 }
