@@ -15,6 +15,7 @@ import {
 } from "@/lib/push";
 import { queryKeys } from "@/lib/queryKeys";
 import { ConsoleCommandsResultSchema } from "@/lib/schemas";
+import { useThemeStore } from "@/stores/themeStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState, useEffect, useCallback, useId } from "react";
 
@@ -179,6 +180,8 @@ export default function SettingsModal({
   onDeleteMaintenance,
   onUpdateMaintenanceName,
 }: SettingsModalProps) {
+  const theme = useThemeStore((state) => state.theme);
+  const toggleTheme = useThemeStore((state) => state.toggleTheme);
   const [pushSubscribed, setPushSubscribed] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
 
@@ -253,6 +256,13 @@ export default function SettingsModal({
           {/* ── Left panel: General ───────────────────────────────────── */}
           <div className="px-6 py-5 space-y-5 sm:max-h-[70vh] sm:overflow-y-auto">
             <h3 className="text-sm font-medium text-white">General</h3>
+
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-gray-400">Dark mode</p>
+              <Toggle checked={theme === "dark"} onChange={toggleTheme} />
+            </div>
+
+            <div className="border-t border-gray-700" />
 
             <TariffSettingsSection />
 

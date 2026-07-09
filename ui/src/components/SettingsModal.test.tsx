@@ -1,7 +1,14 @@
 import type { Mock } from "vitest";
 
 import { createPlug, createVehicle } from "@/test/fixtures";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { useThemeStore } from "@/stores/themeStore";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@/lib/push", () => ({
@@ -257,11 +264,48 @@ describe("SettingsModal", () => {
     render(
       <SettingsModal {...createRenderProps({ onUpdateNotificationPrefs })} />,
     );
-    expect(screen.getByText("Charge started")).toBeInTheDocument();
-    const [firstSwitch] = screen.getAllByRole("switch");
-    fireEvent.click(firstSwitch);
+    const row = screen.getByText("Charge started").closest("div");
+    const toggle = within(row!).getByRole("switch");
+    fireEvent.click(toggle);
     expect(onUpdateNotificationPrefs).toHaveBeenCalledWith("vehicle-1", {
       notifyChargeStarted: false,
+    });
+  });
+
+  // - Dark mode toggle Tests -
+
+  describe("Dark mode toggle", () => {
+    beforeEach(() => {
+      document.documentElement.classList.remove("dark");
+      useThemeStore.setState({ theme: "light" });
+    });
+
+    it("shows the Dark mode toggle in the General panel", () => {
+      render(<SettingsModal {...createRenderProps()} />);
+      expect(screen.getByText("Dark mode")).toBeInTheDocument();
+    });
+
+    it("reflects the current theme as checked", () => {
+      useThemeStore.setState({ theme: "dark" });
+      render(<SettingsModal {...createRenderProps()} />);
+      const row = screen.getByText("Dark mode").closest("div");
+      const toggle = within(row!).getByRole("switch");
+      expect(toggle).toHaveAttribute("aria-checked", "true");
+    });
+
+    it("reflects the current theme as unchecked", () => {
+      render(<SettingsModal {...createRenderProps()} />);
+      const row = screen.getByText("Dark mode").closest("div");
+      const toggle = within(row!).getByRole("switch");
+      expect(toggle).toHaveAttribute("aria-checked", "false");
+    });
+
+    it("toggles the theme when clicked", () => {
+      render(<SettingsModal {...createRenderProps()} />);
+      const row = screen.getByText("Dark mode").closest("div");
+      const toggle = within(row!).getByRole("switch");
+      fireEvent.click(toggle);
+      expect(useThemeStore.getState().theme).toBe("dark");
     });
   });
 

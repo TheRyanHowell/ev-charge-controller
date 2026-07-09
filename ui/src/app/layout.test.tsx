@@ -14,6 +14,12 @@ vi.mock("next/font/google", () => ({
   }),
 }));
 
+vi.mock("@/components/ThemeWatcher", () => ({
+  default: () => <div data-testid="theme-watcher" />,
+}));
+
+import type { ReactElement } from "react";
+
 import RootLayout from "./layout";
 
 describe("RootLayout", () => {
@@ -94,5 +100,33 @@ describe("RootLayout", () => {
         </RootLayout>,
       ),
     ).not.toThrow();
+  });
+
+  it("includes an inline theme-init script to set the dark class before hydration", () => {
+    render(
+      <RootLayout>
+        <div>Child</div>
+      </RootLayout>,
+    );
+    const script = document.querySelector("script[data-theme-init]");
+    expect(script).not.toBeNull();
+    expect(script?.textContent).toContain("prefers-color-scheme: dark");
+    expect(script?.textContent).toContain("localStorage");
+  });
+
+  it("suppresses hydration warning on the html element for the pre-hydration theme class", () => {
+    const element = RootLayout({
+      children: <div>Child</div>,
+    }) as ReactElement<{ suppressHydrationWarning?: boolean }>;
+    expect(element.props.suppressHydrationWarning).toBe(true);
+  });
+
+  it("mounts ThemeWatcher to keep the theme synced with OS changes", () => {
+    const { getByTestId } = render(
+      <RootLayout>
+        <div>Child</div>
+      </RootLayout>,
+    );
+    expect(getByTestId("theme-watcher")).toBeInTheDocument();
   });
 });
