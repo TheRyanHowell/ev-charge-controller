@@ -27,9 +27,10 @@ import (
 // It creates a consistent state: 1 user, 2 plugs, 3 vehicles, 1 schedule,
 // and ~500+ historical charge sessions with power readings and SOC snapshots.
 type SeedService struct {
-	mu          sync.Mutex
-	db          *sql.DB
-	tasmotaURLs []string
+	mu              sync.Mutex
+	db              *sql.DB
+	tasmotaURLs     []string
+	mqttProvisioned bool
 }
 
 // vehicleSpec holds model-specific charging parameters.
@@ -89,6 +90,10 @@ const (
 )
 
 var seedRng = rand.New(rand.NewSource(42))
+
+// plugOnlineTimeout bounds how long waitForPlugsOnline polls for mock-tasmota
+// LWT confirmation. A package-level var (not a const) so tests can shrink it.
+var plugOnlineTimeout = 30 * time.Second
 
 // NewSeedService creates a new seed service.
 // tasmotaURLs are the HTTP addresses of mock-tasmota instances (e.g., ["http://mock-tasmota:8081"]).
@@ -701,16 +706,50 @@ func (s *SeedService) insertSOCSnapshots(sessionID string) {
 	}
 }
 
-// resetMockTasmota sends POST /reset to each mock-tasmota instance and
-// re-pushes configuration commands. Also provisions MQTT credentials via
-// dynsec so mock-tasmota can connect to the broker.
-// Best-effort: failures are logged but not fatal.
+// resetMockTasmota provisions each mock-tasmota instance's MQTT credentials
+// on the first call only, then resets each instance's power/energy state on
+// every call. Best-effort: failures are logged but not fatal.
+//
+// Namespace and topic are deterministic and never change across resets (see
+// seedPlugsAndVehicles), so there is nothing for a repeat dynsec
+// provision+reconnect cycle to actually fix - it only forces every plug's
+// MQTT connection to drop and re-establish. Doing that before every single
+// e2e test (resetAllState runs per-test, not per-file) kept 1-3 plugs
+// mid-reconnect at any given moment; the always-on carbon-aware schedule
+// fixture (seedScheduleID2) then intermittently raced that reconnect window
+// and timed out waiting for power confirmation. Provisioning once per
+// SeedService lifetime (i.e. once per API process, which is once per e2e
+// worker) keeps connections stable for the rest of the run.
 func (s *SeedService) resetMockTasmota(plugIDs []string) {
 	if len(s.tasmotaURLs) == 0 {
 		slog.Debug("No mock-tasmota URLs configured, skipping tasmota reset")
 		return
 	}
-	slog.Info("Starting mock-tasmota reset", "plugCount", len(plugIDs))
+
+	if !s.mqttProvisioned {
+		s.provisionMockTasmotaMQTT(plugIDs)
+		s.mqttProvisioned = true
+	}
+
+	for i, plugID := range plugIDs {
+		if i >= len(s.tasmotaURLs) {
+			break
+		}
+		resetURL := fmt.Sprintf("%s/reset", s.tasmotaURLs[i])
+		if _, err := http.Post(resetURL, "text/plain", nil); err != nil {
+			slog.Warn("Failed to reset mock-tasmota energy state", "plugID", plugID, "err", err)
+		} else {
+			slog.Info("Reset mock-tasmota energy state", "plugID", plugID)
+		}
+	}
+}
+
+// provisionMockTasmotaMQTT provisions dynsec credentials for each plug and
+// pushes MQTT config to each mock-tasmota instance, then waits for all
+// plugs to come online. Called at most once per SeedService lifetime by
+// resetMockTasmota.
+func (s *SeedService) provisionMockTasmotaMQTT(plugIDs []string) {
+	slog.Info("Provisioning mock-tasmota MQTT credentials", "plugCount", len(plugIDs))
 
 	mqttBroker := getEnvOr("MQTT_BROKER_URL", "mqtt://mosquitto:1883")
 	mqttUser := getEnvOr("MQTT_USERNAME", "")
@@ -753,8 +792,8 @@ func (s *SeedService) resetMockTasmota(plugIDs []string) {
 		plugs = append(plugs, plugInfo{id: plugID, namespace: namespace, topic: mqttTopic})
 	}
 
-	// Clean up old dynsec credentials BEFORE provisioning new ones.
-	// This removes stale clients/roles from previous resets.
+	// Clean up any stale credentials from a previous process (e.g. a crashed
+	// API container reusing the same mosquitto instance) before provisioning.
 	if dynsec != nil {
 		for _, p := range plugs {
 			slog.Info("Cleaning up old dynsec credentials", "plugID", p.id, "namespace", p.namespace)
@@ -776,7 +815,7 @@ func (s *SeedService) resetMockTasmota(plugIDs []string) {
 		tasmotaHost := strings.TrimPrefix(tasmotaURL, "http://")
 		tasmotaHost = strings.TrimSuffix(tasmotaHost, "/")
 
-		slog.Info("Resetting mock-tasmota", "plugID", p.id, "url", tasmotaURL, "namespace", p.namespace, "topic", p.topic)
+		slog.Info("Provisioning mock-tasmota", "plugID", p.id, "url", tasmotaURL, "namespace", p.namespace, "topic", p.topic)
 
 		// Generate password for this plug
 		rawPw, err := GeneratePassword()
@@ -811,35 +850,23 @@ func (s *SeedService) resetMockTasmota(plugIDs []string) {
 			}
 			time.Sleep(200 * time.Millisecond)
 		}
-
-		// Reset the mock-tasmota energy state
-		resetURL := fmt.Sprintf("%s/reset", tasmotaURL)
-		slog.Info("Resetting mock-tasmota energy state", "plugID", p.id, "url", resetURL)
-		if _, err := http.Post(resetURL, "text/plain", nil); err != nil {
-			slog.Warn("Failed to reset mock-tasmota energy state", "plugID", p.id, "err", err)
-		} else {
-			slog.Info("Reset mock-tasmota energy state", "plugID", p.id)
-		}
 	}
 
 	// Wait for all plugs to come online via MQTT LWT.
 	// Mock-tasmota needs time to reconnect to MQTT after receiving new config.
 	slog.Info("Waiting for plugs to come online", "plugIDs", plugIDs)
 	s.waitForPlugsOnline(plugIDs)
-	slog.Info("Mock-tasmota reset complete")
+	slog.Info("Mock-tasmota MQTT provisioning complete")
 }
 
 // waitForPlugsOnline polls the database until all plugs are online or timeout.
 func (s *SeedService) waitForPlugsOnline(plugIDs []string) {
-	const (
-		pollInterval = 500 * time.Millisecond
-		timeout      = 30 * time.Second
-	)
+	const pollInterval = 500 * time.Millisecond
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), plugOnlineTimeout)
 	defer cancel()
 
-	slog.Info("Waiting for plugs to come online", "plugIDs", plugIDs, "timeout", timeout)
+	slog.Info("Waiting for plugs to come online", "plugIDs", plugIDs, "timeout", plugOnlineTimeout)
 
 	for {
 		select {

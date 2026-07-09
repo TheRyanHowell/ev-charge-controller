@@ -3,6 +3,9 @@ package services
 import (
 	"context"
 	"database/sql"
+	"net/http"
+	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -147,4 +150,50 @@ func TestSeedService_Reset_TodaySessionsPresent(t *testing.T) {
 	require.True(t, rows.Next())
 	require.NoError(t, rows.Scan(&count))
 	assert.GreaterOrEqual(t, count, 2, "at least 2 completed sessions must be seeded for today")
+}
+
+// TestSeedService_Reset_ProvisionsMockTasmotaMQTTOnlyOnce asserts that
+// repeated Reset() calls only push MQTT config (/cm) to mock-tasmota once,
+// while still resetting each instance's power/energy state (/reset) every
+// time. Namespace and topic are deterministic and never change across
+// resets, so redoing the dynsec+config-push+reconnect cycle before every
+// e2e test bought nothing but forced every plug's MQTT connection to drop
+// and re-establish - which raced the always-on carbon-aware schedule
+// fixture and caused intermittent power-confirmation timeouts in CI
+// (see resetMockTasmota's doc comment).
+func TestSeedService_Reset_ProvisionsMockTasmotaMQTTOnlyOnce(t *testing.T) {
+	origTimeout := plugOnlineTimeout
+	plugOnlineTimeout = 100 * time.Millisecond // no real broker in this test, so it always hits the deadline
+	t.Cleanup(func() { plugOnlineTimeout = origTimeout })
+
+	var mu sync.Mutex
+	var configPushes, energyResets int
+	tasmota := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		switch {
+		case r.URL.Path == "/cm":
+			configPushes++
+		case r.URL.Path == "/reset":
+			energyResets++
+		}
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(tasmota.Close)
+
+	db := newSeedTestDB(t)
+	svc := NewSeedService(db, []string{tasmota.URL, tasmota.URL, tasmota.URL})
+
+	require.NoError(t, svc.Reset())
+	mu.Lock()
+	firstConfigPushes, firstEnergyResets := configPushes, energyResets
+	mu.Unlock()
+	assert.Positive(t, firstConfigPushes, "first Reset() must push MQTT config to mock-tasmota")
+	assert.Equal(t, 3, firstEnergyResets, "first Reset() must reset energy state for all 3 seeded plugs")
+
+	require.NoError(t, svc.Reset())
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, firstConfigPushes, configPushes, "second Reset() must not push MQTT config again")
+	assert.Equal(t, firstEnergyResets*2, energyResets, "second Reset() must still reset energy state for all 3 plugs")
 }
