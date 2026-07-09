@@ -4,6 +4,7 @@ import type { Vehicle, VehicleStats } from "@/lib/schemas";
 
 import CCVChart from "@/components/CCVChart";
 import Dialog from "@/components/Dialog";
+import { useFocusOnMount } from "@/hooks/useFocusOnMount";
 import { apiDelete, apiGetSingle, apiPatchNoContent } from "@/lib/api";
 import { queryKeys } from "@/lib/queryKeys";
 import { VehicleStatsSchema } from "@/lib/schemas";
@@ -71,6 +72,7 @@ export default function VehicleDetailClient({
   const [editName, setEditName] = useState(initialVehicle.name);
   const [editError, setEditError] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const focusEditInput = useFocusOnMount<HTMLInputElement>();
 
   const updateMutation = useMutation({
     mutationFn: () =>
@@ -176,7 +178,7 @@ export default function VehicleDetailClient({
                   if (e.key === "Enter") updateMutation.mutate();
                   if (e.key === "Escape") setEditing(false);
                 }}
-                autoFocus
+                ref={focusEditInput}
                 className="rounded bg-surface-raised border border-border px-2 py-1 text-sm text-fg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
               />
               <button

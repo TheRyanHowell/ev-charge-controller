@@ -6,6 +6,7 @@ import ConsoleCommandsBlock from "@/components/ConsoleCommandsBlock";
 import Dialog from "@/components/Dialog";
 import TariffSettingsSection from "@/components/TariffSettingsSection";
 import Toggle from "@/components/Toggle";
+import { useFocusOnMount } from "@/hooks/useFocusOnMount";
 import { apiPost } from "@/lib/api";
 import {
   isPushEnabled,
@@ -441,6 +442,7 @@ function PlugControls({
   const nameInputId = useId();
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(name);
+  const focusNameInput = useFocusOnMount<HTMLInputElement>();
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   // null = idle; "path" = chooser; "auto" = AutoConfigureForm; "manual" = console commands
   const [configMode, setConfigMode] = useState<
@@ -529,7 +531,7 @@ function PlugControls({
                 setEditingName(false);
               }
             }}
-            autoFocus
+            ref={focusNameInput}
             className="flex-1 rounded bg-surface-raised border border-border px-2 py-1 text-sm text-fg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
           />
         ) : (

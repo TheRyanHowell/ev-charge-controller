@@ -3,6 +3,7 @@
 import type { Vehicle, VehicleModel } from "@/lib/schemas";
 
 import Dialog from "@/components/Dialog";
+import { useFocusOnMount } from "@/hooks/useFocusOnMount";
 import { apiGet, apiPost, apiDelete, apiPatchNoContent } from "@/lib/api";
 import { queryKeys } from "@/lib/queryKeys";
 import { VehicleSchema, VehicleModelSchema } from "@/lib/schemas";
@@ -30,6 +31,7 @@ export default function VehiclesClient({
   const [editName, setEditName] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const focusEditInput = useFocusOnMount<HTMLInputElement>();
 
   const { data: vehicles = [], isError: vehiclesIsError } = useQuery({
     queryKey: queryKeys.vehicles.all,
@@ -167,7 +169,7 @@ export default function VehiclesClient({
                         if (editError) setEditError(null);
                       }}
                       onKeyDown={handleKeyDown}
-                      autoFocus
+                      ref={focusEditInput}
                       className="flex-1 rounded bg-surface-raised border border-border px-2 py-1 text-sm text-fg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                     />
                   ) : (

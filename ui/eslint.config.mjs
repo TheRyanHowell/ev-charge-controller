@@ -4,6 +4,7 @@ import nextTs from "eslint-config-next/typescript";
 import prettierRecommended from "eslint-plugin-prettier/recommended";
 import ts from "typescript-eslint";
 import importPlugin from "eslint-plugin-import";
+import jsxA11y from "eslint-plugin-jsx-a11y";
 import unicorn from "eslint-plugin-unicorn";
 import perfectionist from "eslint-plugin-perfectionist";
 import reactRefresh from "eslint-plugin-react-refresh";
@@ -26,6 +27,15 @@ const eslintConfig = defineConfig([
 
   // TypeScript strict rules (without type-aware rules that need project context)
   ts.configs["strict"],
+
+  // eslint-config-next only enables jsx-a11y's "recommended" rules (many as
+  // warnings); go to "strict" so accessibility violations fail CI like
+  // everything else. Rules only (not the "plugins" key) - eslint-config-next
+  // already registers the jsx-a11y plugin instance, and flat config errors
+  // on registering the same plugin name twice.
+  {
+    rules: jsxA11y.flatConfigs.strict.rules,
+  },
 
   // Import ordering and validation
   importPlugin.configs["recommended", "typescript"],
@@ -167,6 +177,31 @@ const eslintConfig = defineConfig([
     ],
     rules: {
       "react-refresh/only-export-components": "off",
+    },
+  },
+
+  // Dialog's onClick on the native <dialog> element is a click-outside-the-
+  // content-to-dismiss handler on the backdrop. Keyboard users already have
+  // an equivalent: <dialog> natively closes on Escape (wired to onClose /
+  // handleClose here), so no separate keyboard handler is needed for the
+  // same action.
+  {
+    files: ["**/Dialog.tsx"],
+    rules: {
+      "jsx-a11y/click-events-have-key-events": "off",
+      "jsx-a11y/no-noninteractive-element-interactions": "off",
+    },
+  },
+
+  // ConfirmDialog's footer div listens for a bubbled Enter keydown so
+  // pressing Enter confirms regardless of which footer button has focus
+  // (the confirm button is already focused on mount). The div itself isn't
+  // meant to be independently focusable/interactive - it only relays
+  // keydown events from its focusable button children.
+  {
+    files: ["**/ConfirmDialog.tsx"],
+    rules: {
+      "jsx-a11y/no-static-element-interactions": "off",
     },
   },
 
