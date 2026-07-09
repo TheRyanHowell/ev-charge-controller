@@ -228,7 +228,7 @@ export default function SettingsModal({
             <h3 className="text-sm font-medium text-fg">General</h3>
 
             <div className="flex items-center justify-between">
-              <p className="text-xs text-fg-muted">Dark mode</p>
+              <p className="text-xs text-fg-secondary">Dark mode</p>
               <Toggle
                 checked={theme === "dark"}
                 onChange={toggleTheme}
@@ -248,7 +248,7 @@ export default function SettingsModal({
                     Push Notifications
                   </p>
                   <div className="flex items-center justify-between">
-                    <p className="text-xs text-fg-muted">
+                    <p className="text-xs text-fg-secondary">
                       Enable device push notifications
                     </p>
                     <Toggle
