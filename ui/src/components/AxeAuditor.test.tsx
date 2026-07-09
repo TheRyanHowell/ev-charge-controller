@@ -1,9 +1,16 @@
 import { render } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 
-vi.mock("@axe-core/react", () => ({ default: vi.fn() }));
+const runMock = vi.fn(
+  (
+    _context: unknown,
+    callback: (err: Error | null, results: { violations: unknown[] }) => void,
+  ) => {
+    callback(null, { violations: [] });
+  },
+);
 
-import axe from "@axe-core/react";
+vi.mock("axe-core", () => ({ default: { run: runMock } }));
 
 import AxeAuditor from "./AxeAuditor";
 
@@ -13,13 +20,11 @@ describe("AxeAuditor", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("runs axe against the DOM in non-production builds", async () => {
+  it("runs axe-core against the DOM in non-production builds", async () => {
     render(<AxeAuditor />);
-    await vi.waitFor(() => expect(axe).toHaveBeenCalled());
-    expect(axe).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.anything(),
-      1000,
-    );
+    await vi.waitFor(() => expect(runMock).toHaveBeenCalled(), {
+      timeout: 2000,
+    });
+    expect(runMock).toHaveBeenCalledWith(document, expect.any(Function));
   });
 });
