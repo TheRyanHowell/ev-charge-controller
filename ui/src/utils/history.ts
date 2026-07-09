@@ -54,17 +54,17 @@ export function getStatusColor(status: string): string {
 export function getStatusBadgeClass(status: string): string {
   switch (status) {
     case "completed":
-      return "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
+      return "bg-emerald-50 border-emerald-300 text-emerald-700 dark:bg-emerald-900/50 dark:border-emerald-500/50 dark:text-emerald-300";
     case "cancelled":
-      return "bg-red-500/20 text-red-400 border-red-500/30";
+      return "bg-red-50 border-red-300 text-red-700 dark:bg-red-900/50 dark:border-red-500/50 dark:text-red-300";
     case "pending":
-      return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30";
+      return "bg-yellow-50 border-yellow-300 text-yellow-700 dark:bg-yellow-900/50 dark:border-yellow-500/50 dark:text-yellow-300";
     case "active":
-      return "bg-blue-500/20 text-blue-400 border-blue-500/30";
+      return "bg-blue-50 border-blue-300 text-blue-700 dark:bg-blue-900/50 dark:border-blue-500/50 dark:text-blue-300";
     case "conditioning":
-      return "bg-amber-500/20 text-amber-400 border-amber-500/30";
+      return "bg-amber-50 border-amber-300 text-amber-700 dark:bg-amber-900/50 dark:border-amber-500/50 dark:text-amber-300";
     case "holding":
-      return "bg-purple-500/20 text-purple-400 border-purple-500/30";
+      return "bg-purple-50 border-purple-300 text-purple-700 dark:bg-purple-900/50 dark:border-purple-500/50 dark:text-purple-300";
     default:
       return "bg-fg-muted/20 text-fg-muted border-fg-muted/30";
   }

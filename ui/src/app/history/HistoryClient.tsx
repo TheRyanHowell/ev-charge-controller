@@ -117,6 +117,7 @@ export default function HistoryClient({
             <select
               value={selectedVehicleId ?? "all"}
               onChange={(e) => handleVehicleChange(e.target.value)}
+              aria-label="Filter by vehicle"
               className="h-10 bg-surface border border-border rounded-lg px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="all">All Vehicles</option>
@@ -322,7 +323,7 @@ function SessionCard({
               </div>
               <div className="text-right">
                 <div className="text-fg-muted text-xs">Added</div>
-                <div className="text-emerald-400 font-medium whitespace-nowrap">
+                <div className="text-emerald-700 dark:text-emerald-400 font-medium whitespace-nowrap">
                   +{energyAdded} kWh
                 </div>
               </div>
@@ -347,7 +348,7 @@ function SessionCard({
               {hasCo2 && (
                 <div className="text-right">
                   <div className="text-fg-muted text-xs">CO₂</div>
-                  <div className="text-lime-400 font-medium whitespace-nowrap">
+                  <div className="text-lime-700 dark:text-lime-400 font-medium whitespace-nowrap">
                     {co2Label}
                   </div>
                 </div>
@@ -398,7 +399,7 @@ function SessionCard({
               </div>
               <div>
                 <div className="text-fg-muted text-xs">Added</div>
-                <div className="text-emerald-400 font-medium whitespace-nowrap">
+                <div className="text-emerald-700 dark:text-emerald-400 font-medium whitespace-nowrap">
                   +{energyAdded} kWh
                 </div>
               </div>
@@ -430,7 +431,7 @@ function SessionCard({
                 {hasCo2 && (
                   <div>
                     <div className="text-fg-muted text-xs">CO₂</div>
-                    <div className="text-lime-400 font-medium whitespace-nowrap">
+                    <div className="text-lime-700 dark:text-lime-400 font-medium whitespace-nowrap">
                       {co2Label}
                     </div>
                   </div>
