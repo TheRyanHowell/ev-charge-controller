@@ -15,8 +15,8 @@ export default function LogoutPage() {
   }, [router]);
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-background px-4">
-      <p className="text-muted-foreground">Logging out…</p>
+    <main className="min-h-screen flex items-center justify-center bg-page-bg px-4">
+      <p className="text-fg-muted">Logging out…</p>
     </main>
   );
 }

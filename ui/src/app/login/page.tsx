@@ -23,15 +23,13 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const sessionExpired = reason === "session-expired";
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-background px-4">
+    <main className="min-h-screen flex items-center justify-center bg-page-bg px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <h1 className="text-2xl font-semibold text-foreground">
+          <h1 className="text-2xl font-semibold text-fg">
             EV Charge Controller
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Sign in to your account
-          </p>
+          <p className="mt-1 text-sm text-fg-muted">Sign in to your account</p>
         </div>
         {sessionExpired && (
           <div
@@ -41,7 +39,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             Your session has expired. Please sign in again.
           </div>
         )}
-        <div className="rounded-lg border border-border bg-card p-6 shadow-sm">
+        <div className="rounded-lg border border-border bg-surface-raised p-6 shadow-sm">
           <LoginForm />
         </div>
       </div>

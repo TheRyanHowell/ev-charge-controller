@@ -65,7 +65,7 @@ export function LoginForm() {
       <div>
         <label
           htmlFor="email"
-          className="block text-sm font-medium text-foreground mb-1"
+          className="block text-sm font-medium text-fg mb-1"
         >
           Email address
         </label>
@@ -78,7 +78,7 @@ export function LoginForm() {
           value={state.email}
           onChange={(e) => setState((s) => ({ ...s, email: e.target.value }))}
           disabled={state.submitting}
-          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+          className="w-full rounded-md border border-border bg-page-bg px-3 py-2 text-sm text-fg placeholder-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-50"
           placeholder="you@example.com"
         />
       </div>
@@ -86,7 +86,7 @@ export function LoginForm() {
       <div>
         <label
           htmlFor="password"
-          className="block text-sm font-medium text-foreground mb-1"
+          className="block text-sm font-medium text-fg mb-1"
         >
           Password
         </label>
@@ -101,13 +101,13 @@ export function LoginForm() {
             setState((s) => ({ ...s, password: e.target.value }))
           }
           disabled={state.submitting}
-          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+          className="w-full rounded-md border border-border bg-page-bg px-3 py-2 text-sm text-fg placeholder-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-50"
           placeholder="••••••••"
         />
       </div>
 
       {state.error && (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="text-sm text-danger">
           {state.error}
         </p>
       )}
@@ -115,7 +115,7 @@ export function LoginForm() {
       <button
         type="submit"
         disabled={state.submitting}
-        className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        className="w-full rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
         {state.submitting ? "Signing in…" : "Sign in"}
       </button>

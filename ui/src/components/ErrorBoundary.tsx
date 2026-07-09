@@ -32,16 +32,16 @@ class ErrorBoundary extends Component<Props, State> {
         return this.props.fallback;
       }
       return (
-        <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
+        <div className="min-h-screen bg-page-bg text-fg flex items-center justify-center">
           <div className="text-center">
             <h1 className="text-2xl font-bold mb-4">Something went wrong</h1>
-            <p className="text-muted-foreground mb-4">
+            <p className="text-fg-muted mb-4">
               Please try reloading the page. If the problem persists, please
               contact support.
             </p>
             <button
               onClick={() => window.location.reload()}
-              className="bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2 rounded"
+              className="bg-accent hover:bg-accent-hover text-white px-4 py-2 rounded"
             >
               Reload Page
             </button>
