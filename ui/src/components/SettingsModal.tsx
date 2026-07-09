@@ -252,7 +252,7 @@ export default function SettingsModal({
           Body: single scrollable column on mobile; side-by-side panels on sm+.
           Each panel gets its own max-height + scroll on wider screens.
         */}
-        <div className="max-h-[70vh] overflow-y-auto sm:max-h-none sm:overflow-visible sm:grid sm:grid-cols-2 sm:divide-x sm:divide-gray-700">
+        <div className="max-h-[70vh] overflow-y-auto sm:max-h-none sm:overflow-visible sm:grid sm:grid-cols-2 sm:divide-x sm:divide-border">
           {/* ── Left panel: General ───────────────────────────────────── */}
           <div className="px-6 py-5 space-y-5 sm:max-h-[70vh] sm:overflow-y-auto">
             <h3 className="text-sm font-medium text-fg">General</h3>

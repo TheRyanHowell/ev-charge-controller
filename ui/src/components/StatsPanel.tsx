@@ -244,7 +244,7 @@ export default function StatsPanel({
         >
           Current
         </span>
-        <div className="mt-1.5 text-2xl font-bold text-cyan-400 tabular-nums whitespace-nowrap">
+        <div className="mt-1.5 text-2xl font-bold text-info tabular-nums whitespace-nowrap">
           {formatCurrent(current ?? 0)}
         </div>
       </div>

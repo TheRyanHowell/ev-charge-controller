@@ -187,7 +187,7 @@ export function GaugeOverlay({
                 !maintenance.online
                   ? "bg-surface-raised/70 border-amber-500 text-warning"
                   : maintenance.powerOn
-                    ? "bg-cyan-900/80 border-cyan-400 text-cyan-300 hover:bg-cyan-800/80 shadow-md shadow-cyan-500/20"
+                    ? "bg-cyan-100 dark:bg-cyan-900/80 border-cyan-400 text-cyan-700 dark:text-cyan-300 hover:bg-cyan-200 dark:hover:bg-cyan-800/80 shadow-md shadow-cyan-500/20"
                     : "bg-surface-raised/70 border-border/50 text-fg-muted hover:text-fg-secondary hover:border-fg-muted"
               }
             `}
@@ -215,11 +215,11 @@ export function GaugeOverlay({
             focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent
             ${
               scheduleUnreachable
-                ? "bg-amber-950/70 border-amber-500 text-warning hover:bg-amber-900/70"
+                ? "bg-amber-100 dark:bg-amber-950/70 border-amber-500 text-warning hover:bg-amber-200 dark:hover:bg-amber-900/70"
                 : scheduleActive
                   ? schedule?.type === "carbon_aware"
-                    ? "bg-green-900/80 border-green-400 text-green-300 hover:bg-green-800/80 shadow-md shadow-green-500/20"
-                    : "bg-blue-900/80 border-blue-400 text-blue-300 hover:bg-blue-800/80 shadow-md shadow-blue-500/20"
+                    ? "bg-green-100 dark:bg-green-900/80 border-green-400 text-green-700 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-800/80 shadow-md shadow-green-500/20"
+                    : "bg-blue-100 dark:bg-blue-900/80 border-blue-400 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-800/80 shadow-md shadow-blue-500/20"
                   : "bg-surface-raised/70 border-border/50 text-fg-muted hover:text-fg-secondary hover:border-fg-muted"
             }
           `}

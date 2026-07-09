@@ -15,7 +15,7 @@ export default function StatusBar({
     <>
       {tempError && (
         <div
-          className="mb-3 rounded-lg bg-red-900/30 border border-red-800/50 px-4 py-2.5 text-sm text-red-300"
+          className="mb-3 rounded-lg bg-red-50 border border-red-200 px-4 py-2.5 text-sm text-red-700 dark:bg-red-900/30 dark:border-red-800/50 dark:text-red-300"
           role="alert"
           aria-live="polite"
           aria-atomic="true"

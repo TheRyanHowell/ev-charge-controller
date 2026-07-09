@@ -261,7 +261,7 @@ export default function VehiclesClient({
                     </span>
                     <span className="flex items-center gap-1">
                       <i
-                        className="fas fa-coins text-green-300"
+                        className="fas fa-coins text-success"
                         aria-hidden="true"
                       />
                       {formatPenceCost(

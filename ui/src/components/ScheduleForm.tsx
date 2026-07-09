@@ -175,7 +175,7 @@ export default function ScheduleForm({
 
         {schedule?.targetUnreachable && (
           <div
-            className="text-xs text-amber-300 bg-amber-950/40 border border-amber-800/50 rounded-md px-3 py-2"
+            className="text-xs text-amber-700 bg-amber-50 border border-amber-200 dark:text-amber-300 dark:bg-amber-950/40 dark:border-amber-800/50 rounded-md px-3 py-2"
             role="alert"
             data-testid="target-unreachable-warning"
           >

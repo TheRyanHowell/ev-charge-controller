@@ -179,9 +179,9 @@ export default function AddPlugModal({
               <button
                 type="button"
                 onClick={() => setMode("12v-auto")}
-                className="rounded-lg border border-cyan-700 bg-cyan-900/30 px-3 py-3 text-left hover:border-cyan-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 transition-colors"
+                className="rounded-lg border border-cyan-300 bg-cyan-50 dark:border-cyan-700 dark:bg-cyan-900/30 px-3 py-3 text-left hover:border-cyan-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 transition-colors"
               >
-                <p className="text-sm font-medium text-cyan-300">
+                <p className="text-sm font-medium text-cyan-700 dark:text-cyan-300">
                   Auto-configure
                 </p>
                 <p className="text-xs text-fg-muted mt-0.5">

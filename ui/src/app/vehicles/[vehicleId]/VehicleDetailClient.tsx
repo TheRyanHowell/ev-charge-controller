@@ -369,7 +369,7 @@ export default function VehicleDetailClient({
                   icon="fa-coins"
                   label="Avg Cost / Session"
                   value={avgCostPerSession}
-                  color="text-green-300"
+                  color="text-success"
                 />
               )}
               {hasRange && minAddedRangeMi !== null && (

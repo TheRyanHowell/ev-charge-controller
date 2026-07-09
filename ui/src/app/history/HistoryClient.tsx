@@ -129,7 +129,7 @@ export default function HistoryClient({
           </div>
 
           {error && (
-            <div className="bg-red-900/50 border border-red-500/50 text-red-300 px-4 py-3 rounded-lg mb-4 text-sm">
+            <div className="bg-red-50 border border-red-300 text-red-700 dark:bg-red-900/50 dark:border-red-500/50 dark:text-red-300 px-4 py-3 rounded-lg mb-4 text-sm">
               {error}
             </div>
           )}
