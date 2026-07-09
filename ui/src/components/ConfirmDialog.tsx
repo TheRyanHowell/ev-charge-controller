@@ -35,19 +35,19 @@ export default function ConfirmDialog({
 
   return (
     <Dialog isOpen onClose={onCancel} aria-labelledby="confirm-dialog-title">
-      <div className="w-[480px] max-w-full mx-4 bg-gray-900 rounded-xl shadow-2xl overflow-hidden">
+      <div className="w-[480px] max-w-full mx-4 bg-surface-raised rounded-xl shadow-2xl overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <h2
             id="confirm-dialog-title"
-            className="text-lg font-semibold text-white"
+            className="text-lg font-semibold text-fg"
           >
             {title}
           </h2>
           <button
             onClick={onCancel}
-            className="text-gray-400 hover:text-white transition-colors
-              rounded-lg p-1.5 hover:bg-gray-700/50 focus:outline-none
+            className="text-fg-muted hover:text-fg transition-colors
+              rounded-lg p-1.5 hover:bg-surface-hover/50 focus:outline-none
               focus-visible:ring-2 focus-visible:ring-blue-500"
             aria-label="Close dialog"
           >
@@ -67,12 +67,12 @@ export default function ConfirmDialog({
 
         {/* Body */}
         <div className="px-6 py-5">
-          <p className="text-sm text-gray-400">{message}</p>
+          <p className="text-sm text-fg-muted">{message}</p>
         </div>
 
         {/* Footer */}
         <div
-          className="px-6 py-4 border-t border-gray-700 bg-gray-800/50 flex items-center justify-end gap-3"
+          className="px-6 py-4 border-t border-border bg-surface/50 flex items-center justify-end gap-3"
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               onConfirm();
@@ -82,8 +82,8 @@ export default function ConfirmDialog({
           <button
             type="button"
             onClick={onCancel}
-            className="px-4 py-2 text-sm font-medium text-gray-300
-              hover:text-white rounded-lg hover:bg-gray-700 transition-colors
+            className="px-4 py-2 text-sm font-medium text-fg-secondary
+              hover:text-fg rounded-lg hover:bg-surface-hover transition-colors
               focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           >
             {cancelLabel}
@@ -92,7 +92,7 @@ export default function ConfirmDialog({
             ref={confirmBtnRef}
             type="button"
             onClick={onConfirm}
-            className={`px-4 py-2 text-sm font-medium text-white rounded-lg
+            className={`px-4 py-2 text-sm font-medium text-fg rounded-lg
               focus:outline-none focus-visible:ring-2 ${confirmClasses}
               transition-colors`}
           >

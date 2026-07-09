@@ -107,24 +107,24 @@ export default function VehiclesClient({
   );
 
   return (
-    <div className="min-h-screen bg-page-bg text-white">
+    <div className="min-h-screen bg-page-bg text-fg">
       <div className="w-full max-w-6xl mx-auto px-4 py-6 sm:px-6 sm:py-8">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-4">
             <Link
               href="/"
-              className="text-gray-500 hover:text-gray-200 transition-colors rounded-lg p-2 hover:bg-surface-raised"
+              className="text-fg-muted hover:text-fg transition-colors rounded-lg p-2 hover:bg-surface-raised"
               aria-label="Back to dashboard"
             >
               <i className="fas fa-home text-sm" aria-hidden="true"></i>
             </Link>
           </div>
-          <h1 className="text-xl font-semibold text-white">Vehicles</h1>
+          <h1 className="text-xl font-semibold text-fg">Vehicles</h1>
           <button
             type="button"
             onClick={() => setShowAdd(true)}
             disabled={createMutation.isPending}
-            className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+            className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-fg hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
           >
             <i className="fa-solid fa-plus mr-1" /> Add vehicle
           </button>
@@ -132,20 +132,20 @@ export default function VehiclesClient({
 
         {vehiclesIsError ? (
           <div className="text-center py-16" role="alert" aria-live="assertive">
-            <p className="text-red-400 mb-2 font-medium">
+            <p className="text-danger mb-2 font-medium">
               Failed to load vehicles
             </p>
-            <p className="text-gray-400 text-sm">
+            <p className="text-fg-muted text-sm">
               Something went wrong. Please refresh the page or try again.
             </p>
           </div>
         ) : (vehicles as Vehicle[]).length === 0 ? (
           <div className="text-center py-16">
-            <p className="text-gray-400 mb-4">No vehicles yet</p>
+            <p className="text-fg-muted mb-4">No vehicles yet</p>
             <button
               type="button"
               onClick={() => setShowAdd(true)}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-fg hover:bg-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
             >
               Add your first vehicle
             </button>
@@ -155,7 +155,7 @@ export default function VehiclesClient({
             {(vehicles as Vehicle[]).map((v) => (
               <div
                 key={v.id}
-                className="rounded-lg border border-gray-700 bg-gray-800/50 overflow-hidden"
+                className="rounded-lg border border-border bg-surface/50 overflow-hidden"
               >
                 <div className="flex items-center gap-3 px-4 py-3">
                   {editingId === v.id ? (
@@ -168,19 +168,19 @@ export default function VehiclesClient({
                       }}
                       onKeyDown={handleKeyDown}
                       autoFocus
-                      className="flex-1 rounded bg-gray-900 border border-gray-600 px-2 py-1 text-sm text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                      className="flex-1 rounded bg-surface-raised border border-border px-2 py-1 text-sm text-fg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                     />
                   ) : (
                     <Link
                       href={`/vehicles/${v.id}`}
-                      className="flex-1 text-sm text-white hover:text-blue-400 transition-colors"
+                      className="flex-1 text-sm text-fg hover:text-accent-muted transition-colors"
                     >
                       {v.name}
                       {getModelName(v)}
                     </Link>
                   )}
 
-                  <span className="text-xs text-gray-400 shrink-0">
+                  <span className="text-xs text-fg-muted shrink-0">
                     {v.capacityKwh} kWh
                   </span>
 
@@ -193,7 +193,7 @@ export default function VehiclesClient({
                           disabled={
                             updateMutation.isPending || !editName.trim()
                           }
-                          className="text-sm text-green-400 hover:text-green-300 disabled:opacity-50 rounded px-1 py-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-green-500"
+                          className="text-sm text-success hover:text-success disabled:opacity-50 rounded px-1 py-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-green-500"
                           title="Save"
                         >
                           <i className="fa-solid fa-check" />
@@ -201,14 +201,14 @@ export default function VehiclesClient({
                         <button
                           type="button"
                           onClick={() => setEditingId(null)}
-                          className="text-sm text-gray-400 hover:text-white rounded px-1 py-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gray-500"
+                          className="text-sm text-fg-muted hover:text-fg rounded px-1 py-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-fg-muted"
                           title="Cancel"
                         >
                           <i className="fa-solid fa-xmark" />
                         </button>
                       </div>
                       {editError && (
-                        <span className="text-xs text-amber-400 whitespace-nowrap">
+                        <span className="text-xs text-warning whitespace-nowrap">
                           {editError}
                         </span>
                       )}
@@ -218,7 +218,7 @@ export default function VehiclesClient({
                       <button
                         type="button"
                         onClick={() => handleStartEdit(v)}
-                        className="text-sm text-gray-500 hover:text-blue-400 rounded px-1 py-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500"
+                        className="text-sm text-fg-muted hover:text-accent-muted rounded px-1 py-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500"
                         title="Edit name"
                       >
                         <i className="fa-solid fa-pen" />
@@ -226,7 +226,7 @@ export default function VehiclesClient({
                       <button
                         type="button"
                         onClick={() => setDeleteConfirmId(v.id)}
-                        className="text-sm text-gray-500 hover:text-red-400 rounded px-1 py-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-500"
+                        className="text-sm text-fg-muted hover:text-danger rounded px-1 py-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-500"
                         title="Delete"
                       >
                         <i className="fa-solid fa-trash-can" />
@@ -236,10 +236,10 @@ export default function VehiclesClient({
                 </div>
 
                 {(v.totalSessions ?? 0) > 0 && (
-                  <div className="flex flex-wrap items-center gap-4 px-4 py-2 bg-gray-900/40 border-t border-gray-700/50 text-xs text-gray-400">
+                  <div className="flex flex-wrap items-center gap-4 px-4 py-2 bg-surface-raised/40 border-t border-border/50 text-xs text-fg-muted">
                     <span className="flex items-center gap-1">
                       <i
-                        className="fas fa-plug-circle-bolt text-blue-400"
+                        className="fas fa-plug-circle-bolt text-accent-muted"
                         aria-hidden="true"
                       />
                       {v.totalSessions} session
@@ -247,14 +247,14 @@ export default function VehiclesClient({
                     </span>
                     <span className="flex items-center gap-1">
                       <i
-                        className="fas fa-bolt text-amber-400"
+                        className="fas fa-bolt text-warning"
                         aria-hidden="true"
                       />
                       {(v.totalBatteryKwh ?? 0).toFixed(1)} kWh
                     </span>
                     <span className="flex items-center gap-1">
                       <i
-                        className="fas fa-sterling-sign text-green-400"
+                        className="fas fa-sterling-sign text-success"
                         aria-hidden="true"
                       />
                       {formatPenceCost(v.totalCostPence ?? 0)}
@@ -290,7 +290,7 @@ export default function VehiclesClient({
                     {(v.totalCo2Grams ?? 0) > 0 && (
                       <span className="flex items-center gap-1">
                         <i
-                          className="fas fa-leaf text-gray-500"
+                          className="fas fa-leaf text-fg-muted"
                           aria-hidden="true"
                         />
                         {((v.totalCo2Grams ?? 0) / 1000).toFixed(2)} kg
@@ -299,7 +299,7 @@ export default function VehiclesClient({
                     {v.lastSessionAt && (
                       <span className="flex items-center gap-1 ml-auto">
                         <i
-                          className="fas fa-clock text-gray-500"
+                          className="fas fa-clock text-fg-muted"
                           aria-hidden="true"
                         />
                         {formatRelativeTime(v.lastSessionAt)}
@@ -315,10 +315,10 @@ export default function VehiclesClient({
 
       {/* Add vehicle dialog */}
       <Dialog isOpen={showAdd} onClose={() => setShowAdd(false)}>
-        <div className="bg-gray-800 rounded-xl border border-gray-700 w-full max-w-md mx-4 p-5">
-          <h2 className="text-base font-medium text-white mb-4">Add vehicle</h2>
+        <div className="bg-surface rounded-xl border border-border w-full max-w-md mx-4 p-5">
+          <h2 className="text-base font-medium text-fg mb-4">Add vehicle</h2>
           {(models as VehicleModel[]).length === 0 ? (
-            <p className="text-sm text-gray-400">
+            <p className="text-sm text-fg-muted">
               No vehicle models available.
             </p>
           ) : (
@@ -329,10 +329,10 @@ export default function VehiclesClient({
                   type="button"
                   onClick={() => createMutation.mutate(m.id)}
                   disabled={createMutation.isPending}
-                  className="w-full text-left rounded-lg px-3 py-2 text-sm text-white bg-gray-700/50 hover:bg-gray-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+                  className="w-full text-left rounded-lg px-3 py-2 text-sm text-fg bg-surface/50 hover:bg-surface-hover disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
                 >
                   <span>{m.name}</span>
-                  <span className="text-gray-400 ml-2">
+                  <span className="text-fg-muted ml-2">
                     {m.capacityKwh} kWh
                   </span>
                 </button>
@@ -343,7 +343,7 @@ export default function VehiclesClient({
             <button
               type="button"
               onClick={() => setShowAdd(false)}
-              className="rounded-lg bg-gray-700 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+              className="rounded-lg bg-surface px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
             >
               Cancel
             </button>
@@ -356,11 +356,11 @@ export default function VehiclesClient({
         isOpen={deleteConfirmId !== null}
         onClose={() => setDeleteConfirmId(null)}
       >
-        <div className="bg-gray-800 rounded-xl border border-gray-700 w-full max-w-sm mx-4 p-5">
-          <h2 className="text-base font-medium text-white mb-2">
+        <div className="bg-surface rounded-xl border border-border w-full max-w-sm mx-4 p-5">
+          <h2 className="text-base font-medium text-fg mb-2">
             Delete vehicle?
           </h2>
-          <p className="text-sm text-gray-400 mb-4">
+          <p className="text-sm text-fg-muted mb-4">
             This will remove the vehicle. Plugs assigned to it will be
             unassigned.
           </p>
@@ -368,7 +368,7 @@ export default function VehiclesClient({
             <button
               type="button"
               onClick={() => setDeleteConfirmId(null)}
-              className="rounded-lg bg-gray-700 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+              className="rounded-lg bg-surface px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
             >
               Cancel
             </button>
@@ -378,7 +378,7 @@ export default function VehiclesClient({
                 deleteConfirmId && deleteMutation.mutate(deleteConfirmId)
               }
               disabled={deleteMutation.isPending}
-              className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 transition-colors"
+              className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-fg hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 transition-colors"
             >
               Delete
             </button>

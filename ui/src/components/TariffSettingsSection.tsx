@@ -176,24 +176,24 @@ export default function TariffSettingsSection() {
       <div>
         <p
           id="tariff-heading"
-          className="text-xs font-medium text-gray-400 uppercase tracking-wide"
+          className="text-xs font-medium text-fg-muted uppercase tracking-wide"
         >
           Electricity tariff
         </p>
-        <p className="text-xs text-gray-400 mt-0.5">
+        <p className="text-xs text-fg-muted mt-0.5">
           Used to calculate charging costs. Add off-peak windows for cheaper
           overnight rates.
         </p>
       </div>
 
       {isLoading ? (
-        <p className="text-xs text-gray-400">Loading tariff…</p>
+        <p className="text-xs text-fg-muted">Loading tariff…</p>
       ) : (
         <>
           <div>
             <label
               htmlFor={baseId}
-              className="block text-xs text-gray-400 mb-1"
+              className="block text-xs text-fg-muted mb-1"
             >
               Base rate (pence per kWh)
             </label>
@@ -211,16 +211,16 @@ export default function TariffSettingsSection() {
               onBlur={() =>
                 void autoSave(latestBaseRate.current, readWindowsFromDom())
               }
-              className="w-full rounded bg-gray-900 border border-gray-700 px-2.5 py-1.5 text-sm text-white placeholder-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              className="w-full rounded bg-surface-raised border border-border px-2.5 py-1.5 text-sm text-fg placeholder-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             />
           </div>
 
           <div className="space-y-2">
-            <p className="text-xs font-medium text-gray-300">
+            <p className="text-xs font-medium text-fg-secondary">
               Off-peak windows
             </p>
             {windows.length === 0 && (
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-fg-muted">
                 No off-peak windows. All energy is billed at the base rate.
               </p>
             )}
@@ -228,9 +228,9 @@ export default function TariffSettingsSection() {
               {windows.map((w, i) => (
                 <li
                   key={i}
-                  className="flex flex-wrap items-end gap-2 rounded-lg border border-gray-700 bg-gray-800/40 p-2"
+                  className="flex flex-wrap items-end gap-2 rounded-lg border border-border bg-surface/40 p-2"
                 >
-                  <label className="flex flex-col text-xs text-gray-400">
+                  <label className="flex flex-col text-xs text-fg-muted">
                     <span className="mb-1">Start</span>
                     <input
                       type="time"
@@ -245,10 +245,10 @@ export default function TariffSettingsSection() {
                           readWindowsFromDom(),
                         )
                       }
-                      className="rounded bg-gray-900 border border-gray-700 px-2 py-1 text-sm text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                      className="rounded bg-surface-raised border border-border px-2 py-1 text-sm text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                     />
                   </label>
-                  <label className="flex flex-col text-xs text-gray-400">
+                  <label className="flex flex-col text-xs text-fg-muted">
                     <span className="mb-1">End</span>
                     <input
                       type="time"
@@ -261,10 +261,10 @@ export default function TariffSettingsSection() {
                           readWindowsFromDom(),
                         )
                       }
-                      className="rounded bg-gray-900 border border-gray-700 px-2 py-1 text-sm text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                      className="rounded bg-surface-raised border border-border px-2 py-1 text-sm text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                     />
                   </label>
-                  <label className="flex flex-1 flex-col text-xs text-gray-400">
+                  <label className="flex flex-1 flex-col text-xs text-fg-muted">
                     <span className="mb-1">Rate (p/kWh)</span>
                     <input
                       type="number"
@@ -282,14 +282,14 @@ export default function TariffSettingsSection() {
                           readWindowsFromDom(),
                         )
                       }
-                      className="w-full rounded bg-gray-900 border border-gray-700 px-2 py-1 text-sm text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                      className="w-full rounded bg-surface-raised border border-border px-2 py-1 text-sm text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                     />
                   </label>
                   <button
                     type="button"
                     onClick={() => removeWindow(i)}
                     aria-label={`Remove off-peak window ${i + 1}`}
-                    className="rounded px-2 py-1 text-xs text-gray-400 hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 transition-colors"
+                    className="rounded px-2 py-1 text-xs text-fg-muted hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 transition-colors"
                   >
                     <i className="fa-solid fa-trash-can" aria-hidden="true" />
                   </button>
@@ -299,7 +299,7 @@ export default function TariffSettingsSection() {
             <button
               type="button"
               onClick={addWindow}
-              className="text-xs text-blue-400 hover:text-blue-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded"
+              className="text-xs text-accent-muted hover:text-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded"
             >
               <i className="fa-solid fa-plus mr-1" aria-hidden="true" />
               Add off-peak window
@@ -307,7 +307,7 @@ export default function TariffSettingsSection() {
           </div>
 
           {error && (
-            <p role="alert" className="text-xs text-red-400">
+            <p role="alert" className="text-xs text-danger">
               {error}
             </p>
           )}

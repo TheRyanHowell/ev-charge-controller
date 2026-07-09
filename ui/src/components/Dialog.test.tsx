@@ -47,7 +47,7 @@ describe("Dialog", () => {
     const onClose = vi.fn();
     render(
       <Dialog isOpen onClose={onClose} aria-labelledby="test-title">
-        <div className="bg-gray-900 rounded-xl p-6 max-w-sm w-full mx-4">
+        <div className="bg-surface-raised rounded-xl p-6 max-w-sm w-full mx-4">
           <h2 id="test-title">Test Dialog</h2>
           <button>OK</button>
         </div>
@@ -66,7 +66,7 @@ describe("Dialog", () => {
     const onClose = vi.fn();
     render(
       <Dialog isOpen onClose={onClose} aria-labelledby="test-title">
-        <div className="bg-gray-900 rounded-xl p-6 max-w-sm w-full mx-4">
+        <div className="bg-surface-raised rounded-xl p-6 max-w-sm w-full mx-4">
           <h2 id="test-title">Test Dialog</h2>
           <button>OK</button>
         </div>

@@ -21,14 +21,12 @@ function ChartSection({
 }) {
   return (
     <div>
-      <h3 className="text-sm font-medium text-gray-400 mb-2" title={tooltip}>
+      <h3 className="text-sm font-medium text-fg-muted mb-2" title={tooltip}>
         {title}
       </h3>
       <ErrorBoundary
         fallback={
-          <div className="text-center py-4 text-red-400 text-sm">
-            {fallback}
-          </div>
+          <div className="text-center py-4 text-danger text-sm">{fallback}</div>
         }
       >
         {children}

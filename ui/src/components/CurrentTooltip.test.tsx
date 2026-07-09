@@ -33,22 +33,22 @@ describe("renderCurrentTooltip", () => {
     const { container } = render(renderCurrentTooltip(10, "10:00"));
     const tooltip = container.querySelector("div");
     expect(tooltip).toBeInTheDocument();
-    expect(tooltip).toHaveClass("bg-gray-800");
-    expect(tooltip).toHaveClass("text-white");
+    expect(tooltip).toHaveClass("bg-surface");
+    expect(tooltip).toHaveClass("text-fg");
     expect(tooltip).toHaveClass("text-xs");
     expect(tooltip).toHaveClass("rounded");
   });
 
   it("renders value with blue-400 color class", () => {
     const { container } = render(renderCurrentTooltip(10, "10:00"));
-    const valueSpan = container.querySelector(".text-blue-400");
+    const valueSpan = container.querySelector(".text-accent-muted");
     expect(valueSpan).toBeInTheDocument();
     expect(valueSpan).toHaveClass("font-semibold");
   });
 
   it("renders timestamp with gray-400 color class", () => {
     const { container } = render(renderCurrentTooltip(10, "10:00"));
-    const timeSpan = container.querySelector(".text-gray-400");
+    const timeSpan = container.querySelector(".text-fg-muted");
     expect(timeSpan).toBeInTheDocument();
   });
 

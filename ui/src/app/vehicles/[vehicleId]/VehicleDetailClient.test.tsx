@@ -244,7 +244,7 @@ describe("VehicleDetailClient", () => {
       fireEvent.click(screen.getByText("Month"));
     });
     expect(screen.getByText("Month")).toHaveClass("bg-blue-600");
-    expect(weekButton).toHaveClass("bg-gray-800");
+    expect(weekButton).toHaveClass("bg-surface");
   });
 
   it("enters edit mode when edit button is clicked", async () => {

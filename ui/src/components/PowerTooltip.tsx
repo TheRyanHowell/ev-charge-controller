@@ -9,10 +9,10 @@ export function renderPowerTooltip(value: number, timeLabel: string) {
       : `${Math.round(value)} W`;
 
   return (
-    <div className="bg-gray-800 text-white text-xs rounded px-2 py-1 shadow-lg whitespace-nowrap">
+    <div className="bg-surface text-fg text-xs rounded px-2 py-1 shadow-lg whitespace-nowrap">
       <span className="text-orange-400 font-semibold">{formatted}</span>
       {" · "}
-      <span className="text-gray-400">{timeLabel}</span>
+      <span className="text-fg-muted">{timeLabel}</span>
     </div>
   );
 }

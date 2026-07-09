@@ -23,11 +23,11 @@ import { useState, useCallback, useEffect, useId, useRef } from "react";
 // ─── shared primitives ────────────────────────────────────────────────────────
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
-  return <h2 className="text-xl font-semibold text-white">{children}</h2>;
+  return <h2 className="text-xl font-semibold text-fg">{children}</h2>;
 }
 
 function SubText({ children }: { children: React.ReactNode }) {
-  return <p className="text-sm text-gray-400 mt-1">{children}</p>;
+  return <p className="text-sm text-fg-muted mt-1">{children}</p>;
 }
 
 function PrimaryButton({
@@ -46,7 +46,7 @@ function PrimaryButton({
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white
+      className="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-fg
         hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed
         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
     >
@@ -60,7 +60,7 @@ function BackButton({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="text-sm text-gray-400 hover:text-white focus-visible:outline-none
+      className="text-sm text-fg-muted hover:text-fg focus-visible:outline-none
         focus-visible:ring-2 focus-visible:ring-blue-500 rounded transition-colors"
     >
       ← Back
@@ -102,11 +102,11 @@ function WifiSetupStep({ onNext }: { onNext: () => void }) {
           <li key={i} className="flex gap-3">
             <span
               className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full
-              bg-blue-600 text-xs font-bold text-white"
+              bg-blue-600 text-xs font-bold text-fg"
             >
               {i + 1}
             </span>
-            <span className="text-sm text-gray-300 pt-0.5">{step}</span>
+            <span className="text-sm text-fg-secondary pt-0.5">{step}</span>
           </li>
         ))}
       </ol>
@@ -139,19 +139,19 @@ function PathSelectStep({
           className="w-full rounded-lg border border-blue-600/50 bg-blue-600/10 px-4 py-4 text-left
             hover:bg-blue-600/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
         >
-          <p className="text-sm font-medium text-white">Auto-configure</p>
-          <p className="text-xs text-gray-400 mt-0.5">
+          <p className="text-sm font-medium text-fg">Auto-configure</p>
+          <p className="text-xs text-fg-muted mt-0.5">
             I know the plug&apos;s IP - push settings automatically
           </p>
         </button>
         <button
           type="button"
           onClick={onManual}
-          className="w-full rounded-lg border border-gray-600 bg-gray-800 px-4 py-4 text-left
-            hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+          className="w-full rounded-lg border border-border bg-surface px-4 py-4 text-left
+            hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
         >
-          <p className="text-sm font-medium text-white">Manual MQTT</p>
-          <p className="text-xs text-gray-400 mt-0.5">
+          <p className="text-sm font-medium text-fg">Manual MQTT</p>
+          <p className="text-xs text-fg-muted mt-0.5">
             I&apos;ll copy the credentials into Tasmota myself
           </p>
         </button>
@@ -252,7 +252,7 @@ function AutoConfigStep({
       </div>
       <div className="space-y-3">
         <div>
-          <label htmlFor={nameId} className="block text-xs text-gray-400 mb-1">
+          <label htmlFor={nameId} className="block text-xs text-fg-muted mb-1">
             Plug name *
           </label>
           <input
@@ -261,12 +261,12 @@ function AutoConfigStep({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Driveway"
-            className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-sm text-white
-              placeholder-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="w-full rounded-lg bg-surface border border-border px-3 py-2 text-sm text-fg
+              placeholder-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           />
         </div>
         <div>
-          <label htmlFor={ipId} className="block text-xs text-gray-400 mb-1">
+          <label htmlFor={ipId} className="block text-xs text-fg-muted mb-1">
             Plug IP address *
           </label>
           <input
@@ -275,12 +275,12 @@ function AutoConfigStep({
             value={ip}
             onChange={(e) => setIp(e.target.value)}
             placeholder="192.168.1.50"
-            className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-sm text-white
-              placeholder-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="w-full rounded-lg bg-surface border border-border px-3 py-2 text-sm text-fg
+              placeholder-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           />
         </div>
         <div>
-          <label htmlFor={passId} className="block text-xs text-gray-400 mb-1">
+          <label htmlFor={passId} className="block text-xs text-fg-muted mb-1">
             Tasmota web admin password (optional)
           </label>
           <input
@@ -289,8 +289,8 @@ function AutoConfigStep({
             value={tasmotaPass}
             onChange={(e) => setTasmotaPass(e.target.value)}
             placeholder="Leave blank if none set"
-            className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-sm text-white
-              placeholder-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="w-full rounded-lg bg-surface border border-border px-3 py-2 text-sm text-fg
+              placeholder-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           />
         </div>
         <VehicleSelector
@@ -313,7 +313,7 @@ function AutoConfigStep({
           <div>
             <label
               htmlFor={vehicleNameId}
-              className="block text-xs text-gray-400 mb-1"
+              className="block text-xs text-fg-muted mb-1"
             >
               Nickname (optional)
             </label>
@@ -323,13 +323,13 @@ function AutoConfigStep({
               value={vehicleName}
               onChange={(e) => setVehicleName(e.target.value)}
               placeholder="My EV"
-              className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-sm text-white
-                placeholder-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              className="w-full rounded-lg bg-surface border border-border px-3 py-2 text-sm text-fg
+                placeholder-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             />
           </div>
         )}
       </div>
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {error && <p className="text-xs text-danger">{error}</p>}
       <PrimaryButton
         onClick={() => void handleSubmit()}
         disabled={!name.trim() || !ip.trim() || !selection || loading}
@@ -454,7 +454,7 @@ function ManualMqttStep({
       </div>
       <div className="space-y-3">
         <div>
-          <label htmlFor={nameId} className="block text-xs text-gray-400 mb-1">
+          <label htmlFor={nameId} className="block text-xs text-fg-muted mb-1">
             Plug name *
           </label>
           <input
@@ -463,8 +463,8 @@ function ManualMqttStep({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Driveway"
-            className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-sm text-white
-              placeholder-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="w-full rounded-lg bg-surface border border-border px-3 py-2 text-sm text-fg
+              placeholder-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           />
         </div>
         <VehicleSelector
@@ -487,7 +487,7 @@ function ManualMqttStep({
           <div>
             <label
               htmlFor={vehicleNameId}
-              className="block text-xs text-gray-400 mb-1"
+              className="block text-xs text-fg-muted mb-1"
             >
               Nickname (optional)
             </label>
@@ -497,13 +497,13 @@ function ManualMqttStep({
               value={vehicleName}
               onChange={(e) => setVehicleName(e.target.value)}
               placeholder="My EV"
-              className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-sm text-white
-                placeholder-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              className="w-full rounded-lg bg-surface border border-border px-3 py-2 text-sm text-fg
+                placeholder-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             />
           </div>
         )}
       </div>
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {error && <p className="text-xs text-danger">{error}</p>}
       <PrimaryButton
         onClick={() => void handleCreate()}
         disabled={!name.trim() || !selection || loading}
@@ -697,11 +697,11 @@ function NotificationsStep({
           Get alerted when charging completes or your plug goes offline.
         </SubText>
       </div>
-      <div className="rounded-lg bg-gray-800 border border-gray-700 px-4 py-3">
+      <div className="rounded-lg bg-surface border border-border px-4 py-3">
         {subscribed ? (
           <div className="flex items-center gap-2">
             <svg
-              className="h-5 w-5 text-green-400 shrink-0"
+              className="h-5 w-5 text-success shrink-0"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -714,18 +714,18 @@ function NotificationsStep({
                 d="M5 13l4 4L19 7"
               />
             </svg>
-            <p className="text-sm text-white">Notifications enabled</p>
+            <p className="text-sm text-fg">Notifications enabled</p>
           </div>
         ) : (
           <div className="space-y-2">
-            <p className="text-sm text-gray-300">
+            <p className="text-sm text-fg-secondary">
               We&apos;ll send you a browser notification when charging finishes.
             </p>
             <button
               type="button"
               onClick={() => void handleSubscribe()}
               disabled={loading}
-              className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white
+              className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-fg
                 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed
                 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
             >
@@ -734,7 +734,7 @@ function NotificationsStep({
           </div>
         )}
       </div>
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {error && <p className="text-xs text-danger">{error}</p>}
       <PrimaryButton onClick={handleNext}>Continue →</PrimaryButton>
       <BackButton onClick={onBack} />
     </div>
@@ -768,17 +768,17 @@ function Offer12VStep({
           className="rounded-lg border border-cyan-700 bg-cyan-900/30 px-3 py-3 text-left hover:border-cyan-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 transition-colors"
         >
           <p className="text-sm font-medium text-cyan-300">Auto-configure</p>
-          <p className="text-xs text-gray-400 mt-0.5">
+          <p className="text-xs text-fg-muted mt-0.5">
             Push settings to device
           </p>
         </button>
         <button
           type="button"
           onClick={onAddManual}
-          className="rounded-lg border border-gray-600 bg-gray-800 px-3 py-3 text-left hover:border-gray-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+          className="rounded-lg border border-border bg-surface px-3 py-3 text-left hover:border-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
         >
-          <p className="text-sm font-medium text-white">Manual MQTT</p>
-          <p className="text-xs text-gray-400 mt-0.5">
+          <p className="text-sm font-medium text-fg">Manual MQTT</p>
+          <p className="text-xs text-fg-muted mt-0.5">
             Enter settings in Tasmota
           </p>
         </button>
@@ -786,7 +786,7 @@ function Offer12VStep({
       <button
         type="button"
         onClick={onSkip}
-        className="text-sm text-gray-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded transition-colors"
+        className="text-sm text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded transition-colors"
       >
         Skip →
       </button>
@@ -853,7 +853,7 @@ function AutoConfig12VStep({
       </div>
       <div className="space-y-3">
         <div>
-          <label htmlFor={nameId} className="block text-xs text-gray-400 mb-1">
+          <label htmlFor={nameId} className="block text-xs text-fg-muted mb-1">
             Charger name *
           </label>
           <input
@@ -862,11 +862,11 @@ function AutoConfig12VStep({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="12V Charger"
-            className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-sm text-white placeholder-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="w-full rounded-lg bg-surface border border-border px-3 py-2 text-sm text-fg placeholder-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           />
         </div>
         <div>
-          <label htmlFor={ipId} className="block text-xs text-gray-400 mb-1">
+          <label htmlFor={ipId} className="block text-xs text-fg-muted mb-1">
             Device IP address *
           </label>
           <input
@@ -875,11 +875,11 @@ function AutoConfig12VStep({
             value={ip}
             onChange={(e) => setIp(e.target.value)}
             placeholder="192.168.1.51"
-            className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-sm text-white placeholder-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="w-full rounded-lg bg-surface border border-border px-3 py-2 text-sm text-fg placeholder-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           />
         </div>
         <div>
-          <label htmlFor={passId} className="block text-xs text-gray-400 mb-1">
+          <label htmlFor={passId} className="block text-xs text-fg-muted mb-1">
             Tasmota password (optional)
           </label>
           <input
@@ -888,11 +888,11 @@ function AutoConfig12VStep({
             value={tasmotaPass}
             onChange={(e) => setTasmotaPass(e.target.value)}
             placeholder="Leave blank if none"
-            className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-sm text-white placeholder-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="w-full rounded-lg bg-surface border border-border px-3 py-2 text-sm text-fg placeholder-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           />
         </div>
       </div>
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {error && <p className="text-xs text-danger">{error}</p>}
       <PrimaryButton
         onClick={() => void handleSubmit()}
         disabled={!name.trim() || !ip.trim() || loading}
@@ -975,7 +975,7 @@ function Manual12VStep({
       </div>
       <div className="space-y-3">
         <div>
-          <label htmlFor={nameId} className="block text-xs text-gray-400 mb-1">
+          <label htmlFor={nameId} className="block text-xs text-fg-muted mb-1">
             Charger name *
           </label>
           <input
@@ -984,11 +984,11 @@ function Manual12VStep({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="12V Charger"
-            className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-sm text-white placeholder-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="w-full rounded-lg bg-surface border border-border px-3 py-2 text-sm text-fg placeholder-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           />
         </div>
         <div>
-          <label htmlFor={ipId} className="block text-xs text-gray-400 mb-1">
+          <label htmlFor={ipId} className="block text-xs text-fg-muted mb-1">
             Device IP (optional, for display)
           </label>
           <input
@@ -997,11 +997,11 @@ function Manual12VStep({
             value={ip}
             onChange={(e) => setIp(e.target.value)}
             placeholder="192.168.1.51"
-            className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-sm text-white placeholder-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="w-full rounded-lg bg-surface border border-border px-3 py-2 text-sm text-fg placeholder-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           />
         </div>
       </div>
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {error && <p className="text-xs text-danger">{error}</p>}
       <PrimaryButton
         onClick={() => void handleCreate()}
         disabled={!name.trim() || loading}
@@ -1020,7 +1020,7 @@ function DoneStep({ onComplete }: { onComplete: () => void }) {
     <div className="space-y-6 text-center">
       <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-green-500/20">
         <svg
-          className="h-7 w-7 text-green-400"
+          className="h-7 w-7 text-success"
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
@@ -1064,15 +1064,13 @@ export default function FirstRunWizard({ onComplete }: FirstRunWizardProps) {
   }, [onComplete]);
 
   return (
-    <main className="min-h-screen bg-page-bg text-white flex items-center justify-center p-4">
+    <main className="min-h-screen bg-page-bg text-fg flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="mb-8">
-          <h1 className="text-2xl font-bold text-white">
-            EV Charge Controller
-          </h1>
-          <p className="text-gray-400 text-sm mt-1">Setup</p>
+          <h1 className="text-2xl font-bold text-fg">EV Charge Controller</h1>
+          <p className="text-fg-muted text-sm mt-1">Setup</p>
         </div>
-        <div className="bg-gray-900 rounded-xl border border-gray-700 p-6">
+        <div className="bg-surface-raised rounded-xl border border-border p-6">
           {step === "wifi-setup" && (
             <WifiSetupStep onNext={() => handleStepChange("path-select")} />
           )}

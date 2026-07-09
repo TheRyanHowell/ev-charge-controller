@@ -35,14 +35,14 @@ export default function VehicleChips({
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50",
               isSelected
                 ? "bg-white text-black"
-                : "bg-white/10 text-white hover:bg-white/20 active:bg-white/30",
+                : "bg-white/10 text-fg hover:bg-white/20 active:bg-white/30",
             ].join(" ")}
             aria-pressed={isSelected}
           >
             <span
               className={[
                 "h-2 w-2 rounded-full flex-shrink-0",
-                isOnline ? "bg-green-400" : "bg-gray-500",
+                isOnline ? "bg-success" : "bg-fg-muted",
               ].join(" ")}
               aria-label={isOnline ? "Online" : "Offline"}
             />

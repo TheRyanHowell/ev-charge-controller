@@ -91,11 +91,11 @@ export function GaugeOverlay({
         <div className="absolute inset-x-0 top-0 bottom-1/2 flex flex-col items-center justify-end pb-10">
           <div
             data-testid="gauge-percent"
-            className="text-5xl font-semibold text-white tabular-nums tracking-tight"
+            className="text-5xl font-semibold text-fg tabular-nums tracking-tight"
           >
             {currentPercent.toFixed(0)}%
           </div>
-          <div className="text-xs text-gray-400 mt-1.5 uppercase tracking-[0.25em] font-medium">
+          <div className="text-xs text-fg-muted mt-1.5 uppercase tracking-[0.25em] font-medium">
             {status === "charging" && "Charging"}
             {status === "conditioning" && "Conditioning"}
             {status === "holding" && "Holding"}
@@ -112,7 +112,7 @@ export function GaugeOverlay({
           </div>
           {status === "holding" && estimatedResumeTime && (
             <div
-              className="text-[10px] text-gray-500 mt-1 normal-case tracking-normal font-normal"
+              className="text-[10px] text-fg-muted mt-1 normal-case tracking-normal font-normal"
               data-testid="estimated-resume-time"
             >
               resumes ~{estimatedResumeTime}
@@ -132,14 +132,14 @@ export function GaugeOverlay({
           disabled={isDisabled}
           style={{ pointerEvents: "auto", width: "100%", height: "100%" }}
           className={`
-            rounded-full text-white font-bold tracking-wider text-lg
+            rounded-full text-fg font-bold tracking-wider text-lg
             transition-all duration-200
             focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-page-bg
             ${
               isChargingOrPending
                 ? "bg-red-600 hover:bg-red-500 active:scale-[0.95] shadow-lg shadow-red-600/30"
                 : isCharged || tasmotaConnected === false
-                  ? "bg-gray-700 cursor-not-allowed text-gray-400"
+                  ? "bg-surface-hover cursor-not-allowed text-fg-muted"
                   : "bg-green-600 hover:bg-green-500 active:scale-[0.95] shadow-lg shadow-green-600/30"
             }
           `}
@@ -185,10 +185,10 @@ export function GaugeOverlay({
               disabled:opacity-60 disabled:cursor-wait
               ${
                 !maintenance.online
-                  ? "bg-gray-900/70 border-amber-500 text-amber-400"
+                  ? "bg-surface-raised/70 border-amber-500 text-warning"
                   : maintenance.powerOn
                     ? "bg-cyan-900/80 border-cyan-400 text-cyan-300 hover:bg-cyan-800/80 shadow-md shadow-cyan-500/20"
-                    : "bg-gray-900/70 border-gray-600/50 text-gray-500 hover:text-gray-300 hover:border-gray-500"
+                    : "bg-surface-raised/70 border-border/50 text-fg-muted hover:text-fg-secondary hover:border-fg-muted"
               }
             `}
           >
@@ -215,12 +215,12 @@ export function GaugeOverlay({
             focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent
             ${
               scheduleUnreachable
-                ? "bg-amber-950/70 border-amber-500 text-amber-400 hover:bg-amber-900/70"
+                ? "bg-amber-950/70 border-amber-500 text-warning hover:bg-amber-900/70"
                 : scheduleActive
                   ? schedule?.type === "carbon_aware"
                     ? "bg-green-900/80 border-green-400 text-green-300 hover:bg-green-800/80 shadow-md shadow-green-500/20"
                     : "bg-blue-900/80 border-blue-400 text-blue-300 hover:bg-blue-800/80 shadow-md shadow-blue-500/20"
-                  : "bg-gray-900/70 border-gray-600/50 text-gray-500 hover:text-gray-300 hover:border-gray-500"
+                  : "bg-surface-raised/70 border-border/50 text-fg-muted hover:text-fg-secondary hover:border-fg-muted"
             }
           `}
           aria-label={

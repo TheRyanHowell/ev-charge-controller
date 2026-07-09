@@ -98,7 +98,7 @@ export default function ChargeControl({
       <div className="flex-none w-full min-[1150px]:w-[540px]">
         <ErrorBoundary
           fallback={
-            <div className="text-center py-16 text-red-400">
+            <div className="text-center py-16 text-danger">
               Gauge unavailable
             </div>
           }

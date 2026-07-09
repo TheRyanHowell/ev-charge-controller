@@ -1,7 +1,7 @@
 import type { Mock } from "vitest";
 
-import { createPlug, createVehicle } from "@/test/fixtures";
 import { useThemeStore } from "@/stores/themeStore";
+import { createPlug, createVehicle } from "@/test/fixtures";
 import {
   render,
   screen,
@@ -265,7 +265,7 @@ describe("SettingsModal", () => {
       <SettingsModal {...createRenderProps({ onUpdateNotificationPrefs })} />,
     );
     const row = screen.getByText("Charge started").closest("div");
-    const toggle = within(row!).getByRole("switch");
+    const toggle = within(row as HTMLElement).getByRole("switch");
     fireEvent.click(toggle);
     expect(onUpdateNotificationPrefs).toHaveBeenCalledWith("vehicle-1", {
       notifyChargeStarted: false,
@@ -289,21 +289,21 @@ describe("SettingsModal", () => {
       useThemeStore.setState({ theme: "dark" });
       render(<SettingsModal {...createRenderProps()} />);
       const row = screen.getByText("Dark mode").closest("div");
-      const toggle = within(row!).getByRole("switch");
+      const toggle = within(row as HTMLElement).getByRole("switch");
       expect(toggle).toHaveAttribute("aria-checked", "true");
     });
 
     it("reflects the current theme as unchecked", () => {
       render(<SettingsModal {...createRenderProps()} />);
       const row = screen.getByText("Dark mode").closest("div");
-      const toggle = within(row!).getByRole("switch");
+      const toggle = within(row as HTMLElement).getByRole("switch");
       expect(toggle).toHaveAttribute("aria-checked", "false");
     });
 
     it("toggles the theme when clicked", () => {
       render(<SettingsModal {...createRenderProps()} />);
       const row = screen.getByText("Dark mode").closest("div");
-      const toggle = within(row!).getByRole("switch");
+      const toggle = within(row as HTMLElement).getByRole("switch");
       fireEvent.click(toggle);
       expect(useThemeStore.getState().theme).toBe("dark");
     });

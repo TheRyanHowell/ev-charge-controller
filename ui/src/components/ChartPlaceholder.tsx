@@ -10,7 +10,7 @@ export function ChartPlaceholder({ message, heightPx }: ChartPlaceholderProps) {
         className="flex items-center justify-center p-4"
         style={{ minHeight: `${heightPx}px` }}
       >
-        <p className="text-xs text-gray-500 italic">{message}</p>
+        <p className="text-xs text-fg-muted italic">{message}</p>
       </div>
     </div>
   );

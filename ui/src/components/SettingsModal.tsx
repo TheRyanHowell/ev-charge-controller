@@ -90,12 +90,12 @@ function AutoConfigureForm({
 
   return (
     <div className="space-y-3 rounded-lg border border-dashed border-blue-500/30 bg-blue-500/5 p-3">
-      <p className="text-xs font-medium text-blue-400">Auto-configure</p>
-      <p className="text-xs text-gray-400">
+      <p className="text-xs font-medium text-accent-muted">Auto-configure</p>
+      <p className="text-xs text-fg-muted">
         Push MQTT settings to the device. You&apos;ll need its IP address.
       </p>
       <div>
-        <label htmlFor={ipId} className="block text-xs text-gray-400 mb-1">
+        <label htmlFor={ipId} className="block text-xs text-fg-muted mb-1">
           Plug IP address *
         </label>
         <input
@@ -104,11 +104,11 @@ function AutoConfigureForm({
           value={ip}
           onChange={(e) => setIp(e.target.value)}
           placeholder="192.168.1.50"
-          className="w-full rounded bg-gray-900 border border-gray-700 px-2.5 py-1.5 text-sm text-white placeholder-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          className="w-full rounded bg-surface-raised border border-border px-2.5 py-1.5 text-sm text-fg placeholder-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
         />
       </div>
       <div>
-        <label htmlFor={passId} className="block text-xs text-gray-400 mb-1">
+        <label htmlFor={passId} className="block text-xs text-fg-muted mb-1">
           Tasmota web admin password (optional)
         </label>
         <input
@@ -117,16 +117,16 @@ function AutoConfigureForm({
           value={tasmotaPass}
           onChange={(e) => setTasmotaPass(e.target.value)}
           placeholder="Leave blank if none set"
-          className="w-full rounded bg-gray-900 border border-gray-700 px-2.5 py-1.5 text-sm text-white placeholder-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          className="w-full rounded bg-surface-raised border border-border px-2.5 py-1.5 text-sm text-fg placeholder-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
         />
       </div>
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {error && <p className="text-xs text-danger">{error}</p>}
       <div className="flex gap-2">
         <button
           type="button"
           onClick={onCancel}
           disabled={loading}
-          className="flex-1 rounded bg-gray-700 px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-600 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+          className="flex-1 rounded bg-surface px-3 py-1.5 text-xs text-fg-secondary hover:bg-surface-hover disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
         >
           Cancel
         </button>
@@ -134,7 +134,7 @@ function AutoConfigureForm({
           type="button"
           onClick={() => void handleSubmit()}
           disabled={!ip.trim() || loading}
-          className="flex-1 rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+          className="flex-1 rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-fg hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
         >
           {loading ? "Configuring…" : "Configure →"}
         </button>
@@ -221,16 +221,16 @@ export default function SettingsModal({
   return (
     <Dialog isOpen onClose={onClose} aria-labelledby="settings-title">
       {/* Widens to two-panel layout on sm+ screens */}
-      <div className="w-full max-w-[480px] sm:max-w-[720px] mx-4 bg-gray-900 rounded-xl shadow-2xl overflow-hidden">
+      <div className="w-full max-w-[480px] sm:max-w-[720px] mx-4 bg-surface-raised rounded-xl shadow-2xl overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
-          <h2 id="settings-title" className="text-lg font-semibold text-white">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+          <h2 id="settings-title" className="text-lg font-semibold text-fg">
             Settings
           </h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors
-              rounded-lg p-1.5 hover:bg-gray-700/50 focus:outline-none
+            className="text-fg-muted hover:text-fg transition-colors
+              rounded-lg p-1.5 hover:bg-surface-hover/50 focus:outline-none
               focus-visible:ring-2 focus-visible:ring-blue-500"
             aria-label="Close settings"
           >
@@ -255,26 +255,26 @@ export default function SettingsModal({
         <div className="max-h-[70vh] overflow-y-auto sm:max-h-none sm:overflow-visible sm:grid sm:grid-cols-2 sm:divide-x sm:divide-gray-700">
           {/* ── Left panel: General ───────────────────────────────────── */}
           <div className="px-6 py-5 space-y-5 sm:max-h-[70vh] sm:overflow-y-auto">
-            <h3 className="text-sm font-medium text-white">General</h3>
+            <h3 className="text-sm font-medium text-fg">General</h3>
 
             <div className="flex items-center justify-between">
-              <p className="text-xs text-gray-400">Dark mode</p>
+              <p className="text-xs text-fg-muted">Dark mode</p>
               <Toggle checked={theme === "dark"} onChange={toggleTheme} />
             </div>
 
-            <div className="border-t border-gray-700" />
+            <div className="border-t border-border" />
 
             <TariffSettingsSection />
 
             {isPushEnabled() && (
               <>
-                <div className="border-t border-gray-700" />
+                <div className="border-t border-border" />
                 <div className="space-y-3">
-                  <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">
+                  <p className="text-xs font-medium text-fg-muted uppercase tracking-wide">
                     Push Notifications
                   </p>
                   <div className="flex items-center justify-between">
-                    <p className="text-xs text-gray-400">
+                    <p className="text-xs text-fg-muted">
                       Enable device push notifications
                     </p>
                     <Toggle
@@ -289,14 +289,14 @@ export default function SettingsModal({
           </div>
 
           {/* ── Right panel: Vehicle settings ─────────────────────────── */}
-          <div className="px-6 py-5 space-y-5 border-t border-gray-700 sm:border-t-0 sm:max-h-[70vh] sm:overflow-y-auto">
-            <h3 className="text-sm font-medium text-white">
+          <div className="px-6 py-5 space-y-5 border-t border-border sm:border-t-0 sm:max-h-[70vh] sm:overflow-y-auto">
+            <h3 className="text-sm font-medium text-fg">
               {selectedVehicle?.name ?? "Vehicle"}
             </h3>
 
             {/* Primary Charger */}
             <section className="space-y-3">
-              <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">
+              <p className="text-xs font-medium text-fg-muted uppercase tracking-wide">
                 Primary Charger
               </p>
               {plug ? (
@@ -313,7 +313,7 @@ export default function SettingsModal({
                 />
               ) : (
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-400">
+                  <span className="text-xs text-fg-muted">
                     No charging plug
                   </span>
                   {onAddChargingPlug && (
@@ -323,7 +323,7 @@ export default function SettingsModal({
                         onAddChargingPlug();
                         onClose();
                       }}
-                      className="text-xs text-blue-400 hover:text-blue-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded transition-colors"
+                      className="text-xs text-accent-muted hover:text-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded transition-colors"
                     >
                       Add charging plug →
                     </button>
@@ -332,11 +332,11 @@ export default function SettingsModal({
               )}
             </section>
 
-            <div className="border-t border-gray-700" />
+            <div className="border-t border-border" />
 
             {/* 12V Maintenance Charger */}
             <section className="space-y-3">
-              <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">
+              <p className="text-xs font-medium text-fg-muted uppercase tracking-wide">
                 12V Maintenance Charger
               </p>
               {maintenancePlug ? (
@@ -347,7 +347,7 @@ export default function SettingsModal({
                 />
               ) : (
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-400">No 12V charger</span>
+                  <span className="text-xs text-fg-muted">No 12V charger</span>
                   {onAdd12V && (
                     <button
                       type="button"
@@ -355,7 +355,7 @@ export default function SettingsModal({
                         onAdd12V();
                         onClose();
                       }}
-                      className="text-xs text-blue-400 hover:text-blue-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded transition-colors"
+                      className="text-xs text-accent-muted hover:text-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded transition-colors"
                     >
                       Add 12V charger →
                     </button>
@@ -367,14 +367,14 @@ export default function SettingsModal({
             {/* Notifications */}
             {selectedVehicle && onUpdateNotificationPrefs && (
               <>
-                <div className="border-t border-gray-700" />
+                <div className="border-t border-border" />
                 <section className="space-y-3">
-                  <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">
+                  <p className="text-xs font-medium text-fg-muted uppercase tracking-wide">
                     Notifications
                   </p>
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-300">
+                      <span className="text-xs text-fg-secondary">
                         Charge started
                       </span>
                       <Toggle
@@ -387,7 +387,7 @@ export default function SettingsModal({
                       />
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-300">
+                      <span className="text-xs text-fg-secondary">
                         Charge complete
                       </span>
                       <Toggle
@@ -400,7 +400,7 @@ export default function SettingsModal({
                       />
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-300">
+                      <span className="text-xs text-fg-secondary">
                         Charger offline
                       </span>
                       <Toggle
@@ -413,7 +413,7 @@ export default function SettingsModal({
                       />
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-300">
+                      <span className="text-xs text-fg-secondary">
                         12V maintenance charger offline
                       </span>
                       <Toggle
@@ -433,11 +433,11 @@ export default function SettingsModal({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-700 bg-gray-800/50 flex items-center justify-end">
+        <div className="px-6 py-4 border-t border-border bg-surface/50 flex items-center justify-end">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-300
-              hover:text-white rounded-lg hover:bg-gray-700 transition-colors
+            className="px-4 py-2 text-sm font-medium text-fg-secondary
+              hover:text-fg rounded-lg hover:bg-surface-hover transition-colors
               focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           >
             Close
@@ -485,13 +485,13 @@ function PlugControls({
   const dotCls =
     powerOn === undefined
       ? online
-        ? "bg-green-400"
-        : "bg-gray-500"
+        ? "bg-success"
+        : "bg-fg-muted"
       : !online
-        ? "bg-amber-400"
+        ? "bg-warning"
         : powerOn
-          ? "bg-cyan-400"
-          : "bg-gray-500";
+          ? "bg-info"
+          : "bg-fg-muted";
   const dotLabel =
     powerOn === undefined
       ? online
@@ -537,7 +537,7 @@ function PlugControls({
   }, [queryClient]);
 
   const iconBtn =
-    "shrink-0 text-xs text-gray-500 hover:text-blue-400 rounded px-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 transition-colors";
+    "shrink-0 text-xs text-fg-muted hover:text-accent-muted rounded px-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 transition-colors";
 
   return (
     <div className="space-y-2">
@@ -561,11 +561,11 @@ function PlugControls({
               }
             }}
             autoFocus
-            className="flex-1 rounded bg-gray-900 border border-gray-600 px-2 py-1 text-sm text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            className="flex-1 rounded bg-surface-raised border border-border px-2 py-1 text-sm text-fg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
           />
         ) : (
           <div className="flex items-center gap-1.5 flex-1 min-w-0">
-            <span className="text-sm text-white truncate">{name}</span>
+            <span className="text-sm text-fg truncate">{name}</span>
             <button
               type="button"
               onClick={() => {
@@ -598,7 +598,7 @@ function PlugControls({
               }}
               title="Delete"
               aria-label="Delete"
-              className="shrink-0 text-xs text-gray-500 hover:text-red-400 rounded px-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-500 transition-colors"
+              className="shrink-0 text-xs text-fg-muted hover:text-danger rounded px-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-500 transition-colors"
             >
               <i className="fa-solid fa-trash-can" />
             </button>
@@ -606,7 +606,7 @@ function PlugControls({
         )}
         {/* ON / OFF label for maintenance chargers */}
         {powerOn !== undefined && (
-          <span className="text-xs text-gray-500 shrink-0">
+          <span className="text-xs text-fg-muted shrink-0">
             {!online ? "Offline" : powerOn ? "ON" : "OFF"}
           </span>
         )}
@@ -621,7 +621,7 @@ function PlugControls({
               setNameDraft(name);
               setEditingName(false);
             }}
-            className="text-xs text-gray-400 hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gray-500 rounded"
+            className="text-xs text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-fg-muted rounded"
           >
             Cancel
           </button>
@@ -629,7 +629,7 @@ function PlugControls({
             type="button"
             onClick={handleNameSave}
             disabled={!nameDraft.trim()}
-            className="text-xs text-blue-400 hover:text-blue-300 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded"
+            className="text-xs text-accent-muted hover:text-accent disabled:opacity-40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded"
           >
             Save
           </button>
@@ -639,34 +639,34 @@ function PlugControls({
       {/* Configure modal - opens above the settings modal via showModal() */}
       {configMode !== null && (
         <Dialog isOpen onClose={() => setConfigMode(null)}>
-          <div className="bg-gray-800 rounded-xl border border-gray-700 w-full max-w-md mx-4 p-5">
-            <h2 className="text-base font-medium text-white mb-4">Configure</h2>
+          <div className="bg-surface rounded-xl border border-border w-full max-w-md mx-4 p-5">
+            <h2 className="text-base font-medium text-fg mb-4">Configure</h2>
 
             {configMode === "path" && (
               <div className="space-y-3">
-                <p className="text-xs text-gray-400">
+                <p className="text-xs text-fg-muted">
                   How do you want to configure this plug?
                 </p>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={() => setConfigMode("auto")}
-                    className="rounded-lg border border-gray-600 bg-gray-800 px-3 py-3 text-left hover:border-gray-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+                    className="rounded-lg border border-border bg-surface px-3 py-3 text-left hover:border-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
                   >
-                    <p className="text-sm font-medium text-white">
+                    <p className="text-sm font-medium text-fg">
                       Auto-configure
                     </p>
-                    <p className="text-xs text-gray-400 mt-0.5">
+                    <p className="text-xs text-fg-muted mt-0.5">
                       Push settings to device
                     </p>
                   </button>
                   <button
                     type="button"
                     onClick={() => void handleManual()}
-                    className="rounded-lg border border-gray-600 bg-gray-800 px-3 py-3 text-left hover:border-gray-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+                    className="rounded-lg border border-border bg-surface px-3 py-3 text-left hover:border-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
                   >
-                    <p className="text-sm font-medium text-white">Manual</p>
-                    <p className="text-xs text-gray-400 mt-0.5">
+                    <p className="text-sm font-medium text-fg">Manual</p>
+                    <p className="text-xs text-fg-muted mt-0.5">
                       Show console commands
                     </p>
                   </button>
@@ -674,7 +674,7 @@ function PlugControls({
                 <button
                   type="button"
                   onClick={() => setConfigMode(null)}
-                  className="text-xs text-gray-400 hover:text-gray-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gray-500 rounded"
+                  className="text-xs text-fg-muted hover:text-fg-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-fg-muted rounded"
                 >
                   Cancel
                 </button>
@@ -692,17 +692,17 @@ function PlugControls({
             {configMode === "manual" && (
               <div className="space-y-3">
                 {regenLoading && (
-                  <p className="text-xs text-gray-400">
+                  <p className="text-xs text-fg-muted">
                     <i className="fa-solid fa-spinner fa-spin mr-1" />
                     Generating…
                   </p>
                 )}
                 {regenError && (
-                  <p className="text-xs text-red-400">{regenError}</p>
+                  <p className="text-xs text-danger">{regenError}</p>
                 )}
                 {consoleCommands && (
                   <div className="space-y-1">
-                    <p className="text-xs text-gray-400">
+                    <p className="text-xs text-fg-muted">
                       Paste into Tasmota console. Device will restart.
                     </p>
                     <ConsoleCommandsBlock commands={consoleCommands} />
@@ -711,7 +711,7 @@ function PlugControls({
                 <button
                   type="button"
                   onClick={() => setConfigMode(null)}
-                  className="text-xs text-gray-400 hover:text-gray-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gray-500 rounded"
+                  className="text-xs text-fg-muted hover:text-fg-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-fg-muted rounded"
                 >
                   Done
                 </button>
@@ -723,20 +723,20 @@ function PlugControls({
 
       {/* Delete confirmation */}
       {deleteConfirm && (
-        <div className="rounded-lg bg-gray-900 border border-gray-700 p-3 space-y-2">
-          <p className="text-xs text-gray-300">{deleteConfirmText}</p>
+        <div className="rounded-lg bg-surface-raised border border-border p-3 space-y-2">
+          <p className="text-xs text-fg-secondary">{deleteConfirmText}</p>
           <div className="flex gap-2">
             <button
               type="button"
               onClick={() => setDeleteConfirm(false)}
-              className="text-xs text-gray-400 hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gray-500 rounded"
+              className="text-xs text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-fg-muted rounded"
             >
               Cancel
             </button>
             <button
               type="button"
               onClick={onDelete}
-              className="text-xs font-medium text-red-400 hover:text-red-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-500 rounded"
+              className="text-xs font-medium text-danger hover:text-danger focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-500 rounded"
             >
               Delete
             </button>

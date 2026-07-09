@@ -110,32 +110,32 @@ export default function AddPlugModal({
 
   return (
     <Dialog isOpen={isOpen} onClose={handleClose}>
-      <div className="bg-gray-800 rounded-xl border border-gray-700 w-full max-w-md mx-4 p-5">
-        <h2 className="text-base font-medium text-white mb-4">{title}</h2>
+      <div className="bg-surface rounded-xl border border-border w-full max-w-md mx-4 p-5">
+        <h2 className="text-base font-medium text-fg mb-4">{title}</h2>
 
         {effectiveMode === "path-select" && (
           <div className="space-y-3">
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-fg-muted">
               How do you want to set up this plug?
             </p>
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={() => setMode("auto-config")}
-                className="rounded-lg border border-gray-600 bg-gray-800 px-3 py-3 text-left hover:border-gray-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+                className="rounded-lg border border-border bg-surface px-3 py-3 text-left hover:border-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
               >
-                <p className="text-sm font-medium text-white">Auto-configure</p>
-                <p className="text-xs text-gray-400 mt-0.5">
+                <p className="text-sm font-medium text-fg">Auto-configure</p>
+                <p className="text-xs text-fg-muted mt-0.5">
                   Push MQTT settings to the plug
                 </p>
               </button>
               <button
                 type="button"
                 onClick={() => setMode("manual")}
-                className="rounded-lg border border-gray-600 bg-gray-800 px-3 py-3 text-left hover:border-gray-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+                className="rounded-lg border border-border bg-surface px-3 py-3 text-left hover:border-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
               >
-                <p className="text-sm font-medium text-white">Manual</p>
-                <p className="text-xs text-gray-400 mt-0.5">
+                <p className="text-sm font-medium text-fg">Manual</p>
+                <p className="text-xs text-fg-muted mt-0.5">
                   Enter MQTT settings in Tasmota
                 </p>
               </button>
@@ -143,7 +143,7 @@ export default function AddPlugModal({
             <button
               type="button"
               onClick={handleClose}
-              className="text-xs text-gray-400 hover:text-gray-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded"
+              className="text-xs text-fg-muted hover:text-fg-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded"
             >
               Cancel
             </button>
@@ -170,7 +170,7 @@ export default function AddPlugModal({
 
         {effectiveMode === "12v-offer" && (
           <div className="space-y-4">
-            <p className="text-sm text-gray-300">
+            <p className="text-sm text-fg-secondary">
               Would you like to add a 12V battery maintenance charger for this
               vehicle? It stays on continuously to keep the 12V battery topped
               up.
@@ -184,17 +184,17 @@ export default function AddPlugModal({
                 <p className="text-sm font-medium text-cyan-300">
                   Auto-configure
                 </p>
-                <p className="text-xs text-gray-400 mt-0.5">
+                <p className="text-xs text-fg-muted mt-0.5">
                   Push settings to device
                 </p>
               </button>
               <button
                 type="button"
                 onClick={() => setMode("12v-manual")}
-                className="rounded-lg border border-gray-600 bg-gray-800 px-3 py-3 text-left hover:border-gray-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+                className="rounded-lg border border-border bg-surface px-3 py-3 text-left hover:border-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
               >
-                <p className="text-sm font-medium text-white">Manual</p>
-                <p className="text-xs text-gray-400 mt-0.5">
+                <p className="text-sm font-medium text-fg">Manual</p>
+                <p className="text-xs text-fg-muted mt-0.5">
                   Enter settings in Tasmota
                 </p>
               </button>
@@ -202,7 +202,7 @@ export default function AddPlugModal({
             <button
               type="button"
               onClick={handleClose}
-              className="text-xs text-gray-400 hover:text-gray-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gray-500 rounded"
+              className="text-xs text-fg-muted hover:text-fg-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-fg-muted rounded"
             >
               {is12VMode ? "Cancel" : "Skip"}
             </button>
@@ -335,13 +335,13 @@ function AutoConfigAddPlugForm({
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-gray-400">
+      <p className="text-xs text-fg-muted">
         {plugType === "maintenance"
           ? "We'll push MQTT settings to the 12V maintenance charger."
           : "We'll push MQTT settings directly to the plug."}
       </p>
       <div>
-        <label htmlFor={nameId} className="block text-xs text-gray-400 mb-1">
+        <label htmlFor={nameId} className="block text-xs text-fg-muted mb-1">
           Plug name *
         </label>
         <input
@@ -350,11 +350,11 @@ function AutoConfigAddPlugForm({
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={plugType === "maintenance" ? "12V Charger" : "Driveway"}
-          className="w-full rounded bg-gray-900 border border-gray-700 px-2.5 py-1.5 text-sm text-white placeholder-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          className="w-full rounded bg-surface-raised border border-border px-2.5 py-1.5 text-sm text-fg placeholder-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
         />
       </div>
       <div>
-        <label htmlFor={ipId} className="block text-xs text-gray-400 mb-1">
+        <label htmlFor={ipId} className="block text-xs text-fg-muted mb-1">
           Plug IP address *
         </label>
         <input
@@ -363,11 +363,11 @@ function AutoConfigAddPlugForm({
           value={ip}
           onChange={(e) => setIp(e.target.value)}
           placeholder="192.168.1.50"
-          className="w-full rounded bg-gray-900 border border-gray-700 px-2.5 py-1.5 text-sm text-white placeholder-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          className="w-full rounded bg-surface-raised border border-border px-2.5 py-1.5 text-sm text-fg placeholder-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
         />
       </div>
       <div>
-        <label htmlFor={passId} className="block text-xs text-gray-400 mb-1">
+        <label htmlFor={passId} className="block text-xs text-fg-muted mb-1">
           Tasmota web admin password (optional)
         </label>
         <input
@@ -376,7 +376,7 @@ function AutoConfigAddPlugForm({
           value={tasmotaPass}
           onChange={(e) => setTasmotaPass(e.target.value)}
           placeholder="Leave blank if none set"
-          className="w-full rounded bg-gray-900 border border-gray-700 px-2.5 py-1.5 text-sm text-white placeholder-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          className="w-full rounded bg-surface-raised border border-border px-2.5 py-1.5 text-sm text-fg placeholder-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
         />
       </div>
       {needsVehicleSelection && (
@@ -399,7 +399,7 @@ function AutoConfigAddPlugForm({
             <div>
               <label
                 htmlFor={vehicleNameId}
-                className="block text-xs text-gray-400 mb-1"
+                className="block text-xs text-fg-muted mb-1"
               >
                 Nickname (optional)
               </label>
@@ -409,19 +409,19 @@ function AutoConfigAddPlugForm({
                 value={vehicleName}
                 onChange={(e) => setVehicleName(e.target.value)}
                 placeholder="My EV"
-                className="w-full rounded bg-gray-900 border border-gray-700 px-2.5 py-1.5 text-sm text-white placeholder-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="w-full rounded bg-surface-raised border border-border px-2.5 py-1.5 text-sm text-fg placeholder-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
               />
             </div>
           )}
         </>
       )}
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {error && <p className="text-xs text-danger">{error}</p>}
       <div className="flex gap-2">
         <button
           type="button"
           onClick={onBack}
           disabled={loading}
-          className="flex-1 rounded bg-gray-700 px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-600 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+          className="flex-1 rounded bg-surface px-3 py-1.5 text-xs text-fg-secondary hover:bg-surface-hover disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
         >
           Back
         </button>
@@ -434,7 +434,7 @@ function AutoConfigAddPlugForm({
             (needsVehicleSelection && !selection) ||
             loading
           }
-          className="flex-1 rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+          className="flex-1 rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-fg hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
         >
           {loading ? "Configuring…" : "Configure →"}
         </button>
@@ -531,7 +531,7 @@ function ManualAddPlugForm({
   if (plug && consoleCommands) {
     return (
       <div className="space-y-3">
-        <p className="text-xs text-gray-400">
+        <p className="text-xs text-fg-muted">
           Open the Tasmota console (Console tab) and paste all lines below. Save
           the commands - they won&apos;t be shown again.
         </p>
@@ -540,14 +540,14 @@ function ManualAddPlugForm({
           <button
             type="button"
             onClick={onBack}
-            className="flex-1 rounded bg-gray-700 px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+            className="flex-1 rounded bg-surface px-3 py-1.5 text-xs text-fg-secondary hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
           >
             Back
           </button>
           <button
             type="button"
             onClick={handleDone}
-            className="flex-1 rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+            className="flex-1 rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-fg hover:bg-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
           >
             Done ✓
           </button>
@@ -559,7 +559,7 @@ function ManualAddPlugForm({
   return (
     <div className="space-y-3">
       <div>
-        <label htmlFor={nameId} className="block text-xs text-gray-400 mb-1">
+        <label htmlFor={nameId} className="block text-xs text-fg-muted mb-1">
           Plug name *
         </label>
         <input
@@ -568,7 +568,7 @@ function ManualAddPlugForm({
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={plugType === "maintenance" ? "12V Charger" : "Driveway"}
-          className="w-full rounded bg-gray-900 border border-gray-700 px-2.5 py-1.5 text-sm text-white placeholder-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          className="w-full rounded bg-surface-raised border border-border px-2.5 py-1.5 text-sm text-fg placeholder-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
         />
       </div>
       {needsVehicleSelection && (
@@ -591,7 +591,7 @@ function ManualAddPlugForm({
             <div>
               <label
                 htmlFor={vehicleNameId}
-                className="block text-xs text-gray-400 mb-1"
+                className="block text-xs text-fg-muted mb-1"
               >
                 Nickname (optional)
               </label>
@@ -601,19 +601,19 @@ function ManualAddPlugForm({
                 value={vehicleName}
                 onChange={(e) => setVehicleName(e.target.value)}
                 placeholder="My EV"
-                className="w-full rounded bg-gray-900 border border-gray-700 px-2.5 py-1.5 text-sm text-white placeholder-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="w-full rounded bg-surface-raised border border-border px-2.5 py-1.5 text-sm text-fg placeholder-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
               />
             </div>
           )}
         </>
       )}
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {error && <p className="text-xs text-danger">{error}</p>}
       <div className="flex gap-2">
         <button
           type="button"
           onClick={onBack}
           disabled={loading}
-          className="flex-1 rounded bg-gray-700 px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-600 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+          className="flex-1 rounded bg-surface px-3 py-1.5 text-xs text-fg-secondary hover:bg-surface-hover disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
         >
           Back
         </button>
@@ -623,7 +623,7 @@ function ManualAddPlugForm({
           disabled={
             !name.trim() || (needsVehicleSelection && !selection) || loading
           }
-          className="flex-1 rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+          className="flex-1 rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-fg hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
         >
           {loading ? "Creating…" : "Generate credentials →"}
         </button>

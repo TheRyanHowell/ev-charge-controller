@@ -78,10 +78,10 @@ export default function HistoryClient({
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-page-bg text-white flex items-center justify-center">
+      <main className="min-h-screen bg-page-bg text-fg flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
-          <p className="text-gray-400">Loading...</p>
+          <p className="text-fg-muted">Loading...</p>
         </div>
       </main>
     );
@@ -89,18 +89,18 @@ export default function HistoryClient({
 
   return (
     <ErrorBoundary>
-      <main className="min-h-screen bg-page-bg text-white">
+      <main className="min-h-screen bg-page-bg text-fg">
         <div className="w-full max-w-6xl mx-auto px-4 py-6 sm:px-6 sm:py-8">
           <header className="flex items-center justify-between mb-6">
             <Link
               href="/"
-              className="text-gray-500 hover:text-gray-200 transition-colors rounded-lg p-2 hover:bg-surface-raised"
+              className="text-fg-muted hover:text-fg transition-colors rounded-lg p-2 hover:bg-surface-raised"
               aria-label="Back to dashboard"
             >
               <i className="fas fa-home text-sm" aria-hidden="true"></i>
             </Link>
-            <h1 className="text-xl font-semibold text-white">Charge History</h1>
-            <p className="text-xs text-gray-500">
+            <h1 className="text-xl font-semibold text-fg">Charge History</h1>
+            <p className="text-xs text-fg-muted">
               {sessions.length} session{sessions.length !== 1 ? "s" : ""}
             </p>
           </header>
@@ -112,12 +112,12 @@ export default function HistoryClient({
               onChange={(e) => setSelectedDate(e.target.value)}
               aria-label="Filter by date"
               data-testid="date-picker"
-              className="h-10 bg-gray-800 border border-gray-700 rounded-lg px-3 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="h-10 bg-surface border border-border rounded-lg px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             <select
               value={selectedVehicleId ?? "all"}
               onChange={(e) => handleVehicleChange(e.target.value)}
-              className="h-10 bg-gray-800 border border-gray-700 rounded-lg px-3 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="h-10 bg-surface border border-border rounded-lg px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="all">All Vehicles</option>
               {vehicles.map((v) => (
@@ -136,10 +136,10 @@ export default function HistoryClient({
 
           {sessions.length === 0 ? (
             <div className="text-center py-16">
-              <div className="text-gray-500 text-lg mb-2">
+              <div className="text-fg-muted text-lg mb-2">
                 No charge sessions yet
               </div>
-              <p className="text-gray-600 text-sm">
+              <p className="text-fg-muted text-sm">
                 Start charging to see your history
               </p>
             </div>
@@ -164,7 +164,7 @@ export default function HistoryClient({
                   onClick={loadMore}
                   disabled={loading}
                   data-testid="load-more"
-                  className="mt-4 w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 hover:bg-gray-700 disabled:opacity-50"
+                  className="mt-4 w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-blue-500 hover:bg-surface-hover disabled:opacity-50"
                 >
                   {loading ? "Loading..." : "Load More"}
                 </button>
@@ -263,7 +263,7 @@ function SessionCard({
         );
 
   return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900/80 overflow-hidden transition-all hover:border-gray-700">
+    <div className="rounded-xl border border-border-subtle bg-surface-raised/80 overflow-hidden transition-all hover:border-border">
       {/* Collapsed view - clickable row */}
       <div className="flex items-stretch">
         <button
@@ -295,7 +295,7 @@ function SessionCard({
                   {session.status}
                 </span>
               </div>
-              <div className="text-xs text-gray-500 mt-1">
+              <div className="text-xs text-fg-muted mt-1">
                 {new Date(session.createdAt).toLocaleDateString(undefined, {
                   month: "short",
                   day: "numeric",
@@ -309,33 +309,33 @@ function SessionCard({
             {/* Stats - desktop (flex so each cell sizes to content, gap is always consistent) */}
             <div className="hidden sm:flex items-center gap-5 text-sm">
               <div className="text-right">
-                <div className="text-gray-500 text-xs">From</div>
-                <div className="text-gray-300">
+                <div className="text-fg-muted text-xs">From</div>
+                <div className="text-fg-secondary">
                   {session.startPercent.toFixed(0)}%
                 </div>
               </div>
               <div className="text-right">
-                <div className="text-gray-500 text-xs">{endLabel}</div>
-                <div className="text-gray-300">
+                <div className="text-fg-muted text-xs">{endLabel}</div>
+                <div className="text-fg-secondary">
                   {displayEndPercent?.toFixed(0) ?? "-"}%
                 </div>
               </div>
               <div className="text-right">
-                <div className="text-gray-500 text-xs">Added</div>
+                <div className="text-fg-muted text-xs">Added</div>
                 <div className="text-emerald-400 font-medium whitespace-nowrap">
                   +{energyAdded} kWh
                 </div>
               </div>
               <div className="text-right">
-                <div className="text-gray-500 text-xs">Cost</div>
-                <div className="text-red-400 font-medium whitespace-nowrap">
+                <div className="text-fg-muted text-xs">Cost</div>
+                <div className="text-danger font-medium whitespace-nowrap">
                   {costLabel}
                 </div>
               </div>
               {hasRange && (
                 <div className="text-right">
-                  <div className="text-gray-500 text-xs">Range</div>
-                  <div className="text-gray-300 whitespace-nowrap">
+                  <div className="text-fg-muted text-xs">Range</div>
+                  <div className="text-fg-secondary whitespace-nowrap">
                     {formatRange(
                       vehicle.rangeMinMi,
                       vehicle.rangeMaxMi,
@@ -346,7 +346,7 @@ function SessionCard({
               )}
               {hasCo2 && (
                 <div className="text-right">
-                  <div className="text-gray-500 text-xs">CO₂</div>
+                  <div className="text-fg-muted text-xs">CO₂</div>
                   <div className="text-lime-400 font-medium whitespace-nowrap">
                     {co2Label}
                   </div>
@@ -356,7 +356,7 @@ function SessionCard({
 
             {/* Chevron */}
             <i
-              className={`fas fa-chevron-down w-4 h-4 text-gray-500 transition-transform duration-200 ${
+              className={`fas fa-chevron-down w-4 h-4 text-fg-muted transition-transform duration-200 ${
                 isExpanded ? "rotate-180" : ""
               }`}
               aria-hidden="true"
@@ -369,7 +369,7 @@ function SessionCard({
           <button
             type="button"
             onClick={onDelete}
-            className="flex-shrink-0 self-center p-1.5 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-500/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 transition-colors cursor-pointer"
+            className="flex-shrink-0 self-center p-1.5 rounded-lg text-fg-muted hover:text-danger hover:bg-red-500/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 transition-colors cursor-pointer"
             aria-label={`Delete ${session.status} session`}
             title="Delete session"
           >
@@ -380,31 +380,31 @@ function SessionCard({
 
       {/* Expanded detail */}
       {isExpanded && (
-        <div className="border-t border-gray-800 px-5 pb-3">
+        <div className="border-t border-border-subtle px-5 pb-3">
           {/* Mobile stats - split into two rows to avoid 6-column cramping */}
-          <div className="sm:hidden border-b border-gray-800/50 py-3 mb-3 space-y-3">
+          <div className="sm:hidden border-b border-border-subtle/50 py-3 mb-3 space-y-3">
             <div className="grid grid-cols-4 gap-3 text-center text-sm">
               <div>
-                <div className="text-gray-500 text-xs">From</div>
-                <div className="text-gray-300">
+                <div className="text-fg-muted text-xs">From</div>
+                <div className="text-fg-secondary">
                   {session.startPercent.toFixed(0)}%
                 </div>
               </div>
               <div>
-                <div className="text-gray-500 text-xs">{endLabel}</div>
-                <div className="text-gray-300">
+                <div className="text-fg-muted text-xs">{endLabel}</div>
+                <div className="text-fg-secondary">
                   {displayEndPercent?.toFixed(0) ?? "-"}%
                 </div>
               </div>
               <div>
-                <div className="text-gray-500 text-xs">Added</div>
+                <div className="text-fg-muted text-xs">Added</div>
                 <div className="text-emerald-400 font-medium whitespace-nowrap">
                   +{energyAdded} kWh
                 </div>
               </div>
               <div>
-                <div className="text-gray-500 text-xs">Cost</div>
-                <div className="text-red-400 font-medium whitespace-nowrap">
+                <div className="text-fg-muted text-xs">Cost</div>
+                <div className="text-danger font-medium whitespace-nowrap">
                   {costLabel}
                 </div>
               </div>
@@ -417,8 +417,8 @@ function SessionCard({
               >
                 {hasRange && (
                   <div>
-                    <div className="text-gray-500 text-xs">Range</div>
-                    <div className="text-gray-300 whitespace-nowrap">
+                    <div className="text-fg-muted text-xs">Range</div>
+                    <div className="text-fg-secondary whitespace-nowrap">
                       {formatRange(
                         vehicle.rangeMinMi,
                         vehicle.rangeMaxMi,
@@ -429,7 +429,7 @@ function SessionCard({
                 )}
                 {hasCo2 && (
                   <div>
-                    <div className="text-gray-500 text-xs">CO₂</div>
+                    <div className="text-fg-muted text-xs">CO₂</div>
                     <div className="text-lime-400 font-medium whitespace-nowrap">
                       {co2Label}
                     </div>

@@ -30,7 +30,7 @@ export default function RangeDisplay({
         <span className="inline-flex items-center gap-1">
           {currentPercent > 0 && !rangesMatch && (
             <span
-              className="text-red-400"
+              className="text-danger"
               aria-label={`Current range: ${currentStr}`}
             >
               {currentStr}
@@ -49,7 +49,7 @@ export default function RangeDisplay({
           )}
           {currentPercent > 0 && rangesMatch && (
             <span
-              className="text-red-400"
+              className="text-danger"
               aria-label={`Current range: ${currentStr}`}
             >
               {currentStr}

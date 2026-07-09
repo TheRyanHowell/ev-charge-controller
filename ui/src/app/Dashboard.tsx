@@ -283,10 +283,10 @@ export default function Dashboard({
 
   if (isLoading) {
     return (
-      <main className="min-h-screen bg-page-bg text-white flex items-center justify-center">
+      <main className="min-h-screen bg-page-bg text-fg flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
-          <p className="text-gray-400">Loading...</p>
+          <p className="text-fg-muted">Loading...</p>
         </div>
       </main>
     );
@@ -298,7 +298,7 @@ export default function Dashboard({
 
   return (
     <ErrorBoundary>
-      <main className="min-h-screen bg-page-bg text-white">
+      <main className="min-h-screen bg-page-bg text-fg">
         <div className="w-full max-w-6xl mx-auto px-4 py-6 sm:px-6 sm:py-8">
           <DashboardHeader onOpenSettings={handleOpenSettings} />
 

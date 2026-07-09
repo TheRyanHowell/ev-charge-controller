@@ -26,23 +26,23 @@ export default function StatusBar({
 
       {selectedVehicle && (
         <div className="flex flex-wrap items-center justify-center gap-2 mb-6">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface border border-border text-xs text-gray-200">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface border border-border text-xs text-fg-secondary">
             <i
-              className="fas fa-charging-station text-gray-400 text-[10px]"
+              className="fas fa-charging-station text-fg-muted text-[10px]"
               aria-hidden="true"
             ></i>
             {selectedVehicle.name}
           </span>
-          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface border border-border text-xs text-gray-200">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface border border-border text-xs text-fg-secondary">
             <i
-              className="fas fa-battery-three-quarters text-gray-400 text-[10px]"
+              className="fas fa-battery-three-quarters text-fg-muted text-[10px]"
               aria-hidden="true"
             ></i>
             {selectedVehicle.capacityKwh} kWh
           </span>
-          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface border border-border text-xs text-gray-200">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface border border-border text-xs text-fg-secondary">
             <i
-              className="fas fa-bolt text-gray-400 text-[10px]"
+              className="fas fa-bolt text-fg-muted text-[10px]"
               aria-hidden="true"
             ></i>
             {formatPower(selectedVehicle.chargerOutputW)}
@@ -51,8 +51,8 @@ export default function StatusBar({
       )}
 
       {!selectedVehicle && (
-        <div className="text-center mt-6 text-gray-400">
-          <p className="text-red-400/90 font-medium text-sm">
+        <div className="text-center mt-6 text-fg-muted">
+          <p className="text-danger/90 font-medium text-sm">
             No vehicle assigned to this plug &mdash; open settings to assign one
           </p>
         </div>

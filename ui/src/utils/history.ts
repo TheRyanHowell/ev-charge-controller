@@ -47,7 +47,7 @@ export function getStatusColor(status: string): string {
     case "holding":
       return "bg-purple-500";
     default:
-      return "bg-gray-500";
+      return "bg-fg-muted";
   }
 }
 
@@ -66,7 +66,7 @@ export function getStatusBadgeClass(status: string): string {
     case "holding":
       return "bg-purple-500/20 text-purple-400 border-purple-500/30";
     default:
-      return "bg-gray-500/20 text-gray-400 border-gray-500/30";
+      return "bg-fg-muted/20 text-fg-muted border-fg-muted/30";
   }
 }
 

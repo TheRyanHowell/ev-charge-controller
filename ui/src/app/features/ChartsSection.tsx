@@ -29,7 +29,7 @@ function ChartCard({
     <div className="flex-1 min-w-0 rounded-xl bg-surface border border-border overflow-hidden flex flex-col">
       <div className="px-4 pt-4 pb-2">
         <span
-          className="text-xs font-medium text-gray-500 uppercase tracking-wider"
+          className="text-xs font-medium text-fg-muted uppercase tracking-wider"
           title={tooltip}
         >
           {title}
@@ -39,7 +39,7 @@ function ChartCard({
       <div className="flex-1 px-4 pb-4">
         <ErrorBoundary
           fallback={
-            <div className="text-center py-8 text-red-400 text-sm">
+            <div className="text-center py-8 text-danger text-sm">
               {fallbackMessage}
             </div>
           }

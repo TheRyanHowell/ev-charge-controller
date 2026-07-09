@@ -258,7 +258,7 @@ describe("useHistory", () => {
     expect(getStatusColor("completed")).toBe("bg-emerald-500");
     expect(getStatusColor("cancelled")).toBe("bg-red-500");
     expect(getStatusColor("active")).toBe("bg-blue-500");
-    expect(getStatusColor("unknown")).toBe("bg-gray-500");
+    expect(getStatusColor("unknown")).toBe("bg-fg-muted");
   });
 
   it("returns correct status badge classes", async () => {
@@ -315,9 +315,9 @@ describe("useHistory", () => {
 
   it("returns default gray class for unknown status", async () => {
     expect(getStatusBadgeClass("unknown")).toBe(
-      "bg-gray-500/20 text-gray-400 border-gray-500/30",
+      "bg-fg-muted/20 text-fg-muted border-fg-muted/30",
     );
-    expect(getStatusColor("unknown")).toBe("bg-gray-500");
+    expect(getStatusColor("unknown")).toBe("bg-fg-muted");
   });
 
   it('handles vehicle change to "all"', async () => {

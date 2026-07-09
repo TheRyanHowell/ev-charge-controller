@@ -32,7 +32,7 @@ describe("RangeDisplay", () => {
     expect(screen.queryByText("→")).not.toBeInTheDocument();
 
     const el = screen.getByText("29-40 mi");
-    expect(el).toHaveClass("text-red-400");
+    expect(el).toHaveClass("text-danger");
   });
 
   it("renders only current (red) when current and target match at same percent", () => {
@@ -43,7 +43,7 @@ describe("RangeDisplay", () => {
     expect(screen.queryByText("→")).not.toBeInTheDocument();
 
     const el = screen.getByText("15-20 mi");
-    expect(el).toHaveClass("text-red-400");
+    expect(el).toHaveClass("text-danger");
   });
 
   it("renders only target (orange) when current percent is 0", () => {
@@ -66,7 +66,7 @@ describe("RangeDisplay", () => {
     expect(screen.getByText("→")).toBeInTheDocument();
 
     const currentEl = screen.getByText("15-20 mi");
-    expect(currentEl).toHaveClass("text-red-400");
+    expect(currentEl).toHaveClass("text-danger");
 
     const targetEl = screen.getByText("23-32 mi");
     expect(targetEl).toHaveClass("text-orange-400");
@@ -81,7 +81,7 @@ describe("RangeDisplay", () => {
     expect(screen.getByText("→")).toBeInTheDocument();
 
     const currentEl = screen.getByText("15-20 mi");
-    expect(currentEl).toHaveClass("text-red-400");
+    expect(currentEl).toHaveClass("text-danger");
 
     const targetEl = screen.getByText("0 mi");
     expect(targetEl).toHaveClass("text-orange-400");
@@ -104,7 +104,7 @@ describe("RangeDisplay", () => {
     expect(screen.queryByText("→")).not.toBeInTheDocument();
 
     const el = screen.getByText("60 mi");
-    expect(el).toHaveClass("text-red-400");
+    expect(el).toHaveClass("text-danger");
   });
 
   it("renders nothing when range is 0", () => {

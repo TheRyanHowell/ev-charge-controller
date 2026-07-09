@@ -19,13 +19,13 @@ export default function DashboardHeader({
 
   return (
     <header className="flex items-center justify-between px-0 py-4 mb-3">
-      <h1 className="text-lg font-semibold tracking-tight text-white">
+      <h1 className="text-lg font-semibold tracking-tight text-fg">
         EV Charge Controller
       </h1>
       <div className="flex items-center gap-1">
         <Link
           href="/history"
-          className="text-gray-500 hover:text-gray-200 transition-colors rounded-lg p-2 hover:bg-surface-raised"
+          className="text-fg-muted hover:text-fg transition-colors rounded-lg p-2 hover:bg-surface-raised"
           title="History"
           aria-label="View charge history"
         >
@@ -33,7 +33,7 @@ export default function DashboardHeader({
         </Link>
         <Link
           href="/vehicles"
-          className="text-gray-500 hover:text-gray-200 transition-colors rounded-lg p-2 hover:bg-surface-raised"
+          className="text-fg-muted hover:text-fg transition-colors rounded-lg p-2 hover:bg-surface-raised"
           title="Vehicles"
           aria-label="View vehicles"
         >
@@ -41,7 +41,7 @@ export default function DashboardHeader({
         </Link>
         <button
           onClick={onOpenSettings}
-          className="text-gray-500 hover:text-gray-200 transition-colors rounded-lg p-2 hover:bg-surface-raised"
+          className="text-fg-muted hover:text-fg transition-colors rounded-lg p-2 hover:bg-surface-raised"
           title="Settings"
           aria-label="Open settings"
         >
@@ -49,7 +49,7 @@ export default function DashboardHeader({
         </button>
         <button
           onClick={handleLogout}
-          className="text-gray-500 hover:text-gray-200 transition-colors rounded-lg p-2 hover:bg-surface-raised"
+          className="text-fg-muted hover:text-fg transition-colors rounded-lg p-2 hover:bg-surface-raised"
           title="Logout"
           aria-label="Log out"
         >

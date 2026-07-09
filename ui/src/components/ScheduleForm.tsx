@@ -138,8 +138,8 @@ export default function ScheduleForm({
       {/* Enable toggle */}
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-medium text-white">Enabled</p>
-          <p className="text-xs text-gray-400 mt-0.5">
+          <p className="text-sm font-medium text-fg">Enabled</p>
+          <p className="text-xs text-fg-muted mt-0.5">
             Auto-start charging on this schedule
           </p>
         </div>
@@ -150,13 +150,13 @@ export default function ScheduleForm({
       <div
         className={`space-y-4 transition-opacity duration-200 ${enabled ? "opacity-100" : "opacity-40 pointer-events-none"}`}
       >
-        <div className="flex rounded-lg overflow-hidden border border-gray-700">
+        <div className="flex rounded-lg overflow-hidden border border-border">
           <button
             type="button"
             onClick={() => setType("daily")}
             className={`flex-1 flex items-center justify-center gap-2 py-2 text-sm font-medium transition-colors
               focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500
-              ${type === "daily" ? "bg-blue-600 text-white" : "bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700"}`}
+              ${type === "daily" ? "bg-blue-600 text-fg" : "bg-surface text-fg-muted hover:text-fg hover:bg-surface-hover"}`}
           >
             <i className="fa-regular fa-clock" aria-hidden="true" />
             Daily
@@ -166,7 +166,7 @@ export default function ScheduleForm({
             onClick={() => setType("carbon_aware")}
             className={`flex-1 flex items-center justify-center gap-2 py-2 text-sm font-medium transition-colors
               focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500
-              ${type === "carbon_aware" ? "bg-green-700 text-white" : "bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700"}`}
+              ${type === "carbon_aware" ? "bg-green-700 text-fg" : "bg-surface text-fg-muted hover:text-fg hover:bg-surface-hover"}`}
           >
             <i className="fa-solid fa-leaf" aria-hidden="true" />
             Carbon-aware
@@ -187,13 +187,13 @@ export default function ScheduleForm({
 
         {type === "daily" ? (
           <div className="space-y-3">
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-fg-muted">
               Start charging at a fixed time each day if below target.
             </p>
             <div className="flex items-center gap-3">
               <label
                 htmlFor={dailyTimeId}
-                className="text-xs font-medium text-gray-400 uppercase tracking-wider whitespace-nowrap"
+                className="text-xs font-medium text-fg-muted uppercase tracking-wider whitespace-nowrap"
               >
                 Start time
               </label>
@@ -205,18 +205,18 @@ export default function ScheduleForm({
                   setDailyTime(e.target.value);
                   setFormError(null);
                 }}
-                className="bg-gray-800 text-white px-3 py-1.5 rounded-md text-sm
-                  border border-gray-600 focus:border-blue-500 focus:outline-none
+                className="bg-surface text-fg px-3 py-1.5 rounded-md text-sm
+                  border border-border focus:border-blue-500 focus:outline-none
                   focus:ring-1 focus:ring-blue-500"
               />
             </div>
 
             <div className="flex items-center justify-between pt-1">
               <div>
-                <p className="text-xs font-medium text-gray-300">
+                <p className="text-xs font-medium text-fg-secondary">
                   Two-stage charging
                 </p>
-                <p className="text-xs text-gray-500 mt-0.5">
+                <p className="text-xs text-fg-muted mt-0.5">
                   Charge to 80% of your target now, hold, then finish to 100% of
                   your target by the ready-by time.
                 </p>
@@ -231,7 +231,7 @@ export default function ScheduleForm({
               <div className="flex items-center gap-3">
                 <label
                   htmlFor={readyById}
-                  className="text-xs font-medium text-gray-400 uppercase tracking-wider whitespace-nowrap"
+                  className="text-xs font-medium text-fg-muted uppercase tracking-wider whitespace-nowrap"
                 >
                   Ready by
                 </label>
@@ -243,18 +243,18 @@ export default function ScheduleForm({
                     setReadyBy(e.target.value);
                     setFormError(null);
                   }}
-                  className="bg-gray-800 text-white px-3 py-1.5 rounded-md text-sm
-                    border border-gray-600 focus:border-blue-500 focus:outline-none
+                  className="bg-surface text-fg px-3 py-1.5 rounded-md text-sm
+                    border border-border focus:border-blue-500 focus:outline-none
                     focus:ring-1 focus:ring-blue-500"
                 />
               </div>
             )}
             {twoStageEnabled && schedule?.estimatedPlan && (
               <div
-                className="text-xs text-gray-400 bg-gray-800/60 rounded-md px-3 py-2 space-y-1"
+                className="text-xs text-fg-muted bg-surface/60 rounded-md px-3 py-2 space-y-1"
                 data-testid="estimated-plan"
               >
-                <p className="text-gray-300 font-medium">Estimated plan</p>
+                <p className="text-fg-secondary font-medium">Estimated plan</p>
                 <p>
                   Stage 1: {schedule.estimatedPlan.stage1Start} –{" "}
                   {schedule.estimatedPlan.stage1End} (to 80%)
@@ -269,7 +269,7 @@ export default function ScheduleForm({
           </div>
         ) : (
           <div className="space-y-3">
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-fg-muted">
               Shifts charging to the cleanest hours of your window. Guarantees
               the vehicle reaches target by the ready-by time.
             </p>
@@ -277,7 +277,7 @@ export default function ScheduleForm({
               <div className="flex items-center gap-3">
                 <label
                   htmlFor={windowStartId}
-                  className="text-xs font-medium text-gray-400 uppercase tracking-wider w-20 shrink-0"
+                  className="text-xs font-medium text-fg-muted uppercase tracking-wider w-20 shrink-0"
                 >
                   Earliest
                 </label>
@@ -289,15 +289,15 @@ export default function ScheduleForm({
                     setWindowStart(e.target.value);
                     setFormError(null);
                   }}
-                  className="bg-gray-800 text-white px-3 py-1.5 rounded-md text-sm
-                    border border-gray-600 focus:border-blue-500 focus:outline-none
+                  className="bg-surface text-fg px-3 py-1.5 rounded-md text-sm
+                    border border-border focus:border-blue-500 focus:outline-none
                     focus:ring-1 focus:ring-blue-500"
                 />
               </div>
               <div className="flex items-center gap-3">
                 <label
                   htmlFor={windowEndId}
-                  className="text-xs font-medium text-gray-400 uppercase tracking-wider w-20 shrink-0"
+                  className="text-xs font-medium text-fg-muted uppercase tracking-wider w-20 shrink-0"
                 >
                   Ready by
                 </label>
@@ -309,8 +309,8 @@ export default function ScheduleForm({
                     setWindowEnd(e.target.value);
                     setFormError(null);
                   }}
-                  className="bg-gray-800 text-white px-3 py-1.5 rounded-md text-sm
-                    border border-gray-600 focus:border-blue-500 focus:outline-none
+                  className="bg-surface text-fg px-3 py-1.5 rounded-md text-sm
+                    border border-border focus:border-blue-500 focus:outline-none
                     focus:ring-1 focus:ring-blue-500"
                 />
               </div>
@@ -318,10 +318,10 @@ export default function ScheduleForm({
 
             <div className="flex items-center justify-between pt-1">
               <div>
-                <p className="text-xs font-medium text-gray-300">
+                <p className="text-xs font-medium text-fg-secondary">
                   Two-stage charging
                 </p>
-                <p className="text-xs text-gray-500 mt-0.5">
+                <p className="text-xs text-fg-muted mt-0.5">
                   Charge to 80% of your target in the cleanest early slot, hold,
                   then finish to 100% of your target before the ready-by time —
                   balancing low carbon with less time spent at a high charge.
@@ -335,10 +335,10 @@ export default function ScheduleForm({
             </div>
             {carbonTwoStageEnabled && schedule?.estimatedPlan && (
               <div
-                className="text-xs text-gray-400 bg-gray-800/60 rounded-md px-3 py-2 space-y-1"
+                className="text-xs text-fg-muted bg-surface/60 rounded-md px-3 py-2 space-y-1"
                 data-testid="estimated-plan"
               >
-                <p className="text-gray-300 font-medium">Estimated plan</p>
+                <p className="text-fg-secondary font-medium">Estimated plan</p>
                 <p>
                   Stage 1: {schedule.estimatedPlan.stage1Start} –{" "}
                   {schedule.estimatedPlan.stage1End} (to 80%)
@@ -353,7 +353,7 @@ export default function ScheduleForm({
           </div>
         )}
         {formError && (
-          <p className="text-xs text-red-400" role="alert">
+          <p className="text-xs text-danger" role="alert">
             {formError}
           </p>
         )}
@@ -365,8 +365,8 @@ export default function ScheduleForm({
           <button
             type="button"
             onClick={onSkip}
-            className="flex-1 px-4 py-2 text-sm font-medium text-gray-300 hover:text-white rounded-lg
-              hover:bg-gray-700 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="flex-1 px-4 py-2 text-sm font-medium text-fg-secondary hover:text-fg rounded-lg
+              hover:bg-surface-hover transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           >
             Skip
           </button>
@@ -375,7 +375,7 @@ export default function ScheduleForm({
           type="button"
           onClick={handleSave}
           disabled={isSaving}
-          className="flex-1 px-4 py-2 text-sm font-medium text-white rounded-lg bg-blue-600
+          className="flex-1 px-4 py-2 text-sm font-medium text-fg rounded-lg bg-blue-600
             hover:bg-blue-500 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed
             transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
         >

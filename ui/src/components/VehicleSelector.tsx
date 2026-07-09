@@ -31,7 +31,7 @@ export default function VehicleSelector({
 
   return (
     <div>
-      <label htmlFor={selectId} className="block text-xs text-gray-400 mb-1">
+      <label htmlFor={selectId} className="block text-xs text-fg-muted mb-1">
         {label}
       </label>
       <select
@@ -39,7 +39,7 @@ export default function VehicleSelector({
         value={selectedVehicleId ?? ""}
         onChange={(e) => onSelectVehicle(e.target.value)}
         disabled={disabled}
-        className="w-full rounded-lg bg-gray-900 border border-gray-700 px-2.5 py-1.5 text-sm text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full rounded-lg bg-surface-raised border border-border px-2.5 py-1.5 text-sm text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         <option value="" disabled>
           Select a vehicle…

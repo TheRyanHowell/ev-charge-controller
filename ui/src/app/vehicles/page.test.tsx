@@ -97,7 +97,7 @@ describe("VehiclesClient", () => {
 
   it("renders vehicle list with names and capacity", () => {
     renderVehiclesClient({ vehicles: defaultVehicles, models: defaultModels });
-    // Capacity appears in vehicle list rows (text-xs text-gray-400)
+    // Capacity appears in vehicle list rows (text-xs text-fg-muted)
     const capacities = screen.getAllByText(/1\.9 kWh/);
     expect(capacities.length).toBeGreaterThanOrEqual(1);
     const capacities2 = screen.getAllByText(/5\.46 kWh/);

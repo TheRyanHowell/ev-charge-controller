@@ -21,13 +21,13 @@ export default function ConsoleCommandsBlock({
 
   return (
     <div className="relative">
-      <pre className="rounded bg-gray-900 border border-gray-700 px-3 py-2 text-xs font-mono text-gray-300 whitespace-pre-wrap break-all">
+      <pre className="rounded bg-surface-raised border border-border px-3 py-2 text-xs font-mono text-fg-secondary whitespace-pre-wrap break-all">
         {commands}
       </pre>
       <button
         type="button"
         onClick={() => void handleCopy()}
-        className="absolute top-2 right-2 rounded bg-gray-700 px-2 py-1 text-xs text-gray-300 hover:bg-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+        className="absolute top-2 right-2 rounded bg-surface px-2 py-1 text-xs text-fg-secondary hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
       >
         {copied ? "Copied!" : "Copy"}
       </button>

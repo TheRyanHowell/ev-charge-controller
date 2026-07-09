@@ -366,7 +366,7 @@ describe("StatsPanel", () => {
       />,
     );
     const intensityValue = screen.getByText("100").closest("div");
-    expect(intensityValue?.className).toContain("text-green-400");
+    expect(intensityValue?.className).toContain("text-success");
 
     rerender(
       <StatsPanel
@@ -375,7 +375,7 @@ describe("StatsPanel", () => {
       />,
     );
     const highIntensityValue = screen.getByText("250").closest("div");
-    expect(highIntensityValue?.className).toContain("text-red-400");
+    expect(highIntensityValue?.className).toContain("text-danger");
   });
 
   it("co2 saved shows estimate when idle", () => {

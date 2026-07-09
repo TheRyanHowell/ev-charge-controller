@@ -150,14 +150,14 @@ export default function VehicleDetailClient({
     : null;
 
   return (
-    <div className="min-h-screen bg-page-bg text-white">
+    <div className="min-h-screen bg-page-bg text-fg">
       <div className="w-full max-w-6xl mx-auto px-4 py-6 sm:px-6 sm:py-8">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-4">
             <Link
               href="/vehicles"
-              className="text-gray-500 hover:text-gray-200 transition-colors rounded-lg p-2 hover:bg-surface-raised"
+              className="text-fg-muted hover:text-fg transition-colors rounded-lg p-2 hover:bg-surface-raised"
               aria-label="Back to vehicles"
             >
               <i className="fas fa-arrow-left text-sm" aria-hidden="true"></i>
@@ -177,13 +177,13 @@ export default function VehicleDetailClient({
                   if (e.key === "Escape") setEditing(false);
                 }}
                 autoFocus
-                className="rounded bg-gray-900 border border-gray-600 px-2 py-1 text-sm text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                className="rounded bg-surface-raised border border-border px-2 py-1 text-sm text-fg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
               />
               <button
                 type="button"
                 onClick={() => updateMutation.mutate()}
                 disabled={updateMutation.isPending || !editName.trim()}
-                className="text-sm text-green-400 hover:text-green-300 disabled:opacity-50 rounded px-1 py-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-green-500"
+                className="text-sm text-success hover:text-success disabled:opacity-50 rounded px-1 py-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-green-500"
                 title="Save"
               >
                 <i className="fa-solid fa-check" />
@@ -191,20 +191,20 @@ export default function VehicleDetailClient({
               <button
                 type="button"
                 onClick={() => setEditing(false)}
-                className="text-sm text-gray-400 hover:text-white rounded px-1 py-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gray-500"
+                className="text-sm text-fg-muted hover:text-fg rounded px-1 py-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-fg-muted"
                 title="Cancel"
               >
                 <i className="fa-solid fa-xmark" />
               </button>
               {editError && (
-                <span className="text-xs text-amber-400 whitespace-nowrap">
+                <span className="text-xs text-warning whitespace-nowrap">
                   {editError}
                 </span>
               )}
             </div>
           ) : (
             <div className="flex items-center gap-3">
-              <h1 className="text-xl font-semibold text-white">
+              <h1 className="text-xl font-semibold text-fg">
                 {initialVehicle.name}
                 {modelName}
               </h1>
@@ -214,7 +214,7 @@ export default function VehicleDetailClient({
                   setEditName(initialVehicle.name);
                   setEditing(true);
                 }}
-                className="text-sm text-gray-500 hover:text-blue-400 rounded px-1 py-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500"
+                className="text-sm text-fg-muted hover:text-accent-muted rounded px-1 py-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500"
                 title="Edit name"
               >
                 <i className="fa-solid fa-pen" />
@@ -222,7 +222,7 @@ export default function VehicleDetailClient({
               <button
                 type="button"
                 onClick={() => setDeleteConfirm(true)}
-                className="text-sm text-gray-500 hover:text-red-400 rounded px-1 py-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-500"
+                className="text-sm text-fg-muted hover:text-danger rounded px-1 py-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-500"
                 title="Delete"
               >
                 <i className="fa-solid fa-trash-can" />
@@ -232,8 +232,8 @@ export default function VehicleDetailClient({
         </div>
 
         {/* Vehicle details */}
-        <div className="mb-6 rounded-xl border border-gray-800 bg-gray-900/80 px-3 py-4">
-          <h2 className="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider">
+        <div className="mb-6 rounded-xl border border-border-subtle bg-surface-raised/80 px-3 py-4">
+          <h2 className="text-sm font-medium text-fg-muted mb-3 uppercase tracking-wider">
             Vehicle Details
           </h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3 text-sm">
@@ -312,8 +312,8 @@ export default function VehicleDetailClient({
               onClick={() => setTimeRange(tr.value)}
               className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                 timeRange === tr.value
-                  ? "bg-blue-600 text-white"
-                  : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
+                  ? "bg-blue-600 text-fg"
+                  : "bg-surface text-fg-muted hover:bg-surface-hover hover:text-fg"
               }`}
             >
               {tr.label}
@@ -323,8 +323,8 @@ export default function VehicleDetailClient({
 
         {!hasData ? (
           <div className="text-center py-16">
-            <p className="text-gray-400 mb-2">No charging data yet</p>
-            <p className="text-gray-500 text-sm">
+            <p className="text-fg-muted mb-2">No charging data yet</p>
+            <p className="text-fg-muted text-sm">
               Complete a charge session to see statistics
             </p>
           </div>
@@ -336,13 +336,13 @@ export default function VehicleDetailClient({
                 icon="fa-bolt"
                 label="Total Energy"
                 value={`${totalWallKwh.toFixed(1)} kWh`}
-                color="text-amber-400"
+                color="text-warning"
               />
               <StatCard
                 icon="fa-plug-circle-bolt"
                 label="Sessions"
                 value={stats.totalSessions.toString()}
-                color="text-blue-400"
+                color="text-accent-muted"
               />
               <StatCard
                 icon="fa-chart-simple"
@@ -354,14 +354,14 @@ export default function VehicleDetailClient({
                 icon="fa-cloud"
                 label="CO₂ Emissions"
                 value={`${stats.totalCo2Grams > 0 ? formatCo2(stats.totalCo2Grams) : "-"}${stats.avgCarbonGCo2PerKwh != null ? ` (${stats.avgCarbonGCo2PerKwh.toFixed(0)} g/kWh)` : ""}`}
-                color="text-gray-400"
+                color="text-fg-muted"
               />
               {totalCost && (
                 <StatCard
                   icon="fa-sterling-sign"
                   label="Total Cost"
                   value={totalCost}
-                  color="text-green-400"
+                  color="text-success"
                 />
               )}
               {avgCostPerSession && (
@@ -391,8 +391,8 @@ export default function VehicleDetailClient({
             </div>
 
             {/* Energy chart */}
-            <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-4">
-              <h2 className="text-sm font-medium text-gray-400 mb-4 uppercase tracking-wider">
+            <div className="rounded-xl border border-border-subtle bg-surface-raised/80 p-4">
+              <h2 className="text-sm font-medium text-fg-muted mb-4 uppercase tracking-wider">
                 Daily Energy
               </h2>
               <ResponsiveContainer width="100%" height={280}>
@@ -441,9 +441,9 @@ export default function VehicleDetailClient({
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
-              <div className="flex items-center justify-center gap-6 mt-3 text-xs text-gray-400">
+              <div className="flex items-center justify-center gap-6 mt-3 text-xs text-fg-muted">
                 <span className="flex items-center gap-1.5">
-                  <span className="inline-block w-2.5 h-2.5 rounded-sm bg-amber-400" />
+                  <span className="inline-block w-2.5 h-2.5 rounded-sm bg-warning" />
                   Wall Energy
                 </span>
               </div>
@@ -451,8 +451,8 @@ export default function VehicleDetailClient({
 
             {/* CO2 emissions chart */}
             {dailyEnergy.some((d) => d.co2Grams > 0) && (
-              <div className="mt-6 rounded-xl border border-gray-800 bg-gray-900/80 p-4">
-                <h2 className="text-sm font-medium text-gray-400 mb-4 uppercase tracking-wider">
+              <div className="mt-6 rounded-xl border border-border-subtle bg-surface-raised/80 p-4">
+                <h2 className="text-sm font-medium text-fg-muted mb-4 uppercase tracking-wider">
                   Daily CO₂ Emissions
                 </h2>
                 <ResponsiveContainer width="100%" height={220}>
@@ -520,13 +520,13 @@ export default function VehicleDetailClient({
                     />
                   </LineChart>
                 </ResponsiveContainer>
-                <div className="flex items-center justify-center gap-6 mt-3 text-xs text-gray-400">
+                <div className="flex items-center justify-center gap-6 mt-3 text-xs text-fg-muted">
                   <span className="flex items-center gap-1.5">
-                    <span className="inline-block w-2.5 h-2.5 rounded-sm bg-gray-500" />
+                    <span className="inline-block w-2.5 h-2.5 rounded-sm bg-fg-muted" />
                     CO₂ Emissions
                   </span>
                   <span className="flex items-center gap-1.5">
-                    <span className="inline-block w-2.5 h-2.5 rounded-sm bg-cyan-400 opacity-40" />
+                    <span className="inline-block w-2.5 h-2.5 rounded-sm bg-info opacity-40" />
                     Grid Carbon Intensity
                   </span>
                 </div>
@@ -536,8 +536,8 @@ export default function VehicleDetailClient({
         )}
 
         {/* CC/CV Charging Profile */}
-        <div className="mt-6 rounded-xl border border-gray-800 bg-gray-900/80 p-4">
-          <h2 className="text-sm font-medium text-gray-400 mb-4 uppercase tracking-wider">
+        <div className="mt-6 rounded-xl border border-border-subtle bg-surface-raised/80 p-4">
+          <h2 className="text-sm font-medium text-fg-muted mb-4 uppercase tracking-wider">
             CC/CV Charging Profile
           </h2>
           <CCVChart vehicle={initialVehicle} />
@@ -545,11 +545,11 @@ export default function VehicleDetailClient({
 
         {/* Delete confirmation dialog */}
         <Dialog isOpen={deleteConfirm} onClose={() => setDeleteConfirm(false)}>
-          <div className="bg-gray-800 rounded-xl border border-gray-700 w-full max-w-sm mx-4 p-5">
-            <h2 className="text-base font-medium text-white mb-2">
+          <div className="bg-surface rounded-xl border border-border w-full max-w-sm mx-4 p-5">
+            <h2 className="text-base font-medium text-fg mb-2">
               Delete vehicle?
             </h2>
-            <p className="text-sm text-gray-400 mb-4">
+            <p className="text-sm text-fg-muted mb-4">
               This will remove the vehicle. Plugs assigned to it will be
               unassigned.
             </p>
@@ -557,7 +557,7 @@ export default function VehicleDetailClient({
               <button
                 type="button"
                 onClick={() => setDeleteConfirm(false)}
-                className="rounded-lg bg-gray-700 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+                className="rounded-lg bg-surface px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
               >
                 Cancel
               </button>
@@ -565,7 +565,7 @@ export default function VehicleDetailClient({
                 type="button"
                 onClick={() => deleteMutation.mutate()}
                 disabled={deleteMutation.isPending}
-                className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 transition-colors"
+                className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-fg hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 transition-colors"
               >
                 Delete
               </button>
@@ -589,10 +589,10 @@ function StatCard({
   color: string;
 }) {
   return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-4">
+    <div className="rounded-xl border border-border-subtle bg-surface-raised/80 p-4">
       <div className="flex items-center gap-2 mb-2">
         <i className={`fas ${icon} text-xs ${color}`} aria-hidden="true"></i>
-        <span className="text-xs text-gray-400">{label}</span>
+        <span className="text-xs text-fg-muted">{label}</span>
       </div>
       <div className={`text-lg font-semibold ${color}`}>{value}</div>
     </div>
@@ -602,8 +602,8 @@ function StatCard({
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="text-xs text-gray-500">{label}</div>
-      <div className="text-gray-200">{value}</div>
+      <div className="text-xs text-fg-muted">{label}</div>
+      <div className="text-fg-secondary">{value}</div>
     </div>
   );
 }

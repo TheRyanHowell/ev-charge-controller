@@ -26,15 +26,15 @@ import {
 const DefaultGridCarbonIntensity = 140;
 
 const CarbonIntensityColors: Record<string, string> = {
-  "very low": "text-green-400",
+  "very low": "text-success",
   low: "text-lime-400",
   moderate: "text-yellow-400",
   high: "text-orange-400",
-  "very high": "text-red-400",
+  "very high": "text-danger",
 };
 
 function getCarbonIntensityColor(index: string | undefined): string {
-  return CarbonIntensityColors[index ?? ""] ?? "text-gray-400";
+  return CarbonIntensityColors[index ?? ""] ?? "text-fg-muted";
 }
 
 interface StatsPanelProps {
@@ -138,47 +138,45 @@ export default function StatsPanel({
       {/* Error */}
       {errorMessage && (
         <div className="col-span-3 rounded-xl bg-surface border border-border px-4 py-3">
-          <div className="text-sm text-red-400 leading-snug">
-            {errorMessage}
-          </div>
+          <div className="text-sm text-danger leading-snug">{errorMessage}</div>
         </div>
       )}
 
       {/* Row 1: Charge Duration | Time Remaining | Target Completion */}
       <div className="rounded-xl bg-surface border border-border px-4 py-3 text-center">
         <span
-          className="text-[10px] font-semibold text-gray-500 uppercase tracking-[0.1em] whitespace-nowrap"
+          className="text-[10px] font-semibold text-fg-muted uppercase tracking-[0.1em] whitespace-nowrap"
           title="Time elapsed since charging started"
         >
           Charge Duration
         </span>
-        <div className="mt-1.5 text-2xl font-bold text-white tabular-nums whitespace-nowrap">
+        <div className="mt-1.5 text-2xl font-bold text-fg tabular-nums whitespace-nowrap">
           {formatDuration(elapsed)}
         </div>
       </div>
 
       <div className="rounded-xl bg-surface border border-border px-4 py-3 text-center">
         <span
-          className="text-[10px] font-semibold text-gray-500 uppercase tracking-[0.1em] whitespace-nowrap"
+          className="text-[10px] font-semibold text-fg-muted uppercase tracking-[0.1em] whitespace-nowrap"
           title="Estimated time until target battery level is reached, based on charger output and battery size"
         >
           Time Remaining
         </span>
-        <div className="mt-1.5 text-2xl font-bold text-white tabular-nums whitespace-nowrap">
+        <div className="mt-1.5 text-2xl font-bold text-fg tabular-nums whitespace-nowrap">
           {remainingSec != null ? formatDuration(remainingSec * 1000) : "-"}
         </div>
       </div>
 
       <div className="rounded-xl bg-surface border border-border px-4 py-3 text-center">
         <span
-          className="text-[10px] font-semibold text-gray-500 uppercase tracking-[0.1em] whitespace-nowrap"
+          className="text-[10px] font-semibold text-fg-muted uppercase tracking-[0.1em] whitespace-nowrap"
           title="Predicted clock time when charging will finish"
         >
           Target Completion
         </span>
         {/* suppressHydrationWarning: toLocaleTimeString uses local timezone, server (UTC) ≠ browser timezone */}
         <div
-          className="mt-1.5 text-2xl font-bold text-white tabular-nums whitespace-nowrap"
+          className="mt-1.5 text-2xl font-bold text-fg tabular-nums whitespace-nowrap"
           suppressHydrationWarning
         >
           {formatCompletionTime(totalTimeMin, baseTime)}
@@ -188,12 +186,12 @@ export default function StatsPanel({
       {/* Row 2: Progress | Current Range | Target Range */}
       <div className="rounded-xl bg-surface border border-border px-4 py-3 text-center">
         <span
-          className="text-[10px] font-semibold text-gray-500 uppercase tracking-[0.1em] whitespace-nowrap"
+          className="text-[10px] font-semibold text-fg-muted uppercase tracking-[0.1em] whitespace-nowrap"
           title="How far through the planned charge - from your start level to the target"
         >
           Progress
         </span>
-        <div className="mt-1.5 text-2xl font-bold text-blue-400 tabular-nums whitespace-nowrap">
+        <div className="mt-1.5 text-2xl font-bold text-accent-muted tabular-nums whitespace-nowrap">
           {Math.floor(progressPct)}%
         </div>
       </div>
@@ -201,12 +199,12 @@ export default function StatsPanel({
       {hasRange && (
         <div className="rounded-xl bg-surface border border-border px-4 py-3 text-center">
           <span
-            className="text-[10px] font-semibold text-gray-500 uppercase tracking-[0.1em] whitespace-nowrap"
+            className="text-[10px] font-semibold text-fg-muted uppercase tracking-[0.1em] whitespace-nowrap"
             title="Estimated driving range at the battery's current level"
           >
             Current Range
           </span>
-          <div className="mt-1.5 text-2xl font-bold text-red-400 whitespace-nowrap">
+          <div className="mt-1.5 text-2xl font-bold text-danger whitespace-nowrap">
             {currentRange}
           </div>
         </div>
@@ -215,7 +213,7 @@ export default function StatsPanel({
       {hasRange && (
         <div className="rounded-xl bg-surface border border-border px-4 py-3 text-center">
           <span
-            className="text-[10px] font-semibold text-gray-500 uppercase tracking-[0.1em] whitespace-nowrap"
+            className="text-[10px] font-semibold text-fg-muted uppercase tracking-[0.1em] whitespace-nowrap"
             title="Estimated driving range when the target battery level is reached"
           >
             Target Range
@@ -229,19 +227,19 @@ export default function StatsPanel({
       {/* Row 3: Power Draw | Current | Voltage */}
       <div className="rounded-xl bg-surface border border-border px-4 py-3 text-center">
         <span
-          className="text-[10px] font-semibold text-gray-500 uppercase tracking-[0.1em] whitespace-nowrap"
+          className="text-[10px] font-semibold text-fg-muted uppercase tracking-[0.1em] whitespace-nowrap"
           title="Electricity being drawn from the charger right now, in kilowatts"
         >
           Power Draw
         </span>
-        <div className="mt-1.5 text-2xl font-bold text-amber-400 tabular-nums whitespace-nowrap">
+        <div className="mt-1.5 text-2xl font-bold text-warning tabular-nums whitespace-nowrap">
           {formatPower(powerDraw)}
         </div>
       </div>
 
       <div className="rounded-xl bg-surface border border-border px-4 py-3 text-center">
         <span
-          className="text-[10px] font-semibold text-gray-500 uppercase tracking-[0.1em] whitespace-nowrap"
+          className="text-[10px] font-semibold text-fg-muted uppercase tracking-[0.1em] whitespace-nowrap"
           title="Electrical current flowing from the charger right now, in amps"
         >
           Current
@@ -253,7 +251,7 @@ export default function StatsPanel({
 
       <div className="rounded-xl bg-surface border border-border px-4 py-3 text-center">
         <span
-          className="text-[10px] font-semibold text-gray-500 uppercase tracking-[0.1em] whitespace-nowrap"
+          className="text-[10px] font-semibold text-fg-muted uppercase tracking-[0.1em] whitespace-nowrap"
           title="Electrical pressure from the charger right now, in volts"
         >
           Voltage
@@ -266,7 +264,7 @@ export default function StatsPanel({
       {/* Row 4: Energy Added | Energy Left | CO₂ Saved */}
       <div className="rounded-xl bg-surface border border-border px-4 py-3 text-center">
         <span
-          className="text-[10px] font-semibold text-gray-500 uppercase tracking-[0.1em] whitespace-nowrap"
+          className="text-[10px] font-semibold text-fg-muted uppercase tracking-[0.1em] whitespace-nowrap"
           title="Electricity stored in the battery this session, in kilowatt-hours"
         >
           Energy Added
@@ -280,7 +278,7 @@ export default function StatsPanel({
 
       <div className="rounded-xl bg-surface border border-border px-4 py-3 text-center">
         <span
-          className="text-[10px] font-semibold text-gray-500 uppercase tracking-[0.1em] whitespace-nowrap"
+          className="text-[10px] font-semibold text-fg-muted uppercase tracking-[0.1em] whitespace-nowrap"
           title="Electricity still needed to reach the target battery level"
         >
           Energy Left
@@ -292,7 +290,7 @@ export default function StatsPanel({
 
       <div className="rounded-xl bg-surface border border-border px-4 py-3 text-center">
         <span
-          className="text-[10px] font-semibold text-gray-500 uppercase tracking-[0.1em] whitespace-nowrap"
+          className="text-[10px] font-semibold text-fg-muted uppercase tracking-[0.1em] whitespace-nowrap"
           title="Estimated CO₂ avoided compared to driving the same distance on petrol, based on current grid carbon intensity"
         >
           CO₂ Saved
@@ -311,7 +309,7 @@ export default function StatsPanel({
       {/* Row 5: Actual Cost | Estimated Cost | Carbon Intensity */}
       <div className="rounded-xl bg-surface border border-border px-4 py-3 text-center">
         <span
-          className="text-[10px] font-semibold text-gray-500 uppercase tracking-[0.1em] whitespace-nowrap"
+          className="text-[10px] font-semibold text-fg-muted uppercase tracking-[0.1em] whitespace-nowrap"
           title="Cost of electricity stored in the battery so far, based on your unit rate"
         >
           Actual Cost
@@ -323,19 +321,19 @@ export default function StatsPanel({
 
       <div className="rounded-xl bg-surface border border-border px-4 py-3 text-center">
         <span
-          className="text-[10px] font-semibold text-gray-500 uppercase tracking-[0.1em] whitespace-nowrap"
+          className="text-[10px] font-semibold text-fg-muted uppercase tracking-[0.1em] whitespace-nowrap"
           title="Projected total cost to charge to the target level"
         >
           Estimated Cost
         </span>
-        <div className="mt-1.5 text-2xl font-bold text-red-400 tabular-nums whitespace-nowrap">
+        <div className="mt-1.5 text-2xl font-bold text-danger tabular-nums whitespace-nowrap">
           {estimatedCost}
         </div>
       </div>
 
       <div className="rounded-xl bg-surface border border-border px-4 py-3 text-center">
         <span
-          className="text-[10px] font-semibold text-gray-500 uppercase tracking-[0.1em] whitespace-nowrap"
+          className="text-[10px] font-semibold text-fg-muted uppercase tracking-[0.1em] whitespace-nowrap"
           title="Current grid CO₂ per kilowatt-hour - lower means greener electricity"
         >
           Carbon Intensity
@@ -344,7 +342,7 @@ export default function StatsPanel({
           className={`mt-1.5 text-2xl font-bold ${carbonIntensityColor} tabular-nums whitespace-nowrap`}
         >
           {gridCarbonIntensity}
-          <span className="text-sm font-normal text-gray-400 ml-1">
+          <span className="text-sm font-normal text-fg-muted ml-1">
             gCO₂/kWh
           </span>
         </div>

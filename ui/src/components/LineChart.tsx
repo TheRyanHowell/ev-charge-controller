@@ -207,7 +207,7 @@ export default function LineChart<T>({
               return renderTooltipContent ? (
                 renderTooltipContent(y, x)
               ) : (
-                <div className="text-xs text-white">
+                <div className="text-xs text-fg">
                   {Math.round(y)}, {x}
                 </div>
               );

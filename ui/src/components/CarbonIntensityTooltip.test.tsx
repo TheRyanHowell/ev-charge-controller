@@ -37,8 +37,8 @@ describe("renderCarbonIntensityTooltip", () => {
     const { container } = render(renderCarbonIntensityTooltip(300, "10:00"));
     const tooltip = container.querySelector("div");
     expect(tooltip).toBeInTheDocument();
-    expect(tooltip).toHaveClass("bg-gray-800");
-    expect(tooltip).toHaveClass("text-white");
+    expect(tooltip).toHaveClass("bg-surface");
+    expect(tooltip).toHaveClass("text-fg");
     expect(tooltip).toHaveClass("text-xs");
     expect(tooltip).toHaveClass("rounded");
   });
@@ -52,7 +52,7 @@ describe("renderCarbonIntensityTooltip", () => {
 
   it("renders timestamp with gray-400 color class", () => {
     const { container } = render(renderCarbonIntensityTooltip(300, "10:00"));
-    const timeSpan = container.querySelector(".text-gray-400");
+    const timeSpan = container.querySelector(".text-fg-muted");
     expect(timeSpan).toBeInTheDocument();
   });
 

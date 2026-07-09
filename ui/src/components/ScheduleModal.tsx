@@ -28,16 +28,16 @@ export default function ScheduleModal({
 
   return (
     <Dialog isOpen onClose={onClose} aria-labelledby={titleId}>
-      <div className="w-[420px] max-w-full mx-4 bg-gray-900 rounded-xl shadow-2xl overflow-hidden">
+      <div className="w-[420px] max-w-full mx-4 bg-surface-raised rounded-xl shadow-2xl overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
-          <h2 id={titleId} className="text-lg font-semibold text-white">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+          <h2 id={titleId} className="text-lg font-semibold text-fg">
             Charge Schedule
           </h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors rounded-lg p-1.5
-              hover:bg-gray-700/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="text-fg-muted hover:text-fg transition-colors rounded-lg p-1.5
+              hover:bg-surface-hover/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             aria-label="Close schedule settings"
           >
             <svg
