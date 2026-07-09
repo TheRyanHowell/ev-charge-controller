@@ -387,6 +387,13 @@ func (s *ChargeSessionService) CheckAndStopConditioningSession(ctx context.Conte
 	s.monitoring.CheckAndStopConditioningSession(ctx, s)
 }
 
+// CheckAndStopIdleSession auto-completes a session whose plug has drawn
+// near-zero power for longer than the idle timeout, even though the
+// session's energy target was never reached.
+func (s *ChargeSessionService) CheckAndStopIdleSession(ctx context.Context) {
+	s.monitoring.CheckAndStopIdleSession(ctx, s)
+}
+
 // CheckAndResumeHoldingSession resumes a two-stage session held at its
 // intermediate percent once it's time to reach the real target by the
 // schedule's ready-by deadline.

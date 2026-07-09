@@ -24,6 +24,7 @@ func (w *AutoStopChecker) Start(ctx context.Context) {
 	RunTickerWorker(ctx, w.pollInterval, "Auto-stop checker", func(ctx context.Context) {
 		w.chargeService.CheckAndAutoStopReachingSession(ctx)
 		w.chargeService.CheckAndStopConditioningSession(ctx)
+		w.chargeService.CheckAndStopIdleSession(ctx)
 		w.chargeService.CheckAndResumeHoldingSession(ctx)
 	})
 }

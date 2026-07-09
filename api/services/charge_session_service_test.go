@@ -1950,6 +1950,45 @@ func TestChargeSessionService_CheckAndStopConditioningSession_NoActive(t *testin
 	// Should be a no-op when no active session
 }
 
+func TestChargeSessionService_CheckAndStopIdleSession_NoActive(t *testing.T) {
+	db := setupServiceTestDB(t)
+
+	service := NewChargeSessionService(context.Background(), repository.NewChargeSessionRepository(db), repository.NewVehicleRepository(db), nil, nil, nil, nil)
+	defer service.Shutdown()
+
+	service.CheckAndStopIdleSession(context.Background())
+	// Should be a no-op when no active session
+}
+
+func TestChargeSessionService_CheckAndStopIdleSession_TasmotaError(t *testing.T) {
+	db := setupServiceTestDB(t)
+
+	// ctrl.setPowerErr causes the power-off confirmation to fail - equivalent
+	// to an unreachable Tasmota device at stop time.
+	ctrl := newMockPlugCtrl()
+	ctrl.setPowerErr = errors.New("connection refused")
+	service := NewChargeSessionService(context.Background(), repository.NewChargeSessionRepository(db), repository.NewVehicleRepository(db), nil, ctrl, nil, nil)
+	defer service.Shutdown()
+
+	startTime := time.Now().Add(-30 * time.Minute)
+	insertActiveSession(t, db, "session-idle-tasmota-err", testVehicleID, 1.62, 2.03, 80, 100, ptrFloat64(1.7), &startTime)
+
+	sessRepo := repository.NewChargeSessionRepository(db)
+	now := time.Now()
+	seedIdlePowerReadings(t, sessRepo, "session-idle-tasmota-err", now.Add(-20*time.Minute), now, 5)
+
+	assert.NotPanics(t, func() {
+		service.CheckAndStopIdleSession(context.Background())
+	})
+
+	// The DB write (session end + stats) happens regardless of whether the
+	// plug's power-off is confirmed - only the Tasmota confirmation failed.
+	completed, err := sessRepo.FindByID(context.Background(), "session-idle-tasmota-err")
+	require.NoError(t, err)
+	require.NotNil(t, completed)
+	assert.Equal(t, models.SessionStatusCompleted, completed.Status)
+}
+
 func TestChargeSessionService_CancelPendingIfTimedOut_NoPending(t *testing.T) {
 	db := setupServiceTestDB(t)
 

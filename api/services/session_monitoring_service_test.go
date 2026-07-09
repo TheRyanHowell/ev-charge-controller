@@ -11,6 +11,7 @@ import (
 	"ev-charge-controller/api/repository"
 	"ev-charge-controller/api/tasmota"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -672,6 +673,312 @@ func TestSessionMonitoringService_CheckAndStopConditioningSession_AboveThreshold
 	stopper := &mockSessionStopper{}
 	service.CheckAndStopConditioningSession(context.Background(), stopper)
 	assert.False(t, stopper.stopped)
+}
+
+func TestSessionMonitoringService_CheckAndStopIdleSession_NoActive(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	stopper := &mockSessionStopper{}
+	service.CheckAndStopIdleSession(context.Background(), stopper)
+	assert.False(t, stopper.stopped)
+}
+
+func TestSessionMonitoringService_CheckAndStopIdleSession_NotActiveOrConditioning(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	session := &models.ChargeSession{
+		VehicleID:     testVehicleID,
+		UserID:        testUserIDPtr,
+		PlugID:        testPlugIDPtr,
+		StartPercent:  80,
+		StartKwh:      1.62,
+		TargetPercent: 100,
+		TargetKwh:     2.03,
+		Status:        models.SessionStatusPending,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+
+	stopper := &mockSessionStopper{}
+	service.CheckAndStopIdleSession(context.Background(), stopper)
+	assert.False(t, stopper.stopped)
+}
+
+func TestSessionMonitoringService_CheckAndStopIdleSession_NoStartedAt(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	// Created directly as Active (bypassing ActivatePending) leaves StartedAt nil.
+	session := &models.ChargeSession{
+		VehicleID:     testVehicleID,
+		UserID:        testUserIDPtr,
+		PlugID:        testPlugIDPtr,
+		StartPercent:  80,
+		StartKwh:      1.62,
+		TargetPercent: 100,
+		TargetKwh:     2.03,
+		Status:        models.SessionStatusActive,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+
+	stopper := &mockSessionStopper{}
+	service.CheckAndStopIdleSession(context.Background(), stopper)
+	assert.False(t, stopper.stopped)
+}
+
+func TestSessionMonitoringService_CheckAndStopIdleSession_BelowMinDuration(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	session := &models.ChargeSession{
+		VehicleID:     testVehicleID,
+		UserID:        testUserIDPtr,
+		PlugID:        testPlugIDPtr,
+		StartPercent:  80,
+		StartKwh:      1.62,
+		TargetPercent: 100,
+		TargetKwh:     2.03,
+		Status:        models.SessionStatusPending,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+	// Started 2 minutes ago - below MinSessionDurationBeforeIdleCheck (10 min).
+	require.NoError(t, sessRepo.ActivatePending(context.Background(), session.ID, time.Now().Add(-2*time.Minute)))
+
+	now := time.Now()
+	seedIdlePowerReadings(t, sessRepo, session.ID, now.Add(-20*time.Minute), now, 5)
+
+	stopper := &mockSessionStopper{}
+	service.CheckAndStopIdleSession(context.Background(), stopper)
+	assert.False(t, stopper.stopped)
+}
+
+func TestSessionMonitoringService_CheckAndStopIdleSession_NoReadings(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	session := &models.ChargeSession{
+		VehicleID:     testVehicleID,
+		UserID:        testUserIDPtr,
+		PlugID:        testPlugIDPtr,
+		StartPercent:  80,
+		StartKwh:      1.62,
+		TargetPercent: 100,
+		TargetKwh:     2.03,
+		Status:        models.SessionStatusPending,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+	require.NoError(t, sessRepo.ActivatePending(context.Background(), session.ID, time.Now().Add(-30*time.Minute)))
+
+	stopper := &mockSessionStopper{}
+	service.CheckAndStopIdleSession(context.Background(), stopper)
+	assert.False(t, stopper.stopped)
+}
+
+func TestSessionMonitoringService_CheckAndStopIdleSession_CurrentlyCharging(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	session := &models.ChargeSession{
+		VehicleID:     testVehicleID,
+		UserID:        testUserIDPtr,
+		PlugID:        testPlugIDPtr,
+		StartPercent:  20,
+		StartKwh:      0.38,
+		TargetPercent: 100,
+		TargetKwh:     2.03,
+		Status:        models.SessionStatusPending,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+	require.NoError(t, sessRepo.ActivatePending(context.Background(), session.ID, time.Now().Add(-30*time.Minute)))
+
+	now := time.Now()
+	// Idle for 20 minutes, but the most recent reading shows real current again.
+	seedIdlePowerReadings(t, sessRepo, session.ID, now.Add(-20*time.Minute), now.Add(-time.Minute), 5)
+	require.NoError(t, sessRepo.CreatePowerReading(context.Background(), &models.PowerReading{
+		ID:        uuid.New().String(),
+		SessionID: session.ID,
+		Timestamp: now,
+		Power:     900,
+		Current:   4,
+		Voltage:   240,
+		EnergyKwh: 1.7,
+	}))
+
+	stopper := &mockSessionStopper{}
+	service.CheckAndStopIdleSession(context.Background(), stopper)
+	assert.False(t, stopper.stopped)
+}
+
+func TestSessionMonitoringService_CheckAndStopIdleSession_IdleBelowTimeout(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	session := &models.ChargeSession{
+		VehicleID:     testVehicleID,
+		UserID:        testUserIDPtr,
+		PlugID:        testPlugIDPtr,
+		StartPercent:  80,
+		StartKwh:      1.62,
+		TargetPercent: 100,
+		TargetKwh:     2.03,
+		Status:        models.SessionStatusPending,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+	require.NoError(t, sessRepo.ActivatePending(context.Background(), session.ID, time.Now().Add(-30*time.Minute)))
+
+	now := time.Now()
+	// Idle streak only 5 minutes long - below IdleSessionTimeout (15 min).
+	seedIdlePowerReadings(t, sessRepo, session.ID, now.Add(-5*time.Minute), now, 5)
+
+	stopper := &mockSessionStopper{}
+	service.CheckAndStopIdleSession(context.Background(), stopper)
+	assert.False(t, stopper.stopped)
+}
+
+func TestSessionMonitoringService_CheckAndStopIdleSession_IdleBeyondTimeout_Active(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	session := &models.ChargeSession{
+		VehicleID:     testVehicleID,
+		UserID:        testUserIDPtr,
+		PlugID:        testPlugIDPtr,
+		StartPercent:  80,
+		StartKwh:      1.62,
+		TargetPercent: 100,
+		TargetKwh:     2.03,
+		Status:        models.SessionStatusPending,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+	require.NoError(t, sessRepo.ActivatePending(context.Background(), session.ID, time.Now().Add(-90*time.Minute)))
+
+	now := time.Now()
+	// Real charging for the first hour, then idle for the last 20 minutes -
+	// mirrors the production example (charging, then BMS stops before target).
+	seedIdlePowerReadings(t, sessRepo, session.ID, now.Add(-60*time.Minute), now.Add(-21*time.Minute), 900)
+	seedIdlePowerReadings(t, sessRepo, session.ID, now.Add(-20*time.Minute), now, 5)
+
+	stopper := &mockSessionStopper{}
+	service.CheckAndStopIdleSession(context.Background(), stopper)
+	assert.True(t, stopper.stopped)
+}
+
+func TestSessionMonitoringService_CheckAndStopIdleSession_IdleBeyondTimeout_Conditioning(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	session := &models.ChargeSession{
+		VehicleID:     testVehicleID,
+		UserID:        testUserIDPtr,
+		PlugID:        testPlugIDPtr,
+		StartPercent:  80,
+		StartKwh:      1.62,
+		TargetPercent: 100,
+		TargetKwh:     2.03,
+		Status:        models.SessionStatusPending,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+	require.NoError(t, sessRepo.ActivatePending(context.Background(), session.ID, time.Now().Add(-90*time.Minute)))
+	require.NoError(t, sessRepo.UpdateStatus(context.Background(), session.ID, models.SessionStatusConditioning))
+
+	now := time.Now()
+	seedIdlePowerReadings(t, sessRepo, session.ID, now.Add(-20*time.Minute), now, 5)
+
+	stopper := &mockSessionStopper{}
+	service.CheckAndStopIdleSession(context.Background(), stopper)
+	assert.True(t, stopper.stopped)
+}
+
+func TestSessionMonitoringService_CheckAndStopIdleSession_GetActiveError(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
+
+	require.NoError(t, db.Close())
+
+	stopper := &mockSessionStopper{}
+	service.CheckAndStopIdleSession(context.Background(), stopper)
+	assert.False(t, stopper.stopped)
+}
+
+// seedIdlePowerReadings inserts evenly spaced power readings between start and
+// end (inclusive), all below models.IdlePowerThresholdW, for the given power draw.
+func seedIdlePowerReadings(t *testing.T, sessRepo *repository.ChargeSessionRepository, sessionID string, start, end time.Time, powerW float64) {
+	t.Helper()
+	const steps = 4
+	span := end.Sub(start)
+	for i := 0; i <= steps; i++ {
+		ts := start.Add(time.Duration(i) * span / steps)
+		require.NoError(t, sessRepo.CreatePowerReading(context.Background(), &models.PowerReading{
+			ID:        uuid.New().String(),
+			SessionID: sessionID,
+			Timestamp: ts,
+			Power:     powerW,
+			Current:   0.2,
+			Voltage:   250,
+			EnergyKwh: 1.7,
+		}))
+	}
 }
 
 func TestSessionMonitoringService_CheckAndResumeHoldingSession_NoActiveSession(t *testing.T) {

@@ -380,6 +380,63 @@ func (s *SessionMonitoringService) CheckAndAutoStopReachingSession(ctx context.C
 	}
 }
 
+// CheckAndStopIdleSession auto-completes an active or conditioning session
+// whose plug has drawn near-zero power for IdleSessionTimeout, even though
+// the session's energy target was never reached. This covers vehicles whose
+// BMS stops drawing current before the energy model's blended kWh reaches
+// TargetKwh, so neither CheckAndAutoStopReachingSession nor
+// CheckAndStopConditioningSession ever arms - without this check such a
+// session sits "active" indefinitely until manually stopped.
+func (s *SessionMonitoringService) CheckAndStopIdleSession(ctx context.Context, stopper sessionStopper) {
+	activeSession, err := s.sessionReader.GetActive(ctx)
+	if err != nil || activeSession == nil {
+		return
+	}
+	if activeSession.Status != models.SessionStatusActive && activeSession.Status != models.SessionStatusConditioning {
+		return
+	}
+	if activeSession.StartedAt == nil || time.Since(*activeSession.StartedAt) < models.MinSessionDurationBeforeIdleCheck {
+		return
+	}
+
+	readings, err := s.powerReadingRepo.GetPowerReadings(ctx, activeSession.ID)
+	if err != nil || len(readings) == 0 {
+		return
+	}
+
+	idleSince, isIdle := idleStreakStart(readings)
+	if !isIdle || time.Since(idleSince) < models.IdleSessionTimeout {
+		return
+	}
+
+	slog.Info("[IDLE-STOP] Power idle beyond timeout, completing session", "sessionID", activeSession.ID, "idleSince", idleSince)
+	result, err := stopper.stopWithPercent(ctx, activeSession, models.MaxPercent, models.StopAutoComplete)
+	if err != nil {
+		slog.Error("[IDLE-STOP] Error completing session", "err", err)
+	} else if !result.Stopped {
+		slog.Error("[IDLE-STOP] Tasmota stop failed", "tasmotaErr", result.TasmotaErr)
+	} else {
+		slog.Info("[IDLE-STOP] Session completed", "sessionID", activeSession.ID)
+	}
+}
+
+// idleStreakStart returns the timestamp of the earliest reading in the
+// unbroken run of sub-IdlePowerThresholdW readings ending at the most recent
+// reading, and whether the most recent reading is itself idle. readings must
+// be ordered oldest-first (as returned by PowerReadingReader.GetPowerReadings).
+func idleStreakStart(readings []models.PowerReading) (time.Time, bool) {
+	last := readings[len(readings)-1]
+	if last.Power >= models.IdlePowerThresholdW {
+		return time.Time{}, false
+	}
+
+	streakStart := last.Timestamp
+	for i := len(readings) - 1; i >= 0 && readings[i].Power < models.IdlePowerThresholdW; i-- {
+		streakStart = readings[i].Timestamp
+	}
+	return streakStart, true
+}
+
 // holdSession powers off the plug and transitions a two-stage session to holding
 // once it reaches its intermediate hold point. Only transitions on confirmed
 // power-off; an unconfirmed attempt is retried on the next poll tick.

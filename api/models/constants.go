@@ -63,6 +63,26 @@ const (
 	ConditioningStopThresholdFraction = 0.10
 )
 
+// Idle-plug auto-stop thresholds.
+// Covers sessions where the vehicle's BMS stops drawing current before the
+// energy model's blended kWh reaches the session target (so the session never
+// arms the conditioning taper-stop above), but the plug stays online. Without
+// this check such a session sits "active" indefinitely until manually stopped.
+const (
+	// IdlePowerThresholdW is the wall power, in watts, below which the plug is
+	// considered to be delivering no meaningful charge current - i.e. standby
+	// draw rather than an active charge. Comfortably above typical smart-plug
+	// standby draw (~5-6W observed) and comfortably below real charging load.
+	IdlePowerThresholdW = 30
+	// IdleSessionTimeout is how long power must stay continuously below
+	// IdlePowerThresholdW before an active/conditioning session is assumed
+	// finished and auto-completed at 100%.
+	IdleSessionTimeout = 15 * time.Minute
+	// MinSessionDurationBeforeIdleCheck guards against false positives during a
+	// session's initial handshake, before real charge current has ramped up.
+	MinSessionDurationBeforeIdleCheck = 10 * time.Minute
+)
+
 // Two-stage (ready-by) charging thresholds.
 const (
 	// TwoStageHoldFraction is the fraction of a vehicle's target percent charged
