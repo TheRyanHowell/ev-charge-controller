@@ -48,7 +48,6 @@ func subscribeAndCollect(t *testing.T, brokerURL, topic string) <-chan []byte {
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
 
 	cfg := autopaho.ClientConfig{
 		BrokerUrls:        []*url.URL{u},
@@ -74,6 +73,23 @@ func subscribeAndCollect(t *testing.T, brokerURL, topic string) <-chan []byte {
 	cm, err := autopaho.NewConnection(ctx, cfg)
 	require.NoError(t, err)
 	require.NoError(t, cm.AwaitConnection(ctx))
+
+	// Disconnect before cancelling ctx, and before the test's embedded broker
+	// is closed (see startTestBroker/TasmotaHandler.Close). A bare context
+	// cancel tears the connection down asynchronously; if the broker starts
+	// shutting down while that's still in flight, its client-registry lock
+	// can contend with this connection's own teardown/reconnect goroutines
+	// long enough to look like a hang under `go test -race` on a constrained
+	// CI runner. Cleanups run LIFO, so registering this after AwaitConnection
+	// means it also runs before startTestBroker's srv.Close (registered
+	// first, so it runs last).
+	t.Cleanup(func() {
+		disconnectCtx, done := context.WithTimeout(context.Background(), 2*time.Second)
+		_ = cm.Disconnect(disconnectCtx)
+		done()
+		cancel()
+	})
+
 	return ch
 }
 
@@ -211,6 +227,10 @@ func TestTasmotaHandler_MQTTCommand_PowerOnOff(t *testing.T) {
 	mqttURL, _ := url.Parse(brokerURL)
 	conn, err := net.Dial("tcp", mqttURL.Host)
 	require.NoError(t, err)
+	// This connection is never disconnected otherwise, so it's still open
+	// when the test's embedded broker starts shutting down - see the
+	// subscribeAndCollect comment for why that races the broker's Close.
+	t.Cleanup(func() { _ = conn.Close() })
 
 	var wg sync.WaitGroup
 	wg.Add(1)

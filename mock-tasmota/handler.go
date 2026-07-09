@@ -105,13 +105,32 @@ func (h *TasmotaHandler) getPowerState() string {
 	return "OFF"
 }
 
-// Close cancels any active MQTT connection. Call this in test cleanup to
-// prevent leaked autopaho connections from interfering with subsequent tests.
+// mqttDisconnectTimeout bounds how long Close waits for a graceful MQTT
+// disconnect before giving up and just cancelling the connection's context.
+const mqttDisconnectTimeout = 2 * time.Second
+
+// Close disconnects any active MQTT connection and cancels its context. Call
+// this in test cleanup to prevent leaked autopaho connections from still
+// being mid-(re)connect when a test's embedded broker starts shutting down -
+// mochi-mqtt's Close locks its client registry to tear down existing
+// clients, and a connection attempt still in flight can contend that same
+// lock long enough to look like a hang under `go test -race` on a
+// constrained CI runner. Disconnecting synchronously first, before the
+// broker closes, avoids that race.
 func (h *TasmotaHandler) Close() {
 	h.mqttMu.Lock()
-	defer h.mqttMu.Unlock()
-	if h.mqttCancel != nil {
-		h.mqttCancel()
-		h.mqttCancel = nil
+	cm := h.mqttConn
+	cancel := h.mqttCancel
+	h.mqttConn = nil
+	h.mqttCancel = nil
+	h.mqttMu.Unlock()
+
+	if cm != nil {
+		ctx, done := context.WithTimeout(context.Background(), mqttDisconnectTimeout)
+		_ = cm.Disconnect(ctx)
+		done()
+	}
+	if cancel != nil {
+		cancel()
 	}
 }
