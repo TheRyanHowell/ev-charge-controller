@@ -132,15 +132,15 @@ export function GaugeOverlay({
           disabled={isDisabled}
           style={{ pointerEvents: "auto", width: "100%", height: "100%" }}
           className={`
-            rounded-full text-fg font-bold tracking-wider text-lg
+            rounded-full font-bold tracking-wider text-lg
             transition-all duration-200
             focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-page-bg
             ${
               isChargingOrPending
-                ? "bg-red-600 hover:bg-red-500 active:scale-[0.95] shadow-lg shadow-red-600/30"
+                ? "bg-red-700 text-white hover:bg-red-600 active:scale-[0.95] shadow-lg shadow-red-600/30"
                 : isCharged || tasmotaConnected === false
                   ? "bg-surface-hover cursor-not-allowed text-fg-muted"
-                  : "bg-green-600 hover:bg-green-500 active:scale-[0.95] shadow-lg shadow-green-600/30"
+                  : "bg-green-700 text-white hover:bg-green-600 active:scale-[0.95] shadow-lg shadow-green-600/30"
             }
           `}
           aria-label={
@@ -239,7 +239,7 @@ export function GaugeOverlay({
             aria-hidden="true"
           />
           {scheduleActive && (
-            <span className="text-[10px] leading-none uppercase tracking-wide opacity-80">
+            <span className="text-[10px] leading-none uppercase tracking-wide">
               {scheduleUnreachable
                 ? "Warning"
                 : schedule?.type === "carbon_aware"
