@@ -46,7 +46,7 @@ function PrimaryButton({
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-fg
+      className="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white
         hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed
         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
     >
@@ -102,7 +102,7 @@ function WifiSetupStep({ onNext }: { onNext: () => void }) {
           <li key={i} className="flex gap-3">
             <span
               className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full
-              bg-blue-600 text-xs font-bold text-fg"
+              bg-blue-600 text-xs font-bold text-white"
             >
               {i + 1}
             </span>
@@ -725,7 +725,7 @@ function NotificationsStep({
               type="button"
               onClick={() => void handleSubscribe()}
               disabled={loading}
-              className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-fg
+              className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white
                 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed
                 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
             >

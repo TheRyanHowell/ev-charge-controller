@@ -104,7 +104,7 @@ function AutoConfigureForm({
           type="button"
           onClick={() => void handleSubmit()}
           disabled={!ip.trim() || loading}
-          className="flex-1 rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-fg hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+          className="flex-1 rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
         >
           {loading ? "Configuring…" : "Configure →"}
         </button>
@@ -524,6 +524,7 @@ function PlugControls({
       {/* Status dot + name + icon buttons */}
       <div className="flex items-center gap-2">
         <span
+          role="img"
           className={`h-2 w-2 shrink-0 rounded-full ${dotCls}`}
           aria-label={dotLabel}
         />

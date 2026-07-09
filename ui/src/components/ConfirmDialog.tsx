@@ -92,7 +92,7 @@ export default function ConfirmDialog({
             ref={confirmBtnRef}
             type="button"
             onClick={onConfirm}
-            className={`px-4 py-2 text-sm font-medium text-fg rounded-lg
+            className={`px-4 py-2 text-sm font-medium text-white rounded-lg
               focus:outline-none focus-visible:ring-2 ${confirmClasses}
               transition-colors`}
           >

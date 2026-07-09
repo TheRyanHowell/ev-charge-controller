@@ -314,7 +314,7 @@ export default function VehicleDetailClient({
               onClick={() => setTimeRange(tr.value)}
               className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                 timeRange === tr.value
-                  ? "bg-blue-600 text-fg"
+                  ? "bg-blue-600 text-white"
                   : "bg-surface text-fg-muted hover:bg-surface-hover hover:text-fg"
               }`}
             >
@@ -573,7 +573,7 @@ export default function VehicleDetailClient({
                 type="button"
                 onClick={() => deleteMutation.mutate()}
                 disabled={deleteMutation.isPending}
-                className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-fg hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 transition-colors"
+                className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 transition-colors"
               >
                 Delete
               </button>

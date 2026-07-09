@@ -434,7 +434,7 @@ function AutoConfigAddPlugForm({
             (needsVehicleSelection && !selection) ||
             loading
           }
-          className="flex-1 rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-fg hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+          className="flex-1 rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
         >
           {loading ? "Configuring…" : "Configure →"}
         </button>
@@ -547,7 +547,7 @@ function ManualAddPlugForm({
           <button
             type="button"
             onClick={handleDone}
-            className="flex-1 rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-fg hover:bg-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+            className="flex-1 rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
           >
             Done ✓
           </button>
@@ -623,7 +623,7 @@ function ManualAddPlugForm({
           disabled={
             !name.trim() || (needsVehicleSelection && !selection) || loading
           }
-          className="flex-1 rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-fg hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+          className="flex-1 rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
         >
           {loading ? "Creating…" : "Generate credentials →"}
         </button>

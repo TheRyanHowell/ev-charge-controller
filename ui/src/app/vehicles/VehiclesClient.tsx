@@ -126,7 +126,7 @@ export default function VehiclesClient({
             type="button"
             onClick={() => setShowAdd(true)}
             disabled={createMutation.isPending}
-            className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-fg hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+            className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
           >
             <i className="fa-solid fa-plus mr-1" /> Add vehicle
           </button>
@@ -147,7 +147,7 @@ export default function VehiclesClient({
             <button
               type="button"
               onClick={() => setShowAdd(true)}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-fg hover:bg-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
             >
               Add your first vehicle
             </button>
@@ -380,7 +380,7 @@ export default function VehiclesClient({
                 deleteConfirmId && deleteMutation.mutate(deleteConfirmId)
               }
               disabled={deleteMutation.isPending}
-              className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-fg hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 transition-colors"
+              className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 transition-colors"
             >
               Delete
             </button>
