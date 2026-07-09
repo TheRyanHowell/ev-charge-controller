@@ -27,6 +27,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@axe-core/react": "^4.12.1",
     "@tailwindcss/postcss": "^4",
     "@tanstack/react-query-devtools": "^5.101.0",
     "@testing-library/jest-dom": "^6.8.0",

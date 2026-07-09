@@ -18,6 +18,12 @@ vi.mock("@/components/ThemeWatcher", () => ({
   default: () => <div data-testid="theme-watcher" />,
 }));
 
+// AxeAuditor dynamically imports @axe-core/react, which needs
+// requestIdleCallback - not implemented in jsdom.
+vi.mock("@/components/AxeAuditor", () => ({
+  default: () => null,
+}));
+
 import type { ReactElement } from "react";
 
 import RootLayout from "./layout";

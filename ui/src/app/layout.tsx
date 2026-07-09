@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import AxeAuditor from "@/components/AxeAuditor";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import ServiceWorkerRegistrar from "@/components/ServiceWorkerRegistrar";
 import ThemeWatcher from "@/components/ThemeWatcher";
@@ -57,6 +58,7 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-full flex flex-col">
+        <AxeAuditor />
         <ThemeWatcher />
         <ServiceWorkerRegistrar />
         <ErrorBoundary>
