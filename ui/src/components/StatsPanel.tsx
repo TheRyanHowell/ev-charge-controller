@@ -27,9 +27,9 @@ const DefaultGridCarbonIntensity = 140;
 
 const CarbonIntensityColors: Record<string, string> = {
   "very low": "text-success",
-  low: "text-lime-400",
-  moderate: "text-yellow-400",
-  high: "text-orange-400",
+  low: "text-lime-700 dark:text-lime-400",
+  moderate: "text-yellow-700 dark:text-yellow-400",
+  high: "text-orange-700 dark:text-orange-400",
   "very high": "text-danger",
 };
 
@@ -218,7 +218,7 @@ export default function StatsPanel({
           >
             Target Range
           </span>
-          <div className="mt-1.5 text-2xl font-bold text-orange-400 whitespace-nowrap">
+          <div className="mt-1.5 text-2xl font-bold text-orange-700 dark:text-orange-400 whitespace-nowrap">
             {targetRange}
           </div>
         </div>
@@ -256,7 +256,7 @@ export default function StatsPanel({
         >
           Voltage
         </span>
-        <div className="mt-1.5 text-2xl font-bold text-yellow-400 tabular-nums whitespace-nowrap">
+        <div className="mt-1.5 text-2xl font-bold text-yellow-700 dark:text-yellow-400 tabular-nums whitespace-nowrap">
           {formatVoltage(voltage ?? 0)}
         </div>
       </div>
@@ -269,7 +269,7 @@ export default function StatsPanel({
         >
           Energy Added
         </span>
-        <div className="mt-1.5 text-2xl font-bold text-emerald-400 tabular-nums whitespace-nowrap">
+        <div className="mt-1.5 text-2xl font-bold text-emerald-700 dark:text-emerald-400 tabular-nums whitespace-nowrap">
           {energyAddedKwh != null
             ? `${energyAddedKwh.toFixed(2)} kWh`
             : "0.00 kWh"}
@@ -283,7 +283,7 @@ export default function StatsPanel({
         >
           Energy Left
         </span>
-        <div className="mt-1.5 text-2xl font-bold text-purple-400 tabular-nums whitespace-nowrap">
+        <div className="mt-1.5 text-2xl font-bold text-purple-700 dark:text-purple-400 tabular-nums whitespace-nowrap">
           {formatEnergy(energyRemainingKwh)}
         </div>
       </div>
@@ -295,7 +295,7 @@ export default function StatsPanel({
         >
           CO₂ Saved
         </span>
-        <div className="mt-1.5 text-2xl font-bold text-lime-400 tabular-nums whitespace-nowrap">
+        <div className="mt-1.5 text-2xl font-bold text-lime-700 dark:text-lime-400 tabular-nums whitespace-nowrap">
           {co2SavedGrams > 0
             ? `${
                 co2SavedGrams >= 1000
@@ -314,7 +314,7 @@ export default function StatsPanel({
         >
           Actual Cost
         </span>
-        <div className="mt-1.5 text-2xl font-bold text-rose-400 tabular-nums whitespace-nowrap">
+        <div className="mt-1.5 text-2xl font-bold text-rose-700 dark:text-rose-400 tabular-nums whitespace-nowrap">
           {actualCost}
         </div>
       </div>
