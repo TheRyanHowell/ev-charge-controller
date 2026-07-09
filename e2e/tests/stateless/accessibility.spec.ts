@@ -95,6 +95,9 @@ test.describe("Accessibility (axe)", () => {
         await expect(page.getByTestId("speedometer-gauge-svg")).toBeVisible({
           timeout: 15_000,
         });
+        // Ensure React hydration is complete before clicking - otherwise the
+        // click can land before onClick handlers are attached post-reload.
+        await page.waitForLoadState("load");
 
         await page.getByRole("button", { name: "Open settings" }).click();
         await expect(page.locator("dialog[open]")).toBeVisible({
