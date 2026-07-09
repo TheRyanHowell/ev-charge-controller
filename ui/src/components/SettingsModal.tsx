@@ -5,6 +5,7 @@ import type { Plug, Vehicle } from "@/lib/schemas";
 import ConsoleCommandsBlock from "@/components/ConsoleCommandsBlock";
 import Dialog from "@/components/Dialog";
 import TariffSettingsSection from "@/components/TariffSettingsSection";
+import Toggle from "@/components/Toggle";
 import { apiPost } from "@/lib/api";
 import {
   isPushEnabled,
@@ -18,38 +19,6 @@ import { ConsoleCommandsResultSchema } from "@/lib/schemas";
 import { useThemeStore } from "@/stores/themeStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState, useEffect, useCallback, useId } from "react";
-
-function Toggle({
-  checked,
-  onChange,
-  disabled,
-}: {
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-0
-        transition-colors duration-200 ease-in-out focus-visible:outline-none
-        focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2
-        focus-visible:ring-offset-gray-900
-        ${checked ? "bg-blue-500" : "bg-gray-600"}
-        ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
-    >
-      <span
-        className={`pointer-events-none relative inline-block h-5 w-5 rounded-full
-          bg-white shadow ring-0 transition duration-200 ease-in-out
-          ${checked ? "translate-x-5" : "translate-x-0"}`}
-      />
-    </button>
-  );
-}
 
 function AutoConfigureForm({
   plugId,
