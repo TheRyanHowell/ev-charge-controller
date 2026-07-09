@@ -236,10 +236,6 @@ export default function SettingsModal({
               />
             </div>
 
-            <div className="border-t border-border" />
-
-            <TariffSettingsSection />
-
             {isPushEnabled() && (
               <>
                 <div className="border-t border-border" />
@@ -261,6 +257,10 @@ export default function SettingsModal({
                 </div>
               </>
             )}
+
+            <div className="border-t border-border" />
+
+            <TariffSettingsSection />
           </div>
 
           {/* ── Right panel: Vehicle settings ─────────────────────────── */}
