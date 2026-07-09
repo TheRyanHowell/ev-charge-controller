@@ -726,7 +726,8 @@ func (s *SeedService) resetMockTasmota(plugIDs []string) {
 		return
 	}
 
-	if !s.mqttProvisioned {
+	alreadyProvisioned := s.mqttProvisioned
+	if !alreadyProvisioned {
 		s.provisionMockTasmotaMQTT(plugIDs)
 		s.mqttProvisioned = true
 	}
@@ -740,6 +741,23 @@ func (s *SeedService) resetMockTasmota(plugIDs []string) {
 			slog.Warn("Failed to reset mock-tasmota energy state", "plugID", plugID, "err", err)
 		} else {
 			slog.Info("Reset mock-tasmota energy state", "plugID", plugID)
+		}
+
+		// clearData() (called just before resetMockTasmota, as part of
+		// Reset()) deletes and recreates this plug's row, so `online`
+		// defaults back to false. On the first call, waitForPlugsOnline
+		// above already caught the real LWT "Online" republish triggered by
+		// provisioning. On every later call the connection was never
+		// disrupted - no LWT event is coming to flip it back - so mark it
+		// online directly rather than leave every post-first-reset plug
+		// stuck reading offline for the rest of the run.
+		if alreadyProvisioned {
+			if _, err := s.db.Exec(
+				"UPDATE plugs SET online = 1, last_seen = CURRENT_TIMESTAMP WHERE id = ?",
+				plugID,
+			); err != nil {
+				slog.Warn("Failed to mark plug online after reset", "plugID", plugID, "err", err)
+			}
 		}
 	}
 }

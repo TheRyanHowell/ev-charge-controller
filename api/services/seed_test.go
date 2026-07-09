@@ -197,3 +197,36 @@ func TestSeedService_Reset_ProvisionsMockTasmotaMQTTOnlyOnce(t *testing.T) {
 	assert.Equal(t, firstConfigPushes, configPushes, "second Reset() must not push MQTT config again")
 	assert.Equal(t, firstEnergyResets*2, energyResets, "second Reset() must still reset energy state for all 3 plugs")
 }
+
+// TestSeedService_Reset_MarksPlugsOnlineAfterSubsequentReset asserts that a
+// plug reads online again right after a second (or later) Reset(), even
+// though skipping MQTT re-provisioning (see the test above) means there's no
+// fresh LWT "Online" event to naturally flip the column. clearData() deletes
+// and recreates every plug row on every reset, so `online` defaults back to
+// false each time; without an explicit fix a plug would read offline for the
+// rest of the run after the first reset.
+func TestSeedService_Reset_MarksPlugsOnlineAfterSubsequentReset(t *testing.T) {
+	origTimeout := plugOnlineTimeout
+	plugOnlineTimeout = 100 * time.Millisecond // no real broker in this test, so it always hits the deadline
+	t.Cleanup(func() { plugOnlineTimeout = origTimeout })
+
+	tasmota := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(tasmota.Close)
+
+	db := newSeedTestDB(t)
+	svc := NewSeedService(db, []string{tasmota.URL, tasmota.URL, tasmota.URL})
+
+	onlineCount := func() int {
+		var count int
+		require.NoError(t, db.QueryRow("SELECT COUNT(*) FROM plugs WHERE online = 1").Scan(&count))
+		return count
+	}
+
+	require.NoError(t, svc.Reset())
+	assert.Equal(t, 0, onlineCount(), "first Reset() has no real broker to confirm online, so plugs correctly read offline")
+
+	require.NoError(t, svc.Reset())
+	assert.Equal(t, 3, onlineCount(), "second Reset() must mark all 3 plugs online since their MQTT connection was never disrupted")
+}
