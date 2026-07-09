@@ -229,7 +229,11 @@ export default function SettingsModal({
 
             <div className="flex items-center justify-between">
               <p className="text-xs text-fg-muted">Dark mode</p>
-              <Toggle checked={theme === "dark"} onChange={toggleTheme} />
+              <Toggle
+                checked={theme === "dark"}
+                onChange={toggleTheme}
+                label="Dark mode"
+              />
             </div>
 
             <div className="border-t border-border" />
@@ -251,6 +255,7 @@ export default function SettingsModal({
                       checked={pushSubscribed}
                       onChange={() => handlePushToggle()}
                       disabled={pushLoading}
+                      label="Enable device push notifications"
                     />
                   </div>
                 </div>
@@ -354,6 +359,7 @@ export default function SettingsModal({
                             notifyChargeStarted: checked,
                           })
                         }
+                        label="Charge started"
                       />
                     </div>
                     <div className="flex items-center justify-between">
@@ -367,6 +373,7 @@ export default function SettingsModal({
                             notifyChargeComplete: checked,
                           })
                         }
+                        label="Charge complete"
                       />
                     </div>
                     <div className="flex items-center justify-between">
@@ -380,6 +387,7 @@ export default function SettingsModal({
                             notifyChargerOffline: checked,
                           })
                         }
+                        label="Charger offline"
                       />
                     </div>
                     <div className="flex items-center justify-between">
@@ -393,6 +401,7 @@ export default function SettingsModal({
                             notifyMaintenanceOffline: checked,
                           })
                         }
+                        label="12V maintenance charger offline"
                       />
                     </div>
                   </div>
