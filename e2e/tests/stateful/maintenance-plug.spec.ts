@@ -335,15 +335,18 @@ test.describe.serial("12V Maintenance Plug", () => {
       page.getByText(/12V maintenance charger offline/i),
     ).toBeVisible();
 
-    // All notification switches should default to on.
-    // Scope to the Settings dialog to avoid matching the maintenance circle on the gauge.
+    // All notification switches should default to on. Scope by the row's
+    // own label text (not position) - the General panel has its own Dark
+    // mode / Push Notifications toggles above these, so a position-based
+    // locator is fragile.
     const dialog = page.locator("dialog");
-    const notifSwitches = dialog
-      .locator("[role=switch]")
-      .filter({ hasNot: dialog.locator('[aria-label="Push"]') });
+    const chargeStartedSwitch = dialog
+      .getByText(/^charge started$/i)
+      .locator("..")
+      .locator('[role="switch"]');
     await expect(
-      notifSwitches.first(),
-      "First notification switch must be checked by default",
+      chargeStartedSwitch,
+      "Charge started switch must be checked by default",
     ).toHaveAttribute("aria-checked", "true");
 
     await page.keyboard.press("Escape");
