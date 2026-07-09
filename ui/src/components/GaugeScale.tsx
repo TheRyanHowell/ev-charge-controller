@@ -44,7 +44,9 @@ export function GaugeScale({
               x2={tickInner.x}
               y2={tickInner.y}
               stroke={
-                isMajor ? "rgba(255,255,255,0.8)" : "rgba(255,255,255,0.35)"
+                isMajor
+                  ? "var(--color-gauge-tick-major)"
+                  : "var(--color-gauge-tick-minor)"
               }
               strokeWidth={isMajor ? 2 : 1.5}
               strokeLinecap="round"
@@ -53,7 +55,9 @@ export function GaugeScale({
               x={labelPos.x}
               y={labelPos.y}
               fill={
-                isMajor ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.45)"
+                isMajor
+                  ? "var(--color-gauge-label-major)"
+                  : "var(--color-gauge-label-minor)"
               }
               fontSize={isMajor ? "9" : "8"}
               textAnchor="middle"

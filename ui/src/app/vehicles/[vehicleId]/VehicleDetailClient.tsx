@@ -42,10 +42,10 @@ const TimeRanges: { value: TimeRange; label: string }[] = [
 ];
 
 const CHART_TOOLTIP_STYLE = {
-  backgroundColor: "#111827",
-  border: "1px solid #1f2937",
+  backgroundColor: "var(--color-chart-tooltip-bg)",
+  border: "1px solid var(--color-chart-grid)",
   borderRadius: "8px",
-  color: "#fff",
+  color: "var(--color-fg)",
 } as const;
 
 function formatChartDate(label: unknown, long = false): string {
@@ -400,15 +400,18 @@ export default function VehicleDetailClient({
                   data={dailyEnergy}
                   margin={{ top: 5, right: 5, left: -20, bottom: 5 }}
                 >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="var(--color-chart-grid)"
+                  />
                   <XAxis
                     dataKey="date"
-                    tick={{ fill: "#6b7280", fontSize: 11 }}
+                    tick={{ fill: "var(--color-chart-label)", fontSize: 11 }}
                     tickFormatter={(val) => formatChartDate(val)}
                     tickLine={false}
                   />
                   <YAxis
-                    tick={{ fill: "#6b7280", fontSize: 11 }}
+                    tick={{ fill: "var(--color-chart-label)", fontSize: 11 }}
                     tickFormatter={(val: number) => `${val}`}
                     tickLine={false}
                     axisLine={false}
@@ -460,16 +463,19 @@ export default function VehicleDetailClient({
                     data={dailyEnergy}
                     margin={{ top: 5, right: 5, left: -20, bottom: 5 }}
                   >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="var(--color-chart-grid)"
+                    />
                     <XAxis
                       dataKey="date"
-                      tick={{ fill: "#6b7280", fontSize: 11 }}
+                      tick={{ fill: "var(--color-chart-label)", fontSize: 11 }}
                       tickFormatter={(val) => formatChartDate(val)}
                       tickLine={false}
                     />
                     <YAxis
                       yAxisId="left"
-                      tick={{ fill: "#6b7280", fontSize: 11 }}
+                      tick={{ fill: "var(--color-chart-label)", fontSize: 11 }}
                       tickFormatter={(val: number) =>
                         val >= 1000 ? `${(val / 1000).toFixed(1)}kg` : `${val}g`
                       }
@@ -478,7 +484,7 @@ export default function VehicleDetailClient({
                     />
                     <YAxis
                       yAxisId="right"
-                      tick={{ fill: "#6b7280", fontSize: 11 }}
+                      tick={{ fill: "var(--color-chart-label)", fontSize: 11 }}
                       tickFormatter={(val: number) => `${val}`}
                       tickLine={false}
                       axisLine={false}
@@ -500,21 +506,21 @@ export default function VehicleDetailClient({
                       yAxisId="left"
                       type="monotone"
                       dataKey="co2Grams"
-                      stroke="#6b7280"
+                      stroke="var(--color-chart-label)"
                       strokeWidth={2}
-                      dot={{ fill: "#6b7280", r: 3 }}
-                      activeDot={{ r: 5, fill: "#9ca3af" }}
+                      dot={{ fill: "var(--color-chart-label)", r: 3 }}
+                      activeDot={{ r: 5, fill: "var(--color-fg-muted)" }}
                       name="co2Grams"
                     />
                     <Line
                       yAxisId="right"
                       type="monotone"
                       dataKey="avgCarbonIntensityGCo2PerKwh"
-                      stroke="#22d3ee"
+                      stroke="var(--color-info)"
                       strokeWidth={1}
                       strokeDasharray="4 3"
                       opacity={0.4}
-                      dot={{ fill: "#22d3ee", r: 2 }}
+                      dot={{ fill: "var(--color-info)", r: 2 }}
                       activeDot={{ r: 4, fill: "#67e8f9" }}
                       name="avgCarbonIntensityGCo2PerKwh"
                     />

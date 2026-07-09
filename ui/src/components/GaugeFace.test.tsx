@@ -381,7 +381,9 @@ describe("GaugeFace", () => {
         <GaugeFace currentPercent={50} startPercent={20} status="idle" />,
       );
       const paths = getPaths(container);
-      const bgArc = paths.find((p) => p.getAttribute("stroke") === "#1a1a28");
+      const bgArc = paths.find(
+        (p) => p.getAttribute("stroke") === "var(--color-gauge-track)",
+      );
       expect(bgArc).toBeTruthy();
     });
 
@@ -390,7 +392,9 @@ describe("GaugeFace", () => {
         <GaugeFace currentPercent={50} startPercent={20} status="idle" />,
       );
       const paths = getPaths(container);
-      const bgArc = paths.find((p) => p.getAttribute("stroke") === "#1a1a28");
+      const bgArc = paths.find(
+        (p) => p.getAttribute("stroke") === "var(--color-gauge-track)",
+      );
       const cmd = getArcCommand(bgArc);
       expect(cmd.largeArc).toBe(1); // span = 100 → 270° > 180°
       expect(cmd.sweep).toBe(1); // 100 >= 0

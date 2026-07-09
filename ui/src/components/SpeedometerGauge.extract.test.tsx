@@ -25,7 +25,7 @@ describe("GaugeFace", () => {
     expect(svg).toBeInTheDocument();
     const circles = svg?.querySelectorAll("circle");
     expect(circles?.length).toBe(3);
-    expect(circles?.[0]?.getAttribute("fill")).toBe("#0a0a14");
+    expect(circles?.[0]?.getAttribute("fill")).toBe("var(--color-gauge-face)");
   });
 
   it("renders background arc track", () => {
@@ -36,7 +36,7 @@ describe("GaugeFace", () => {
     const paths = svg?.querySelectorAll("path");
     expect(paths?.length).toBeGreaterThanOrEqual(1);
     const bgArc = paths?.[0];
-    expect(bgArc?.getAttribute("stroke")).toBe("#1a1a28");
+    expect(bgArc?.getAttribute("stroke")).toBe("var(--color-gauge-track)");
   });
 
   it("renders red and yellow warning segments", () => {

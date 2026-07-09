@@ -180,12 +180,12 @@ export default function LineChart<T>({
         >
           <XAxis
             dataKey="x"
-            tick={{ fontSize: 10, fill: "#6b7280" }}
+            tick={{ fontSize: 10, fill: "var(--color-chart-label)" }}
             height={20}
           />
           <YAxis
             domain={[yMin, yMax]}
-            tick={{ fontSize: 10, fill: "#6b7280" }}
+            tick={{ fontSize: 10, fill: "var(--color-chart-label)" }}
             tickFormatter={(v: number) =>
               yFormatter ? yFormatter(v, yMax) : String(Math.round(v))
             }
@@ -193,7 +193,7 @@ export default function LineChart<T>({
           />
           <Tooltip
             contentStyle={{
-              backgroundColor: "#1f2937",
+              backgroundColor: "var(--color-chart-tooltip-bg)",
               border: "none",
               borderRadius: "8px",
               padding: "8px 12px",

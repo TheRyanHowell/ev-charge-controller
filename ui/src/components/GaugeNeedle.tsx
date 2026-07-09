@@ -21,11 +21,11 @@ export function GaugeNeedle({ currentPercent }: GaugeNeedleProps) {
         cx={CX}
         cy={CX}
         r="10"
-        fill="#1a1a24"
-        stroke="#2a2a38"
+        fill="var(--color-gauge-ring)"
+        stroke="var(--color-gauge-hub)"
         strokeWidth="1"
       />
-      <circle cx={CX} cy={CX} r="4" fill="#2a2a38" />
+      <circle cx={CX} cy={CX} r="4" fill="var(--color-gauge-hub)" />
       <line
         x1={CX}
         y1={CX}

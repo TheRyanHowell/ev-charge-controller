@@ -39,13 +39,13 @@ export function GaugeFace({
 
   return (
     <svg viewBox={`0 0 ${VIEW_BOX} ${VIEW_BOX}`} className="w-full h-full">
-      <circle cx={CX} cy={CX} r={MAX_R} fill="#0a0a14" />
+      <circle cx={CX} cy={CX} r={MAX_R} fill="var(--color-gauge-face)" />
       <circle
         cx={CX}
         cy={CX}
         r={MAX_R}
         fill="none"
-        stroke="#1a1a24"
+        stroke="var(--color-gauge-ring)"
         strokeWidth="2"
       />
       <circle
@@ -59,7 +59,7 @@ export function GaugeFace({
       <path
         d={bgArcPath}
         fill="none"
-        stroke="#1a1a28"
+        stroke="var(--color-gauge-track)"
         strokeWidth="3"
         strokeLinecap="round"
       />
