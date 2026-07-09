@@ -32,14 +32,15 @@ export default function VehicleChips({
             onClick={() => onSelect(vehicle.id)}
             className={[
               "flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
               isSelected
-                ? "bg-white text-black"
-                : "bg-white/10 text-fg hover:bg-white/20 active:bg-white/30",
+                ? "bg-fg text-page-bg"
+                : "bg-surface border border-border text-fg-secondary hover:bg-surface-hover hover:text-fg",
             ].join(" ")}
             aria-pressed={isSelected}
           >
             <span
+              role="img"
               className={[
                 "h-2 w-2 rounded-full flex-shrink-0",
                 isOnline ? "bg-success" : "bg-fg-muted",
