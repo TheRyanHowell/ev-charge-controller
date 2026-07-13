@@ -73,7 +73,8 @@ export function useElapsedEta({
         startPercent: startPercent ?? null,
       })
     : null;
-  const liveEtaMin = computedEta != null && computedEta > 0 ? computedEta : null;
+  const liveEtaMin =
+    computedEta != null && computedEta > 0 ? computedEta : null;
 
   const [elapsed, setElapsed] = useState(0);
   // Idle uses renderTimeMs (server render time) so SSR matches client;

@@ -15,7 +15,8 @@ vi.mock("@/utils/eta", () => ({
     }: {
       currentPercent: number;
       targetPercent: number;
-    }) => (targetPercent > currentPercent ? targetPercent - currentPercent : null),
+    }) =>
+      targetPercent > currentPercent ? targetPercent - currentPercent : null,
   ),
 }));
 
