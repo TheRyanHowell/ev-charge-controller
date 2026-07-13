@@ -498,3 +498,71 @@ func (l *mockLifecycleWithErr) CancelActiveSession(_ context.Context, session *m
 	l.cancelledIDs = append(l.cancelledIDs, session.ID)
 	return l.err
 }
+
+// --- Relay reconciliation on Online ---
+
+type mockPowerCutter struct {
+	mu    sync.Mutex
+	calls []struct {
+		plugID string
+		on     bool
+	}
+}
+
+func (p *mockPowerCutter) SetPower(_ context.Context, plugID string, on bool) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.calls = append(p.calls, struct {
+		plugID string
+		on     bool
+	}{plugID, on})
+	return nil
+}
+
+// A charging plug that comes online with no active session must have its relay
+// forced OFF: the plug may have gone offline mid-session (session cancelled)
+// with the relay still on and SaveState restoring it after a reboot - energy
+// would keep flowing with no session tracking it.
+func TestLWT_Online_ForcesRelayOff_ChargingPlugWithoutSession(t *testing.T) {
+	plugRepo := &mockPlugRepo{findByIDResult: &models.Plug{ID: testPlugID, Type: models.PlugTypeCharging}}
+	cutter := &mockPowerCutter{}
+	m := newFastLWTManager(plugRepo, &mockSessionReader{}, &mockLifecycle{}, nil)
+	m.SetPowerController(cutter)
+
+	m.HandleLWT(context.Background(), testPlugID, "Online", false)
+
+	cutter.mu.Lock()
+	defer cutter.mu.Unlock()
+	require.Len(t, cutter.calls, 1, "relay must be reconciled off when a charging plug comes online with no session")
+	assert.Equal(t, testPlugID, cutter.calls[0].plugID)
+	assert.False(t, cutter.calls[0].on)
+}
+
+// A plug with an active session keeps its relay - the session owns the power state.
+func TestLWT_Online_KeepsRelay_WithActiveSession(t *testing.T) {
+	plugRepo := &mockPlugRepo{findByIDResult: &models.Plug{ID: testPlugID, Type: models.PlugTypeCharging}}
+	cutter := &mockPowerCutter{}
+	sessions := &mockSessionReader{activeSession: &models.ChargeSession{ID: "sess-1"}}
+	m := newFastLWTManager(plugRepo, sessions, &mockLifecycle{}, nil)
+	m.SetPowerController(cutter)
+
+	m.HandleLWT(context.Background(), testPlugID, "Online", false)
+
+	cutter.mu.Lock()
+	defer cutter.mu.Unlock()
+	assert.Empty(t, cutter.calls, "relay must not be touched while a session is active on the plug")
+}
+
+// Maintenance plugs default ON by design - never reconcile them off.
+func TestLWT_Online_KeepsRelay_MaintenancePlug(t *testing.T) {
+	plugRepo := &mockPlugRepo{findByIDResult: &models.Plug{ID: testPlugID, Type: models.PlugTypeMaintenance}}
+	cutter := &mockPowerCutter{}
+	m := newFastLWTManager(plugRepo, &mockSessionReader{}, &mockLifecycle{}, nil)
+	m.SetPowerController(cutter)
+
+	m.HandleLWT(context.Background(), testPlugID, "Online", false)
+
+	cutter.mu.Lock()
+	defer cutter.mu.Unlock()
+	assert.Empty(t, cutter.calls, "maintenance plugs default ON and must never be reconciled off")
+}

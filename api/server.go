@@ -280,6 +280,7 @@ func startMQTTClient(ctx context.Context, cfg *internal.Config, db *sql.DB, char
 	publisher := mqttclient.NewPublisher(client.ConnectionManager(), mqttclient.NewRepoPlugLookup(plugRepo))
 	lwtManager.SetInitializer(services.NewPlugInitializerService(plugRepo, publisher))
 	mqttCtrl := mqttclient.NewController(dispatcher, publisher)
+	lwtManager.SetPowerController(mqttCtrl)
 
 	awaitCtx, awaitCancel := context.WithTimeout(ctx, 15*time.Second)
 	defer awaitCancel()

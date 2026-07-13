@@ -45,6 +45,11 @@ type lwtNotifier interface {
 	NotifyPlugUnavailable(ctx context.Context, plug *models.Plug)
 }
 
+// lwtPowerController cuts relay power; a narrow slice of internal.PlugController.
+type lwtPowerController interface {
+	SetPower(ctx context.Context, plugID string, on bool) error
+}
+
 // LWTManager tracks per-plug LWT state and fires handlers on transitions.
 type LWTManager struct {
 	plugRepo        internal.PlugRepo
@@ -52,6 +57,7 @@ type LWTManager struct {
 	lifecycle       lwtLifecycle
 	notifier        lwtNotifier
 	initializer     lwtInitializer
+	powerCtrl       lwtPowerController
 	offlineDebounce time.Duration
 	offlineCooldown time.Duration
 	timers          map[string]*time.Timer
@@ -104,6 +110,42 @@ func (m *LWTManager) handleOnline(ctx context.Context, plugID string) {
 			slog.Warn("mqtt/lwt: plug initialization failed", "plugID", plugID, "err", err)
 		}
 	}
+
+	m.reconcileRelay(ctx, plugID)
+}
+
+// reconcileRelay forces a charging plug's relay OFF when it comes online with
+// no active session. A plug that dropped offline mid-session (session
+// cancelled) can come back with its relay still on - or restore it via
+// SaveState after a reboot - and would then deliver energy no session tracks.
+// Maintenance plugs default ON by design and are never touched; a legitimate
+// session start racing this reconciliation simply powers the relay back on
+// itself as part of its own power-confirmation flow.
+func (m *LWTManager) reconcileRelay(ctx context.Context, plugID string) {
+	if m.powerCtrl == nil {
+		return
+	}
+	plug, err := m.plugRepo.FindByID(ctx, plugID)
+	if err != nil || plug == nil || plug.Type != models.PlugTypeCharging {
+		return
+	}
+	active, err := m.sessionReader.GetActiveByPlug(ctx, plugID)
+	if err != nil || active != nil {
+		return
+	}
+	if err := m.powerCtrl.SetPower(ctx, plugID, false); err != nil {
+		slog.Warn("mqtt/lwt: relay reconciliation power-off failed", "plugID", plugID, "err", err)
+		return
+	}
+	slog.Info("mqtt/lwt: reconciled relay off (online with no active session)", "plugID", plugID)
+}
+
+// SetPowerController wires in relay control after construction (the MQTT
+// controller is built after the LWTManager, same pattern as SetInitializer).
+func (m *LWTManager) SetPowerController(ctrl lwtPowerController) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.powerCtrl = ctrl
 }
 
 func (m *LWTManager) handleOffline(ctx context.Context, plugID string, retained bool) {
