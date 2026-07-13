@@ -247,6 +247,8 @@ surface below is for direct inspection and forcing state during a test.
 | `GET /cm?cmnd=Power%20ON` / `OFF` / `TOGGLE` | Force the relay |
 | `GET /cm?cmnd=ENERGY` | Read energy/power |
 | `GET /cm?cmnd=STATUS+10` | Detailed sensor readings |
+| `GET /cm?cmnd=EnergyTotal%202.5` | Set the cumulative meter (kWh) - advance a charge session deterministically in tests |
+| `GET /cm?cmnd=SensorRetain%201` | Publish tele/SENSOR retained (also accepted over MQTT cmnd, like `Status 10`) |
 | `GET /status` | Legacy status page |
 
 ```bash
