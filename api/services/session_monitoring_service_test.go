@@ -182,7 +182,7 @@ func TestSessionMonitoringService_SaveEnergyReadings_NoActiveSession(t *testing.
 	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, vehicleRepo, ctrl, nil, socWorker, lock)
 
 	energy := &tasmota.EnergyData{Total: 1000, Power: 600}
-	service.SaveEnergyReadings(context.Background(), energy)
+	service.SaveEnergyReadings(context.Background(), testPlugID, energy)
 }
 
 func TestSessionMonitoringService_SaveEnergyReadings_ActiveSession(t *testing.T) {
@@ -208,7 +208,7 @@ func TestSessionMonitoringService_SaveEnergyReadings_ActiveSession(t *testing.T)
 	require.NoError(t, sessRepo.Create(context.Background(), session))
 
 	energy := &tasmota.EnergyData{Total: 1000, Power: 600}
-	service.SaveEnergyReadings(context.Background(), energy)
+	service.SaveEnergyReadings(context.Background(), testPlugID, energy)
 
 	readings, err := sessRepo.GetPowerReadings(context.Background(), session.ID)
 	require.NoError(t, err)
@@ -309,7 +309,7 @@ func TestSessionMonitoringService_SaveEnergyReadings_AttachesCarbonIntensity(t *
 	require.NoError(t, sessRepo.Create(context.Background(), session))
 
 	energy := &tasmota.EnergyData{Total: 1000, Power: 600}
-	service.SaveEnergyReadings(context.Background(), energy)
+	service.SaveEnergyReadings(context.Background(), testPlugID, energy)
 
 	readings, err := sessRepo.GetPowerReadings(context.Background(), session.ID)
 	require.NoError(t, err)
@@ -341,7 +341,7 @@ func TestSessionMonitoringService_SaveEnergyReadings_ConditioningSession(t *test
 	require.NoError(t, sessRepo.Create(context.Background(), session))
 
 	energy := &tasmota.EnergyData{Total: 1000, Power: 600}
-	service.SaveEnergyReadings(context.Background(), energy)
+	service.SaveEnergyReadings(context.Background(), testPlugID, energy)
 
 	readings, err := sessRepo.GetPowerReadings(context.Background(), session.ID)
 	require.NoError(t, err)
@@ -371,8 +371,8 @@ func TestSessionMonitoringService_SaveEnergyReadings_SkipsDuplicate(t *testing.T
 	require.NoError(t, sessRepo.Create(context.Background(), session))
 
 	energy := &tasmota.EnergyData{Total: 1000, Power: 600, Voltage: 230, Current: 2.6}
-	service.SaveEnergyReadings(context.Background(), energy)
-	service.SaveEnergyReadings(context.Background(), energy)
+	service.SaveEnergyReadings(context.Background(), testPlugID, energy)
+	service.SaveEnergyReadings(context.Background(), testPlugID, energy)
 
 	readings, err := sessRepo.GetPowerReadings(context.Background(), session.ID)
 	require.NoError(t, err)
@@ -403,8 +403,8 @@ func TestSessionMonitoringService_SaveEnergyReadings_StoresWhenValueChanges(t *t
 
 	energy1 := &tasmota.EnergyData{Total: 1000, Power: 600, Voltage: 230, Current: 2.6}
 	energy2 := &tasmota.EnergyData{Total: 1001, Power: 650, Voltage: 230, Current: 2.8}
-	service.SaveEnergyReadings(context.Background(), energy1)
-	service.SaveEnergyReadings(context.Background(), energy2)
+	service.SaveEnergyReadings(context.Background(), testPlugID, energy1)
+	service.SaveEnergyReadings(context.Background(), testPlugID, energy2)
 
 	readings, err := sessRepo.GetPowerReadings(context.Background(), session.ID)
 	require.NoError(t, err)
@@ -445,7 +445,7 @@ func TestSessionMonitoringService_SaveEnergyReadings_StoresWhenStale(t *testing.
 	require.NoError(t, sessRepo.CreatePowerReading(context.Background(), staleReading))
 
 	energy := &tasmota.EnergyData{Total: 1000, Power: 600, Voltage: 230, Current: 2.6}
-	service.SaveEnergyReadings(context.Background(), energy)
+	service.SaveEnergyReadings(context.Background(), testPlugID, energy)
 
 	readings, err := sessRepo.GetPowerReadings(context.Background(), session.ID)
 	require.NoError(t, err)
@@ -1912,7 +1912,7 @@ func TestSaveEnergyReadings_ConditioningNoSOCOffload(t *testing.T) {
 	require.NoError(t, sessRepo.Create(context.Background(), session))
 
 	energy := &tasmota.EnergyData{Total: 1000, Power: 600}
-	service.SaveEnergyReadings(context.Background(), energy)
+	service.SaveEnergyReadings(context.Background(), testPlugID, energy)
 
 	// Power reading should be saved
 	readings, err := sessRepo.GetPowerReadings(context.Background(), session.ID)
@@ -1944,13 +1944,13 @@ func TestSaveEnergyReadings_DBError_LogsAndContinues(t *testing.T) {
 
 	// First read succeeds
 	energy := &tasmota.EnergyData{Total: 1000, Power: 600}
-	service.SaveEnergyReadings(context.Background(), energy)
+	service.SaveEnergyReadings(context.Background(), testPlugID, energy)
 
 	// Close DB to force error on second call
 	require.NoError(t, db.Close())
 
 	// Should not panic
-	service.SaveEnergyReadings(context.Background(), energy)
+	service.SaveEnergyReadings(context.Background(), testPlugID, energy)
 }
 
 func TestSessionMonitoringService_SetPowerState_GetActiveError(t *testing.T) {

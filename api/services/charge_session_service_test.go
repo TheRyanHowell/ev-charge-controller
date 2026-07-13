@@ -1936,7 +1936,7 @@ func TestChargeSessionService_SaveEnergyReadings_NoActive(t *testing.T) {
 	defer service.Shutdown()
 
 	energy := &tasmota.EnergyData{Total: 100, Power: 600}
-	service.SaveEnergyReadings(context.Background(), energy)
+	service.SaveEnergyReadings(context.Background(), testPlugID, energy)
 	// Should be a no-op when no active session
 }
 

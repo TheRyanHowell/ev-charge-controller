@@ -181,6 +181,22 @@ func (s *ChargeSessionService) GetActiveByPlug(ctx context.Context, plugID strin
 	return s.sessionReader.GetActiveByPlug(ctx, plugID)
 }
 
+// ListActiveSessions returns every in-progress session (active, pending,
+// conditioning, holding), oldest first. Used by workers that must monitor all
+// concurrent sessions rather than just the most recently created one.
+func (s *ChargeSessionService) ListActiveSessions(ctx context.Context) ([]models.ChargeSession, error) {
+	return s.sessionReader.ListActive(ctx)
+}
+
+// LastEnergyForPlug returns the last cached MQTT energy reading for a plug, or
+// nil when no controller is wired or no data has arrived yet.
+func (s *ChargeSessionService) LastEnergyForPlug(plugID string) *tasmota.EnergyData {
+	if s.plugCtrl == nil {
+		return nil
+	}
+	return s.plugCtrl.LastEnergy(plugID)
+}
+
 func (s *ChargeSessionService) FindVehicleByID(ctx context.Context, id string) (*models.Vehicle, error) {
 	return s.vehicleRepo.FindByID(ctx, id)
 }
@@ -405,20 +421,23 @@ func (s *ChargeSessionService) CheckAndResumeHoldingSession(ctx context.Context)
 // if the plug appears to have been disconnected or switched off.
 // Safe to call when Tasmota reports zero power or after consecutive HTTP errors.
 func (s *ChargeSessionService) CheckAndCancelDisconnectedSession(ctx context.Context) {
-	session, err := s.sessionReader.GetActive(ctx)
-	if err != nil || session == nil {
+	sessions, err := s.sessionReader.ListActive(ctx)
+	if err != nil {
 		return
 	}
-	if session.Status != models.SessionStatusActive && session.Status != models.SessionStatusConditioning {
-		return
-	}
-	// Only cancel if the session was actually charging - avoids cancelling on startup glitches
-	if session.LastBlendedKwh == nil || *session.LastBlendedKwh <= epsilonKwh {
-		return
-	}
-	slog.Info("[DISCONNECT] Cancelling session due to power loss", "sessionID", session.ID, "status", session.Status)
-	if err := s.lifecycle.CancelActiveSession(ctx, session); err != nil {
-		slog.Error("[DISCONNECT] Error cancelling session", "err", err)
+	for i := range sessions {
+		session := &sessions[i]
+		if session.Status != models.SessionStatusActive && session.Status != models.SessionStatusConditioning {
+			continue
+		}
+		// Only cancel if the session was actually charging - avoids cancelling on startup glitches
+		if session.LastBlendedKwh == nil || *session.LastBlendedKwh <= epsilonKwh {
+			continue
+		}
+		slog.Info("[DISCONNECT] Cancelling session due to power loss", "sessionID", session.ID, "status", session.Status)
+		if err := s.lifecycle.CancelActiveSession(ctx, session); err != nil {
+			slog.Error("[DISCONNECT] Error cancelling session", "err", err)
+		}
 	}
 }
 
@@ -441,7 +460,7 @@ func (s *ChargeSessionService) HandleSensorMessage(ctx context.Context, plugID s
 	if err != nil || session == nil {
 		return
 	}
-	s.monitoring.SaveEnergyReadings(ctx, energy)
+	s.monitoring.SaveEnergyReadings(ctx, plugID, energy)
 }
 
 // UpdateTarget updates the target percent for an active session.
@@ -486,12 +505,13 @@ func (s *ChargeSessionService) StoreSOCSnapshot(ctx context.Context, session *mo
 	return s.monitoring.StoreSOCSnapshot(ctx, session, energy)
 }
 
-// SaveEnergyReadings atomically checks session status and saves a power reading.
+// SaveEnergyReadings atomically checks session status and saves a power reading
+// for the active session on the given plug.
 // SOC snapshot is offloaded to an async worker to avoid blocking the poll cycle.
 // The mutex ensures the session status check and power reading write are serialised
 // with Stop, StartSession, and other session lifecycle mutations.
-func (s *ChargeSessionService) SaveEnergyReadings(ctx context.Context, energy *tasmota.EnergyData) {
-	s.monitoring.SaveEnergyReadings(ctx, energy)
+func (s *ChargeSessionService) SaveEnergyReadings(ctx context.Context, plugID string, energy *tasmota.EnergyData) {
+	s.monitoring.SaveEnergyReadings(ctx, plugID, energy)
 }
 
 // ProcessSOC handles a single SOC snapshot request.

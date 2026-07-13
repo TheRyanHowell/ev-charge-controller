@@ -99,9 +99,8 @@ func TestEnergyPoller_saveEnergyReadings_NoActiveSession(t *testing.T) {
 	service, db := setupTestService(t)
 	defer db.Close()
 
-	poller := NewEnergyPoller(service)
 	energy := &tasmota.EnergyData{Total: 100.0, Power: 600.0, Voltage: 230.0}
-	poller.saveEnergyReadings(t.Context(), energy)
+	service.SaveEnergyReadings(t.Context(), testWorkerPlugID, energy)
 }
 
 func TestEnergyPoller_saveEnergyReadings_WithActiveSession(t *testing.T) {
@@ -113,9 +112,8 @@ func TestEnergyPoller_saveEnergyReadings_WithActiveSession(t *testing.T) {
 	_, err := service.StartSession(t.Context(), testWorkerPlugID, "test-vehicle", 20, 80)
 	require.NoError(t, err)
 
-	poller := NewEnergyPoller(service)
 	energy := &tasmota.EnergyData{Total: 100.0, Power: 600.0, Voltage: 230.0}
-	poller.saveEnergyReadings(t.Context(), energy)
+	service.SaveEnergyReadings(t.Context(), testWorkerPlugID, energy)
 
 	repo := repository.NewChargeSessionRepository(db)
 	readings, err := repo.GetAll(context.Background())
@@ -156,12 +154,13 @@ func TestCheckPendingSessionTimeout_TimedOut(t *testing.T) {
 	assert.Nil(t, pending)
 }
 
-func TestCheckPendingSessionActivation_NoPending(t *testing.T) {
-	service, db := setupTestService(t)
+func TestEnergyPoller_tick_NoPendingSessions(t *testing.T) {
+	energy := &tasmota.EnergyData{Total: 100.0, Power: 600.0}
+	service, db := setupTestServiceWithEnergy(t, energy)
 	defer db.Close()
 
-	energy := &tasmota.EnergyData{Total: 100.0, Power: 600.0}
-	checkPendingSessionActivation(t.Context(), service, energy)
+	poller := NewEnergyPoller(service)
+	poller.tick(t.Context())
 }
 
 func TestNewAutoStopChecker(t *testing.T) {
@@ -281,14 +280,13 @@ func TestEnergyPoller_saveEnergyReadings_PendingSession(t *testing.T) {
 		TargetPct: 80,
 	}))
 
-	poller := NewEnergyPoller(service)
 	energy := &tasmota.EnergyData{Total: 100.0, Power: 600.0, Voltage: 230.0}
-	poller.saveEnergyReadings(t.Context(), energy)
+	service.SaveEnergyReadings(t.Context(), testWorkerPlugID, energy)
 
 	repo := repository.NewChargeSessionRepository(db)
-	readings, err := repo.GetAll(context.Background())
+	readings, err := repo.GetPowerReadings(context.Background(), "pending-session")
 	assert.NoError(t, err)
-	assert.NotEmpty(t, readings)
+	assert.Empty(t, readings, "pending sessions must not record power readings")
 
 	snapshots, err := repo.GetSOCSnapshots(context.Background(), "pending-session")
 	assert.NoError(t, err)
@@ -305,9 +303,8 @@ func TestEnergyPoller_saveEnergyReadings_DBError(t *testing.T) {
 
 	db.Close()
 
-	poller := NewEnergyPoller(service)
 	energy := &tasmota.EnergyData{Total: 100.0, Power: 600.0, Voltage: 230.0}
-	poller.saveEnergyReadings(t.Context(), energy) // Should not panic on DB error
+	service.SaveEnergyReadings(t.Context(), testWorkerPlugID, energy) // Should not panic on DB error
 }
 
 func TestCheckPendingSessionTimeout_NotTimedOut(t *testing.T) {
@@ -356,8 +353,11 @@ func TestCheckPendingSessionActivation_Activates(t *testing.T) {
 	}))
 
 	// Power above threshold → activates pending session
+	pending, err := service.GetPending(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, pending)
 	energy := &tasmota.EnergyData{Power: 1500.0}
-	checkPendingSessionActivation(t.Context(), service, energy)
+	activatePendingIfDrawing(t.Context(), service, pending, energy)
 
 	active, err := service.GetActiveSession(context.Background())
 	assert.NoError(t, err)
@@ -385,8 +385,11 @@ func TestCheckPendingSessionActivation_BelowThreshold(t *testing.T) {
 	}))
 
 	// Power below threshold → stays pending
+	pendingBefore, err := service.GetPending(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, pendingBefore)
 	energy := &tasmota.EnergyData{Power: 1.0}
-	checkPendingSessionActivation(t.Context(), service, energy)
+	activatePendingIfDrawing(t.Context(), service, pendingBefore, energy)
 
 	pending, _ := service.GetPending(context.Background())
 	assert.NotNil(t, pending)
@@ -443,15 +446,14 @@ func TestEnergyPoller_saveEnergyReadings_SkipsAfterStop(t *testing.T) {
 	session, err := service.StartSession(t.Context(), testWorkerPlugID, "test-vehicle", 20, 80)
 	require.NoError(t, err)
 
-	poller := NewEnergyPoller(service)
 	energy := &tasmota.EnergyData{Total: 100.0, Power: 600.0}
 
 	// Stop the session before saving readings
 	_, err = service.Stop(t.Context())
 	require.NoError(t, err)
 
-	// saveEnergyReadings should skip because session is no longer active
-	poller.saveEnergyReadings(t.Context(), energy)
+	// SaveEnergyReadings should skip because session is no longer active
+	service.SaveEnergyReadings(t.Context(), testWorkerPlugID, energy)
 
 	repo := repository.NewChargeSessionRepository(db)
 	readings, err := repo.GetPowerReadings(context.Background(), session.ID)

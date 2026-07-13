@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	powerThresholdPercent        = 0.5
-	pendingSessionTimeout        = 60 * time.Second
+	powerThresholdPercent         = 0.5
+	pendingSessionTimeout         = 60 * time.Second
 	disconnectConsecutiveErrCount = 3
 )
 
@@ -33,38 +33,56 @@ func (p *EnergyPoller) Start(ctx context.Context) {
 	RunTickerWorker(ctx, p.pollInterval, "Tasmota energy polling", p.tick)
 }
 
+// tick services every in-progress session on its own plug: pending sessions
+// are activated once their plug starts drawing power, and charging sessions
+// get their plug's latest cached energy reading persisted. Iterating all
+// sessions (not just the most recent) is what keeps concurrent sessions on
+// different plugs monitored.
 func (p *EnergyPoller) tick(ctx context.Context) {
 	checkPendingSessionTimeout(ctx, p.chargeService)
 
-	energy, err := p.chargeService.GetEnergy(ctx)
-	if err != nil || energy == nil {
-		if err != nil {
-			slog.Error("Error polling Tasmota energy", "err", err)
-		} else {
-			slog.Warn("Tasmota returned nil energy data")
+	sessions, err := p.chargeService.ListActiveSessions(ctx)
+	if err != nil {
+		slog.Error("Error listing active sessions for energy poll", "err", err)
+		return
+	}
+	if len(sessions) == 0 {
+		return
+	}
+
+	sawEnergy := false
+	for i := range sessions {
+		session := &sessions[i]
+		if session.PlugID == nil {
+			continue
 		}
+		energy := p.chargeService.LastEnergyForPlug(*session.PlugID)
+		if energy == nil {
+			slog.Warn("No cached energy data for session plug", "sessionID", session.ID, "plugID", *session.PlugID)
+			continue
+		}
+		sawEnergy = true
+
+		if session.Status == models.SessionStatusPending {
+			activatePendingIfDrawing(ctx, p.chargeService, session, energy)
+			continue
+		}
+		if energy.Power > 0 {
+			p.chargeService.SaveEnergyReadings(ctx, *session.PlugID, energy)
+		}
+		slog.Debug("Tasmota energy", "plug_id", *session.PlugID, "total_kwh", energy.Total, "power_w", energy.Power)
+	}
+
+	if !sawEnergy {
 		p.consecutiveTasmotaErrs++
 		if p.consecutiveTasmotaErrs >= disconnectConsecutiveErrCount {
-			slog.Warn("Consecutive Tasmota errors - checking for disconnected session", "count", p.consecutiveTasmotaErrs)
+			slog.Warn("Consecutive Tasmota errors - checking for disconnected sessions", "count", p.consecutiveTasmotaErrs)
 			p.chargeService.CheckAndCancelDisconnectedSession(ctx)
 			p.consecutiveTasmotaErrs = 0
 		}
 		return
 	}
-
 	p.consecutiveTasmotaErrs = 0
-
-	checkPendingSessionActivation(ctx, p.chargeService, energy)
-
-	if energy.Power > 0 {
-		p.saveEnergyReadings(ctx, energy)
-	}
-
-	slog.Debug("Tasmota energy", "total_kwh", energy.Total, "power_w", energy.Power)
-}
-
-func (p *EnergyPoller) saveEnergyReadings(ctx context.Context, energy *tasmota.EnergyData) {
-	p.chargeService.SaveEnergyReadings(ctx, energy)
 }
 
 func checkPendingSessionTimeout(ctx context.Context, service *services.ChargeSessionService) {
@@ -73,12 +91,9 @@ func checkPendingSessionTimeout(ctx context.Context, service *services.ChargeSes
 	}
 }
 
-func checkPendingSessionActivation(ctx context.Context, service *services.ChargeSessionService, energy *tasmota.EnergyData) {
-	pendingSession, err := service.GetPending(ctx)
-	if err != nil || pendingSession == nil {
-		return
-	}
-
+// activatePendingIfDrawing activates a pending session once its own plug is
+// drawing more than half the vehicle's rated charger output.
+func activatePendingIfDrawing(ctx context.Context, service *services.ChargeSessionService, pendingSession *models.ChargeSession, energy *tasmota.EnergyData) {
 	vehicle, err := service.FindVehicleByID(ctx, pendingSession.VehicleID)
 	if err != nil || vehicle == nil {
 		return
@@ -87,8 +102,7 @@ func checkPendingSessionActivation(ctx context.Context, service *services.Charge
 	powerThreshold := vehicle.ChargerOutputW * powerThresholdPercent
 	if energy.Power > powerThreshold {
 		slog.Info("Pending session activated", "session_id", pendingSession.ID, "power_w", energy.Power, "threshold_w", powerThreshold)
-		_, err := service.ActivatePending(ctx, pendingSession.ID)
-		if err != nil {
+		if _, err := service.ActivatePending(ctx, pendingSession.ID); err != nil {
 			slog.Error("Error activating pending session", "session_id", pendingSession.ID, "err", err)
 		}
 	}

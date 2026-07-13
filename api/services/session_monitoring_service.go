@@ -151,18 +151,20 @@ func (s *SessionMonitoringService) StoreSOCSnapshot(ctx context.Context, session
 	return s.sessionWriter.UpdateLastBlendedKwh(ctx, session.ID, lastBlendedKwh)
 }
 
-// SaveEnergyReadings atomically checks session status and saves a power reading.
+// SaveEnergyReadings atomically checks session status and saves a power reading
+// against the active session for the given plug - readings must never be
+// attributed to another plug's session when several charge concurrently.
 // SOC snapshot is offloaded to an async worker to avoid blocking the poll cycle.
 // The mutex ensures the session status check and power reading write are serialised
 // with Stop, StartSession, and other session lifecycle mutations.
-func (s *SessionMonitoringService) SaveEnergyReadings(ctx context.Context, energy *tasmota.EnergyData) {
+func (s *SessionMonitoringService) SaveEnergyReadings(ctx context.Context, plugID string, energy *tasmota.EnergyData) {
 	// Grid carbon intensity is an external HTTP call and is independent of
 	// session state, so fetch it BEFORE acquiring the lock. Holding the shared
 	// session lock across network I/O would block every lifecycle mutation
 	// (Stop, StartSession, …) for the duration of the request.
 	carbonIntensity := s.currentCarbonIntensity(ctx)
 
-	session := s.saveReadingLocked(ctx, energy, carbonIntensity)
+	session := s.saveReadingLocked(ctx, plugID, energy, carbonIntensity)
 	if session == nil {
 		return
 	}
@@ -199,17 +201,17 @@ func (s *SessionMonitoringService) currentCarbonIntensity(ctx context.Context) *
 }
 
 // saveReadingLocked performs the check-then-act under the shared session lock:
-// it confirms a charging/conditioning session is active and persists the power
-// reading, serialising with lifecycle mutations (Stop, StartSession, …). It
-// returns the active session for follow-up work (SOC offload) outside the lock,
+// it confirms a charging/conditioning session is active on the plug and persists
+// the power reading, serialising with lifecycle mutations (Stop, StartSession, …).
+// It returns the active session for follow-up work (SOC offload) outside the lock,
 // or nil if there was nothing to record. No network I/O happens under the lock.
-func (s *SessionMonitoringService) saveReadingLocked(ctx context.Context, energy *tasmota.EnergyData, carbonIntensity *float64) *models.ChargeSession {
+func (s *SessionMonitoringService) saveReadingLocked(ctx context.Context, plugID string, energy *tasmota.EnergyData, carbonIntensity *float64) *models.ChargeSession {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	session, err := s.sessionReader.GetActive(ctx)
+	session, err := s.sessionReader.GetActiveByPlug(ctx, plugID)
 	if err != nil {
-		slog.Error("Error getting active session for energy save", "err", err)
+		slog.Error("Error getting active session for energy save", "err", err, "plugID", plugID)
 		return nil
 	}
 	if session == nil || (session.Status != models.SessionStatusActive && session.Status != models.SessionStatusConditioning) {
@@ -243,14 +245,20 @@ func (s *SessionMonitoringService) saveReadingLocked(ctx context.Context, energy
 // CheckAndStopConditioningSession checks whether a conditioning session has
 // tapered to the stop threshold and completes it if so.
 func (s *SessionMonitoringService) CheckAndStopConditioningSession(ctx context.Context, stopper sessionStopper) {
-	activeSession, err := s.sessionReader.GetActive(ctx)
-	if err != nil || activeSession == nil {
+	sessions, err := s.sessionReader.ListActive(ctx)
+	if err != nil {
 		return
 	}
-	if activeSession.Status != models.SessionStatusConditioning {
-		return
+	for i := range sessions {
+		if sessions[i].Status != models.SessionStatusConditioning {
+			continue
+		}
+		s.stopConditioningSession(ctx, stopper, &sessions[i])
 	}
+}
 
+// stopConditioningSession runs the CV-taper stop check for a single conditioning session.
+func (s *SessionMonitoringService) stopConditioningSession(ctx context.Context, stopper sessionStopper, activeSession *models.ChargeSession) {
 	vehicle, err := s.vehicleRepo.FindByID(ctx, activeSession.VehicleID)
 	if err != nil || vehicle == nil || vehicle.ChargerOutputW <= 0 {
 		slog.Warn("[CONDITIONING] Cannot check threshold: vehicle missing or no charger output", "err", err)
@@ -289,33 +297,48 @@ type sessionStopper interface {
 }
 
 func (s *SessionMonitoringService) CheckAndAutoStopReachingSession(ctx context.Context, stopper sessionStopper) {
-	activeSession, err := s.sessionReader.GetActive(ctx)
-	if err != nil || activeSession == nil {
-		slog.Info("[AUTO-STOP] No active session", "err", err, "session", activeSession != nil)
+	sessions, err := s.sessionReader.ListActive(ctx)
+	if err != nil {
+		slog.Error("[AUTO-STOP] Error listing active sessions", "err", err)
 		return
 	}
+	if len(sessions) == 0 {
+		slog.Info("[AUTO-STOP] No active session")
+		return
+	}
+	for i := range sessions {
+		// Skip pending/holding/conditioning sessions - they are not charging
+		// toward the target right now (each has its own dedicated check).
+		if sessions[i].Status != models.SessionStatusActive {
+			continue
+		}
+		s.autoStopReachingSession(ctx, stopper, &sessions[i])
+	}
+}
 
+// autoStopReachingSession runs the target-reached check for a single active session.
+func (s *SessionMonitoringService) autoStopReachingSession(ctx context.Context, stopper sessionStopper, activeSession *models.ChargeSession) {
 	slog.Info("[AUTO-STOP] Session", "sessionID", activeSession.ID, "status", activeSession.Status, "target", activeSession.TargetPercent, "startKwh", activeSession.StartKwh, "targetKwh", activeSession.TargetKwh, "startTotalKwh", activeSession.StartTotalKwh)
-
-	// Skip pending sessions - they haven't started charging yet
-	if activeSession.Status != models.SessionStatusActive {
-		slog.Info("[AUTO-STOP] Skip: session status not active", "status", activeSession.Status)
-		return
-	}
 
 	var energy *tasmota.EnergyData
 	if s.plugCtrl != nil && activeSession.PlugID != nil {
 		energy = s.plugCtrl.LastEnergy(*activeSession.PlugID)
 	}
-	if energy == nil || energy.Total == 0 || activeSession.StartTotalKwh == nil {
+	if energy == nil || energy.Total == 0 {
 		if energy == nil {
 			slog.Info("[AUTO-STOP] Skip: no MQTT energy data")
-		} else if energy.Total == 0 {
-			slog.Info("[AUTO-STOP] Skip: energy.Total=0")
 		} else {
-			slog.Info("[AUTO-STOP] Skip: StartTotalKwh=nil")
+			slog.Info("[AUTO-STOP] Skip: energy.Total=0")
 		}
-
+		return
+	}
+	if activeSession.StartTotalKwh == nil {
+		// A session without a baseline can never compute progress, so it would
+		// otherwise charge past its target forever. Adopt the current meter
+		// total as the baseline (slightly conservative: energy delivered before
+		// this tick isn't counted, so the session charges a little longer, but
+		// it becomes stoppable).
+		s.backfillEnergyBaseline(ctx, activeSession, energy)
 		return
 	}
 
@@ -380,6 +403,25 @@ func (s *SessionMonitoringService) CheckAndAutoStopReachingSession(ctx context.C
 	}
 }
 
+// backfillEnergyBaseline persists a missing wall-side energy baseline for a
+// session using the current cumulative meter reading. Sessions can legitimately
+// start without a baseline (the plug's MQTT cache was empty at creation, e.g.
+// right after an API restart); without this heal they can never compute
+// progress and never auto-stop.
+func (s *SessionMonitoringService) backfillEnergyBaseline(ctx context.Context, session *models.ChargeSession, energy *tasmota.EnergyData) {
+	if energy == nil || energy.Total <= 0 {
+		return
+	}
+	s.lock.Lock()
+	err := s.sessionWriter.UpdateStartTotalKwh(ctx, session.ID, energy.Total)
+	s.lock.Unlock()
+	if err != nil {
+		slog.Error("[AUTO-STOP] Baseline backfill failed", "sessionID", session.ID, "err", err)
+		return
+	}
+	slog.Warn("[AUTO-STOP] Backfilled missing energy baseline", "sessionID", session.ID, "startTotalKwh", energy.Total)
+}
+
 // CheckAndStopIdleSession auto-completes an active or conditioning session
 // whose plug has drawn near-zero power for IdleSessionTimeout, even though
 // the session's energy target was never reached. This covers vehicles whose
@@ -388,13 +430,21 @@ func (s *SessionMonitoringService) CheckAndAutoStopReachingSession(ctx context.C
 // CheckAndStopConditioningSession ever arms - without this check such a
 // session sits "active" indefinitely until manually stopped.
 func (s *SessionMonitoringService) CheckAndStopIdleSession(ctx context.Context, stopper sessionStopper) {
-	activeSession, err := s.sessionReader.GetActive(ctx)
-	if err != nil || activeSession == nil {
+	sessions, err := s.sessionReader.ListActive(ctx)
+	if err != nil {
 		return
 	}
-	if activeSession.Status != models.SessionStatusActive && activeSession.Status != models.SessionStatusConditioning {
-		return
+	for i := range sessions {
+		status := sessions[i].Status
+		if status != models.SessionStatusActive && status != models.SessionStatusConditioning {
+			continue
+		}
+		s.stopIdleSession(ctx, stopper, &sessions[i])
 	}
+}
+
+// stopIdleSession runs the idle-power stop check for a single active or conditioning session.
+func (s *SessionMonitoringService) stopIdleSession(ctx context.Context, stopper sessionStopper, activeSession *models.ChargeSession) {
 	if activeSession.StartedAt == nil || time.Since(*activeSession.StartedAt) < models.MinSessionDurationBeforeIdleCheck {
 		return
 	}
@@ -469,10 +519,20 @@ func (s *SessionMonitoringService) holdSession(ctx context.Context, session *mod
 // way stage 1's activation did. Daily-origin sessions (and carbon-aware sessions
 // without a forecaster wired) keep the plain deadline-guard-only behavior.
 func (s *SessionMonitoringService) CheckAndResumeHoldingSession(ctx context.Context) {
-	session, err := s.sessionReader.GetActive(ctx)
-	if err != nil || session == nil || session.Status != models.SessionStatusHolding {
+	sessions, err := s.sessionReader.ListActive(ctx)
+	if err != nil {
 		return
 	}
+	for i := range sessions {
+		if sessions[i].Status != models.SessionStatusHolding {
+			continue
+		}
+		s.resumeHoldingSessionIfDue(ctx, &sessions[i])
+	}
+}
+
+// resumeHoldingSessionIfDue runs the resume decision for a single holding session.
+func (s *SessionMonitoringService) resumeHoldingSessionIfDue(ctx context.Context, session *models.ChargeSession) {
 	if session.HoldPercent == nil || session.ReadyByTime == nil {
 		slog.Warn("[HOLD-RESUME] Holding session missing hold fields", "sessionID", session.ID)
 		return

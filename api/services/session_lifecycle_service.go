@@ -113,6 +113,20 @@ func (s *SessionLifecycleService) startSession(ctx context.Context, plugID, vehi
 	if s.plugCtrl != nil && session.PlugID != nil {
 		confirmed, confErr := s.plugCtrl.SetPowerAndWait(ctx, *session.PlugID, true, models.PowerConfirmationTimeout)
 		if confirmed {
+			// The plug cache may have been empty when the baseline was captured
+			// pre-power-on; the power confirmation round-trip usually populates
+			// it. Backfill (never refresh - the pre-power-on value is the more
+			// accurate baseline) so the session's progress is computable and
+			// auto-stop can fire.
+			if session.StartTotalKwh == nil {
+				if energy := s.plugCtrl.LastEnergy(*session.PlugID); energy != nil {
+					if baseErr := s.sessionWriter.UpdateStartTotalKwh(ctx, session.ID, energy.Total); baseErr != nil {
+						slog.Warn("StartSession: baseline backfill failed", "sessionID", session.ID, "err", baseErr)
+					} else {
+						session.StartTotalKwh = &energy.Total
+					}
+				}
+			}
 			if actErr := s.sessionWriter.ActivatePending(ctx, session.ID, time.Now()); actErr != nil {
 				slog.Warn("StartSession: activation failed after power confirmation", "sessionID", session.ID, "err", actErr)
 			} else {
@@ -166,14 +180,13 @@ func (s *SessionLifecycleService) ActivatePending(ctx context.Context, sessionID
 			startTotalStr = fmt.Sprintf("%f", *session.StartTotalKwh)
 		}
 		slog.Info("[ACTIVATE] Session", "sessionID", sessionID, "power", energy.Power, "total", energy.Total, "startTotalKwh", startTotalStr)
-		var startTotalKwh *float64
-		if session.StartTotalKwh != nil && *session.StartTotalKwh > 0 {
-			startTotalKwh = &energy.Total
-		}
-		if startTotalKwh != nil {
-			if err := s.sessionWriter.UpdateStartTotalKwh(ctx, sessionID, *startTotalKwh); err != nil {
-				return 0, err
-			}
+		// Always (re)capture the baseline: refreshing an existing one discards
+		// energy accumulated during the pending phase, and setting a missing one
+		// (plug cache was empty at creation) is what makes progress computable
+		// at all - without it auto-stop can never fire and the session charges
+		// past its target indefinitely.
+		if err := s.sessionWriter.UpdateStartTotalKwh(ctx, sessionID, energy.Total); err != nil {
+			return 0, err
 		}
 	}
 
@@ -210,35 +223,43 @@ func (s *SessionLifecycleService) CancelPendingIfTimedOut(ctx context.Context, t
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	pendingSession, err := s.sessionReader.GetPending(ctx)
-	if err != nil || pendingSession == nil {
+	sessions, err := s.sessionReader.ListActive(ctx)
+	if err != nil {
 		return false, nil
 	}
 
-	if time.Since(pendingSession.CreatedAt) <= timeout {
-		return false, nil
-	}
-
-	// Save plugID before cancelling so we can cut power after the DB write.
-	plugID := ""
-	if pendingSession.PlugID != nil {
-		plugID = *pendingSession.PlugID
-	}
-
-	slog.Info("Pending session timed out, cancelling", "session_id", pendingSession.ID, "timeout", timeout)
-	if err := s.sessionWriter.CancelPending(ctx, pendingSession.ID, time.Now()); errors.Is(err, repository.ErrSessionWrongState) {
-		return false, nil
-	} else if err != nil {
-		return false, err
-	}
-
-	if s.plugCtrl != nil && plugID != "" {
-		if err := s.plugCtrl.SetPower(ctx, plugID, false); err != nil {
-			slog.Warn("CancelPendingIfTimedOut: failed to cut power", "plugID", plugID, "err", err)
+	cancelledAny := false
+	for i := range sessions {
+		pendingSession := &sessions[i]
+		if pendingSession.Status != models.SessionStatusPending {
+			continue
 		}
+		if time.Since(pendingSession.CreatedAt) <= timeout {
+			continue
+		}
+
+		// Save plugID before cancelling so we can cut power after the DB write.
+		plugID := ""
+		if pendingSession.PlugID != nil {
+			plugID = *pendingSession.PlugID
+		}
+
+		slog.Info("Pending session timed out, cancelling", "session_id", pendingSession.ID, "timeout", timeout)
+		if err := s.sessionWriter.CancelPending(ctx, pendingSession.ID, time.Now()); errors.Is(err, repository.ErrSessionWrongState) {
+			continue
+		} else if err != nil {
+			return cancelledAny, err
+		}
+
+		if s.plugCtrl != nil && plugID != "" {
+			if err := s.plugCtrl.SetPower(ctx, plugID, false); err != nil {
+				slog.Warn("CancelPendingIfTimedOut: failed to cut power", "plugID", plugID, "err", err)
+			}
+		}
+		cancelledAny = true
 	}
 
-	return true, nil
+	return cancelledAny, nil
 }
 
 // Stop stops the active charge session, calculating endPercent from Tasmota energy.
