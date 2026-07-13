@@ -249,6 +249,7 @@ surface below is for direct inspection and forcing state during a test.
 | `GET /cm?cmnd=STATUS+10` | Detailed sensor readings |
 | `GET /cm?cmnd=EnergyTotal%202.5` | Set the cumulative meter (kWh) - advance a charge session deterministically in tests |
 | `GET /cm?cmnd=SensorRetain%201` | Publish tele/SENSOR retained (also accepted over MQTT cmnd, like `Status 10`) |
+| `GET /cm?cmnd=PowerRetain%201` | Publish stat/POWER retained (default 0, matching real Tasmota - power state syncs via periodic tele/STATE) |
 | `GET /status` | Legacy status page |
 
 ```bash
