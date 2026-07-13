@@ -229,17 +229,23 @@ func initServices(ctx context.Context, db *sql.DB, cfg *internal.Config) *server
 }
 
 func startWorkers(ctx context.Context, wg *sync.WaitGroup, svcs *serverServices) {
-	wg.Add(3)
-	workers.RunWithRecovery(ctx, "energy-poller", func(ctx context.Context) {
-		defer wg.Done()
+	// The worker fn may be re-invoked after a recovered panic, so run-once
+	// bookkeeping (wg.Done) hangs off the returned done channel instead.
+	start := func(name string, fn func(ctx context.Context)) {
+		wg.Add(1)
+		done := workers.RunWithRecovery(ctx, name, fn)
+		go func() {
+			<-done
+			wg.Done()
+		}()
+	}
+	start("energy-poller", func(ctx context.Context) {
 		workers.NewEnergyPoller(svcs.chargeService).Start(ctx)
 	})
-	workers.RunWithRecovery(ctx, "auto-stop-checker", func(ctx context.Context) {
-		defer wg.Done()
+	start("auto-stop-checker", func(ctx context.Context) {
 		workers.NewAutoStopChecker(svcs.chargeService).Start(ctx)
 	})
-	workers.RunWithRecovery(ctx, "schedule-activator", func(ctx context.Context) {
-		defer wg.Done()
+	start("schedule-activator", func(ctx context.Context) {
 		workers.NewScheduleActivator(svcs.scheduleService).Start(ctx)
 	})
 }
