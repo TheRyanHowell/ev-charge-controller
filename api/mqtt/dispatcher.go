@@ -99,7 +99,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, topic string, payload []byte,
 
 	switch {
 	case pt.Prefix == "tele" && pt.Leaf == "SENSOR":
-		d.dispatchSENSOR(ctx, topic, *pt, payload)
+		d.dispatchSENSOR(ctx, topic, *pt, payload, retained)
 	case pt.Prefix == "tele" && pt.Leaf == "LWT":
 		d.dispatchLWT(ctx, *pt, string(payload), retained)
 	case pt.Prefix == "tele" && pt.Leaf == "STATE":
@@ -137,7 +137,7 @@ func (d *Dispatcher) dispatchSTATUS10(_ context.Context, topic string, pt Parsed
 	d.mu.Unlock()
 }
 
-func (d *Dispatcher) dispatchSENSOR(ctx context.Context, topic string, pt ParsedTopic, payload []byte) {
+func (d *Dispatcher) dispatchSENSOR(ctx context.Context, topic string, pt ParsedTopic, payload []byte, retained bool) {
 	energy, err := ParseSENSOR(payload)
 	if err != nil {
 		slog.Warn("mqtt: bad SENSOR payload", "topic", topic, "err", err)
@@ -150,7 +150,7 @@ func (d *Dispatcher) dispatchSENSOR(ctx context.Context, topic string, pt Parsed
 		return
 	}
 
-	slog.Debug("mqtt: SENSOR received", "plugID", plugID, "power_w", energy.Power, "total_kwh", energy.Total)
+	slog.Debug("mqtt: SENSOR received", "plugID", plugID, "power_w", energy.Power, "total_kwh", energy.Total, "retained", retained)
 
 	mu := d.plugLock(plugID)
 	mu.Lock()
@@ -159,6 +159,15 @@ func (d *Dispatcher) dispatchSENSOR(ctx context.Context, topic string, pt Parsed
 	d.mu.Lock()
 	d.lastEnergy[plugID] = energy
 	d.mu.Unlock()
+
+	// A retained SENSOR is the broker replaying the plug's last reading on
+	// (re)subscribe - state sync, not live telemetry. Priming the energy cache
+	// is exactly why SensorRetain is enabled, but the reading may be arbitrarily
+	// old and must not be persisted as a fresh power reading.
+	if retained {
+		slog.Info("mqtt: retained SENSOR primed energy cache", "plugID", plugID, "total_kwh", energy.Total)
+		return
+	}
 
 	if d.onSENSOR != nil {
 		d.onSENSOR(ctx, plugID, energy)

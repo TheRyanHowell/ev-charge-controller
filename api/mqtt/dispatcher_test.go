@@ -425,3 +425,46 @@ func TestDispatcher_ManualPowerEdge_SkippedWhenUnchanged(t *testing.T) {
 	d.Dispatch(context.Background(), "evcc/ns-test/stat/plug1/POWER", []byte("OFF"), false)
 	expectNoEdge(t, ch)
 }
+
+// --- Retained SENSOR handling ---
+
+// A RETAINED SENSOR message is the broker replaying the plug's last reading on
+// (re)subscribe - state sync, not live telemetry. It must prime the energy
+// cache (that's why SensorRetain is enabled) but must NOT flow into the
+// power-reading pipeline: the reading could be hours old and would be
+// persisted with a fresh timestamp.
+func TestDispatcher_RetainedSENSOR_PrimesCacheOnly(t *testing.T) {
+	plugCache := NewStaticPlugCache(map[NamespaceSlug]string{
+		{Namespace: "ns-test", Slug: "plug1"}: "plug-id-1",
+	})
+	var handlerCalled bool
+	dispatcher := NewDispatcher(plugCache, func(_ context.Context, _ string, _ *tasmota.EnergyData) {
+		handlerCalled = true
+	}, nil, nil)
+
+	payload := []byte(`{"Time":"2026-07-13T01:00:00","ENERGY":{"Total":42.5,"Yesterday":0,"Today":0,"Power":600,"ApparentPower":857,"ReactivePower":612,"Factor":0.7,"Voltage":230,"Current":2.6}}`)
+	dispatcher.Dispatch(context.Background(), "evcc/ns-test/tele/plug1/SENSOR", payload, true)
+
+	energy := dispatcher.LastEnergy("plug-id-1")
+	if assert.NotNil(t, energy, "retained SENSOR must prime the energy cache") {
+		assert.InDelta(t, 42.5, energy.Total, 1e-9)
+	}
+	assert.False(t, handlerCalled, "retained SENSOR must not reach the power-reading pipeline")
+}
+
+// A LIVE SENSOR keeps the full behavior: cache + pipeline.
+func TestDispatcher_LiveSENSOR_ReachesPipeline(t *testing.T) {
+	plugCache := NewStaticPlugCache(map[NamespaceSlug]string{
+		{Namespace: "ns-test", Slug: "plug1"}: "plug-id-1",
+	})
+	var handlerCalled bool
+	dispatcher := NewDispatcher(plugCache, func(_ context.Context, _ string, _ *tasmota.EnergyData) {
+		handlerCalled = true
+	}, nil, nil)
+
+	payload := []byte(`{"Time":"2026-07-13T01:00:00","ENERGY":{"Total":42.5,"Yesterday":0,"Today":0,"Power":600,"ApparentPower":857,"ReactivePower":612,"Factor":0.7,"Voltage":230,"Current":2.6}}`)
+	dispatcher.Dispatch(context.Background(), "evcc/ns-test/tele/plug1/SENSOR", payload, false)
+
+	assert.NotNil(t, dispatcher.LastEnergy("plug-id-1"))
+	assert.True(t, handlerCalled, "live SENSOR must reach the power-reading pipeline")
+}

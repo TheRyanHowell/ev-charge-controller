@@ -112,13 +112,25 @@ func TestPlugInitializerService_OnPlugOnline_EnsuresSensorRetain(t *testing.T) {
 		err := svc.OnPlugOnline(context.Background(), "plug-sr")
 		require.NoError(t, err)
 
-		found := false
+		published := make(map[string]string, len(pub.published))
 		for _, cmd := range pub.published {
-			if cmd.cmd == "SensorRetain" && cmd.payload == "1" {
-				found = true
-			}
+			published[cmd.cmd] = cmd.payload
 		}
-		assert.True(t, found, "SensorRetain 1 must be published when initialized=%v", initialized)
+		// The full retain posture the API depends on must be asserted on every
+		// online transition - real Tasmota devices may have been pre-configured
+		// with any combination of retain flags.
+		wantPosture := map[string]string{
+			"SensorRetain": "1",
+			"PowerRetain":  "0",
+			"StateRetain":  "0",
+			"StatusRetain": "0",
+			"ButtonRetain": "0",
+			"SwitchRetain": "0",
+			"Status":       "10",
+		}
+		for cmd, val := range wantPosture {
+			assert.Equal(t, val, published[cmd], "%s %s must be published when initialized=%v", cmd, val, initialized)
+		}
 	}
 }
 

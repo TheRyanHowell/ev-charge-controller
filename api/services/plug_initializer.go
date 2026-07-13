@@ -25,18 +25,31 @@ type plugCommandPublisher interface {
 // are already marked initialized, so initCommands never reach them again).
 // Each entry is [command, value].
 //
-// SensorRetain 1 makes tele/%topic%/SENSOR retained by the broker, so the API
-// repopulates its per-plug energy cache immediately after a restart or
-// reconnect instead of waiting for the next TelePeriod tick. Without it, a
-// session started during that gap has no wall-side energy baseline. Power
-// state retention (PowerRetain) is deliberately NOT enabled - retained power
-// messages override PowerOnState and cause ghost switching.
+// This is the full MQTT retain posture the API depends on - asserted
+// explicitly rather than assumed, so a device someone pre-configured (or a
+// Tasmota default change) can never desync it:
+//
+//   - SensorRetain 1: tele/SENSOR retained, so the broker replays the last
+//     energy reading the moment the API (re)subscribes - without it, a session
+//     started before the first TelePeriod tick has no wall-side baseline.
+//   - PowerRetain 0: retained power messages override PowerOnState and cause
+//     ghost switching; the API also relies on stat/POWER being LIVE-only for
+//     manual button-press detection.
+//   - StateRetain 0 / StatusRetain 0: a stale retained STATE/STATUS10 replay
+//     would prime relay state or an ancient meter total after a reconnect.
+//   - ButtonRetain 0 / SwitchRetain 0: these retain cmnd messages, the classic
+//     ghost-switching trap.
 //
 // Status 10 requests an immediate sensor snapshot (stat/%topic%/STATUS10),
 // priming the energy cache the moment a plug comes online - covering the gap
 // before the first retained/periodic SENSOR message exists.
 var ensureCommands = [][2]string{
 	{"SensorRetain", "1"},
+	{"PowerRetain", "0"},
+	{"StateRetain", "0"},
+	{"StatusRetain", "0"},
+	{"ButtonRetain", "0"},
+	{"SwitchRetain", "0"},
 	{"Status", "10"},
 }
 
