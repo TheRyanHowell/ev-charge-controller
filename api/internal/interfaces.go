@@ -12,6 +12,7 @@ import (
 type ChargeSessionRepo interface {
 	GetActive(ctx context.Context) (*models.ChargeSession, error)
 	GetActiveByPlug(ctx context.Context, plugID string) (*models.ChargeSession, error)
+	ListActive(ctx context.Context) ([]models.ChargeSession, error)
 	GetPending(ctx context.Context) (*models.ChargeSession, error)
 	GetPendingByPlug(ctx context.Context, plugID string) (*models.ChargeSession, error)
 	GetLastCompleted(ctx context.Context) (*models.ChargeSession, error)
@@ -49,6 +50,7 @@ type ChargeSessionRepo interface {
 type SessionReader interface {
 	GetActive(ctx context.Context) (*models.ChargeSession, error)
 	GetActiveByPlug(ctx context.Context, plugID string) (*models.ChargeSession, error)
+	ListActive(ctx context.Context) ([]models.ChargeSession, error)
 	GetPending(ctx context.Context) (*models.ChargeSession, error)
 	GetPendingByPlug(ctx context.Context, plugID string) (*models.ChargeSession, error)
 	GetLastCompleted(ctx context.Context) (*models.ChargeSession, error)

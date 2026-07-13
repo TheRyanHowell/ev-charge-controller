@@ -51,6 +51,19 @@ func (r *ChargeSessionRepository) GetActive(ctx context.Context) (*models.Charge
 	return r.queryOneSession(ctx, query, append(toAnySlice(models.ActiveSessionStatuses), ua...)...)
 }
 
+// ListActive returns every in-progress session (active, pending, conditioning,
+// holding), oldest first. Monitoring workers iterate this list so that no
+// concurrent session (second plug, second user) is ever left unmonitored.
+func (r *ChargeSessionRepository) ListActive(ctx context.Context) ([]models.ChargeSession, error) {
+	uc, ua := andUserClause(ctx)
+	query := `SELECT ` + chargeSessionColumns + ` FROM charge_sessions WHERE status IN (` + buildPlaceholders(len(models.ActiveSessionStatuses)) + `)` + uc + ` ORDER BY created_at ASC`
+	rows, err := r.db.QueryContext(ctx, query, append(toAnySlice(models.ActiveSessionStatuses), ua...)...)
+	if err != nil {
+		return nil, err
+	}
+	return scanChargeSessionRows(rows)
+}
+
 func (r *ChargeSessionRepository) GetActiveByVehicle(ctx context.Context, vehicleID string) (*models.ChargeSession, error) {
 	uc, ua := andUserClause(ctx)
 	query := `SELECT ` + chargeSessionColumns + ` FROM charge_sessions WHERE vehicle_id = ? AND status IN (` + buildPlaceholders(len(models.ActiveSessionStatuses)) + `)` + uc + ` ORDER BY created_at DESC LIMIT 1`
