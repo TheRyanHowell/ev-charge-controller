@@ -176,6 +176,52 @@ func TestPublisher_SetPowerAndWait_Confirms(t *testing.T) {
 	assert.Len(t, client.published, 1)
 }
 
+func TestPublisher_SetPowerAndWait_MismatchedStateNotConfirmed(t *testing.T) {
+	client := &mockPahoPublisher{}
+	plugs := &mockPlugLookup{namespace: "ns1", slug: "plug1"}
+	publisher := NewPublisher(client, plugs)
+
+	plugCache := NewStaticPlugCache(map[NamespaceSlug]string{
+		{Namespace: "ns1", Slug: "plug1"}: "plug-id-1",
+	})
+	dispatcher := NewDispatcher(plugCache, nil, nil, nil)
+
+	// A racing actor (relay reconciliation, manual toggle) reports the OPPOSITE
+	// state. That must not count as confirmation of this ON command.
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		dispatcher.Dispatch(context.Background(), "evcc/ns1/stat/plug1/POWER", []byte("OFF"), false)
+	}()
+
+	confirmed, err := publisher.SetPowerAndWait(context.Background(), "plug-id-1", true, dispatcher, 100*time.Millisecond)
+	assert.ErrorIs(t, err, ErrPowerConfirmationTimeout)
+	assert.False(t, confirmed)
+}
+
+func TestPublisher_SetPowerAndWait_ConfirmsMatchingStateAfterMismatch(t *testing.T) {
+	client := &mockPahoPublisher{}
+	plugs := &mockPlugLookup{namespace: "ns1", slug: "plug1"}
+	publisher := NewPublisher(client, plugs)
+
+	plugCache := NewStaticPlugCache(map[NamespaceSlug]string{
+		{Namespace: "ns1", Slug: "plug1"}: "plug-id-1",
+	})
+	dispatcher := NewDispatcher(plugCache, nil, nil, nil)
+
+	// A stale OFF report is followed by the real ON confirmation: the wait
+	// must survive the mismatch and confirm on the matching report.
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		dispatcher.Dispatch(context.Background(), "evcc/ns1/stat/plug1/POWER", []byte("OFF"), false)
+		time.Sleep(30 * time.Millisecond)
+		dispatcher.Dispatch(context.Background(), "evcc/ns1/stat/plug1/POWER", []byte("ON"), false)
+	}()
+
+	confirmed, err := publisher.SetPowerAndWait(context.Background(), "plug-id-1", true, dispatcher, 2*time.Second)
+	require.NoError(t, err)
+	assert.True(t, confirmed)
+}
+
 func TestPublisher_SetPowerAndWait_Timeout(t *testing.T) {
 	client := &mockPahoPublisher{}
 	plugs := &mockPlugLookup{namespace: "ns1", slug: "plug1"}

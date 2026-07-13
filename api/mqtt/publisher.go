@@ -91,6 +91,10 @@ func (p *Publisher) PublishCommand(ctx context.Context, namespace, slug, cmd, pa
 // command, and waits for the channel to be signalled or the context to timeout.
 // The stat/POWER topic is already covered by the wildcard evcc/+/# subscription
 // established at connection time - no per-call subscribe is needed.
+// Only a report of the COMMANDED state confirms: a stat/POWER for the opposite
+// state is another actor racing this command (relay reconciliation, a manual
+// toggle, a retained replay) and the wait re-arms until the commanded state is
+// reported or the timeout elapses.
 // Returns (true, nil) if confirmation arrived, (false, ErrPowerConfirmationTimeout) on timeout.
 func (p *Publisher) SetPowerAndWait(ctx context.Context, plugID string, on bool, dispatcher *Dispatcher, timeout time.Duration) (bool, error) {
 	confirmCh := dispatcher.RegisterPowerConfirm(plugID)
@@ -102,15 +106,23 @@ func (p *Publisher) SetPowerAndWait(ctx context.Context, plugID string, on bool,
 		return false, fmt.Errorf("publisher: set power: %w", err)
 	}
 
-	select {
-	case <-ctx.Done():
-		slog.Warn("mqtt: context cancelled while waiting for confirmation", "plugID", plugID)
-		return false, ctx.Err()
-	case <-time.After(timeout):
-		slog.Warn("mqtt: power confirmation timed out", "plugID", plugID, "timeout_s", timeout.Seconds())
-		return false, ErrPowerConfirmationTimeout
-	case confirmed := <-confirmCh:
-		slog.Info("mqtt: power confirmed", "plugID", plugID, "confirmed", confirmed)
-		return true, nil
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			slog.Warn("mqtt: context cancelled while waiting for confirmation", "plugID", plugID)
+			return false, ctx.Err()
+		case <-deadline.C:
+			slog.Warn("mqtt: power confirmation timed out", "plugID", plugID, "timeout_s", timeout.Seconds())
+			return false, ErrPowerConfirmationTimeout
+		case reported := <-confirmCh:
+			if reported == on {
+				slog.Info("mqtt: power confirmed", "plugID", plugID, "confirmed", reported)
+				return true, nil
+			}
+			slog.Warn("mqtt: stat/POWER reported opposite state, awaiting commanded state", "plugID", plugID, "commanded", on, "reported", reported)
+			confirmCh = dispatcher.RegisterPowerConfirm(plugID)
+		}
 	}
 }
