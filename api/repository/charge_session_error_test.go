@@ -570,7 +570,7 @@ func TestChargeSessionRepository_UpdateCancelData_ContextCanceled(t *testing.T) 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	err := repo.UpdateCancelData(ctx, session.ID, time.Now())
+	err := repo.UpdateCancelData(ctx, session.ID, time.Now(), nil)
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, context.Canceled)
 }

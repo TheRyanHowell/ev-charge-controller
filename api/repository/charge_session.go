@@ -276,9 +276,12 @@ func (r *ChargeSessionRepository) UpdateEndedAt(ctx context.Context, id string, 
 	return err
 }
 
-func (r *ChargeSessionRepository) UpdateCancelData(ctx context.Context, id string, endedAt time.Time) error {
-	query := `UPDATE charge_sessions SET status = ?, ended_at = ? WHERE id = ?`
-	_, err := r.db.ExecContext(ctx, query, models.SessionStatusCancelled, endedAt, id)
+// UpdateCancelData marks a session cancelled. endPercent records how far the
+// charge actually got before cancellation (nil when no energy was delivered),
+// so cancelled sessions don't silently lose their progress.
+func (r *ChargeSessionRepository) UpdateCancelData(ctx context.Context, id string, endedAt time.Time, endPercent *float64) error {
+	query := `UPDATE charge_sessions SET status = ?, ended_at = ?, end_percent = ? WHERE id = ?`
+	_, err := r.db.ExecContext(ctx, query, models.SessionStatusCancelled, endedAt, toNullFloat(endPercent), id)
 
 	return err
 }

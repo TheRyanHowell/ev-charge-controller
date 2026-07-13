@@ -400,12 +400,19 @@ func (s *SessionLifecycleService) computeSessionCost(ctx context.Context, sessio
 
 // CancelActiveSession cancels an active or conditioning session (e.g. due to plug disconnect).
 // DB is updated before power is cut so the poll loop sees the cancelled state immediately.
+// Energy delivered before cancellation is never lost: the session records its
+// end percent and the vehicle's current percent is advanced to match, so the
+// next scheduled session starts from reality instead of the stale pre-charge
+// value (which would double-charge the battery and under-read the gauge).
 func (s *SessionLifecycleService) CancelActiveSession(ctx context.Context, session *models.ChargeSession) error {
 	if err := s.verifySessionOwnership(ctx, session); err != nil {
 		return err
 	}
+
+	endPercent := s.cancelEndPercent(ctx, session)
+
 	s.lock.Lock()
-	if err := s.sessionWriter.UpdateCancelData(ctx, session.ID, time.Now()); err != nil {
+	if err := s.sessionWriter.UpdateCancelData(ctx, session.ID, time.Now(), endPercent); err != nil {
 		s.lock.Unlock()
 		return err
 	}
@@ -418,7 +425,46 @@ func (s *SessionLifecycleService) CancelActiveSession(ctx context.Context, sessi
 		}
 	}
 
+	if endPercent != nil {
+		if vehicle, err := s.vehicleRepo.FindByID(ctx, session.VehicleID); err == nil && vehicle != nil && *endPercent > vehicle.CurrentPercent {
+			if updateErr := s.vehicleRepo.UpdatePercents(ctx, session.VehicleID, *endPercent, vehicle.TargetPercent); updateErr != nil {
+				slog.Warn("[CANCEL-ACTIVE] failed to update vehicle percent after cancellation", "vehicleID", session.VehicleID, "err", updateErr)
+			}
+		}
+	}
+
 	return nil
+}
+
+// cancelEndPercent returns the best-known battery percent at cancellation, or
+// nil when no energy was delivered. When the plug is still reporting, the LIVE
+// meter reading wins - the relay may have kept delivering energy right up to
+// this moment. When the plug is offline (the usual reason for cancellation),
+// the last persisted blended kWh is the source of truth. Whichever is higher
+// is used, since blended energy is monotonic.
+func (s *SessionLifecycleService) cancelEndPercent(ctx context.Context, session *models.ChargeSession) *float64 {
+	vehicle, err := s.vehicleRepo.FindByID(ctx, session.VehicleID)
+	if err != nil || vehicle == nil || vehicle.CapacityKwh <= 0 {
+		return nil
+	}
+
+	best := 0.0
+	if pct, ok := CurrentPercentFromBlended(session, vehicle); ok {
+		best = pct
+	}
+	if s.plugCtrl != nil && session.PlugID != nil {
+		if energy := s.plugCtrl.LastEnergy(*session.PlugID); energy != nil && energy.Total > 0 && session.StartTotalKwh != nil {
+			if live := CalculateProgress(session, energy, vehicle); live.CurrentPercent > best {
+				best = live.CurrentPercent
+			}
+		}
+	}
+
+	// Only meaningful when the charge actually progressed past its start.
+	if best <= session.StartPercent {
+		return nil
+	}
+	return &best
 }
 
 // cancelPendingSession cancels a pending session by marking it cancelled in DB first,
@@ -428,7 +474,8 @@ func (s *SessionLifecycleService) cancelPendingSession(ctx context.Context, sess
 	result := &StopResult{Stopped: true}
 
 	s.lock.Lock()
-	if err := s.sessionWriter.UpdateCancelData(ctx, session.ID, time.Now()); err != nil {
+	// Pending sessions have not charged yet - no end percent to record.
+	if err := s.sessionWriter.UpdateCancelData(ctx, session.ID, time.Now(), nil); err != nil {
 		s.lock.Unlock()
 		return nil, err
 	}

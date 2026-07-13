@@ -158,3 +158,133 @@ func TestCheckAndAutoStopReachingSession_StopsAllActiveSessions(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, models.SessionStatusActive, newer.Status, "newer session below target must keep charging")
 }
+
+// TestCancelActiveSession_PersistsProgress covers the "cancellation loses
+// delivered energy" bug: a session cancelled mid-charge (plug offline, MQTT
+// drop) had delivered real energy, but neither the session's end percent nor
+// the vehicle's current percent recorded it. The next scheduled session then
+// started from the stale pre-charge percent, double-charging the battery and
+// under-reading the gauge for the rest of the day.
+func TestCancelActiveSession_PersistsProgress(t *testing.T) {
+	db := setupServiceTestDB(t)
+
+	// Plug controller with NO cached energy - the plug just went offline,
+	// which is exactly when sessions get cancelled. Progress must come from
+	// the persisted LastBlendedKwh.
+	ctrl := newMockPlugCtrl()
+
+	service := NewChargeSessionService(context.Background(), repository.NewChargeSessionRepository(db), repository.NewVehicleRepository(db), nil, ctrl, nil, nil)
+	defer service.Shutdown()
+
+	// rm1: capacity 2.026 kWh. Blended 1.5 kWh ≈ 74.04%.
+	lastBlended := 1.5
+	require.NoError(t, testdb.InsertChargeSession(db, &testdb.ChargeSessionOpts{
+		ID:             "cancel_with_progress",
+		VehicleID:      testVehicleID,
+		UserID:         testUserID,
+		PlugID:         testPlugID,
+		Status:         "active",
+		StartKwh:       0.4,
+		TargetKwh:      1.6208,
+		StartPct:       20,
+		TargetPct:      80,
+		LastBlendedKwh: &lastBlended,
+	}))
+
+	session, err := service.sessionReader.FindByID(context.Background(), "cancel_with_progress")
+	require.NoError(t, err)
+	require.NoError(t, service.CancelActiveSession(context.Background(), session))
+
+	// Session records how far it actually got.
+	cancelled, err := service.sessionReader.FindByID(context.Background(), "cancel_with_progress")
+	require.NoError(t, err)
+	assert.Equal(t, models.SessionStatusCancelled, cancelled.Status)
+	require.NotNil(t, cancelled.EndPercent, "cancelled session must record its end percent")
+	assert.InDelta(t, 74.04, *cancelled.EndPercent, 0.1)
+
+	// Vehicle keeps the delivered energy - the next scheduled session must
+	// start from ~74%, not the stale 20%.
+	vehicle, err := service.vehicleRepo.FindByID(context.Background(), testVehicleID)
+	require.NoError(t, err)
+	assert.InDelta(t, 74.04, vehicle.CurrentPercent, 0.1, "vehicle current percent must reflect energy delivered before cancellation")
+}
+
+// TestCancelActiveSession_NoProgress_LeavesVehicleUntouched: a session
+// cancelled before any energy flowed must not disturb the vehicle's percent.
+func TestCancelActiveSession_NoProgress_LeavesVehicleUntouched(t *testing.T) {
+	db := setupServiceTestDB(t)
+	ctrl := newMockPlugCtrl()
+
+	service := NewChargeSessionService(context.Background(), repository.NewChargeSessionRepository(db), repository.NewVehicleRepository(db), nil, ctrl, nil, nil)
+	defer service.Shutdown()
+
+	require.NoError(t, testdb.InsertChargeSession(db, &testdb.ChargeSessionOpts{
+		ID:        "cancel_no_progress",
+		VehicleID: testVehicleID,
+		UserID:    testUserID,
+		PlugID:    testPlugID,
+		Status:    "active",
+		StartKwh:  0.4,
+		TargetKwh: 1.6208,
+		StartPct:  20,
+		TargetPct: 80,
+	}))
+
+	session, err := service.sessionReader.FindByID(context.Background(), "cancel_no_progress")
+	require.NoError(t, err)
+	require.NoError(t, service.CancelActiveSession(context.Background(), session))
+
+	cancelled, err := service.sessionReader.FindByID(context.Background(), "cancel_no_progress")
+	require.NoError(t, err)
+	assert.Equal(t, models.SessionStatusCancelled, cancelled.Status)
+	assert.Nil(t, cancelled.EndPercent)
+
+	vehicle, err := service.vehicleRepo.FindByID(context.Background(), testVehicleID)
+	require.NoError(t, err)
+	assert.InDelta(t, 20, vehicle.CurrentPercent, 0.01, "vehicle percent must be untouched when no energy flowed")
+}
+
+// TestCancelActiveSession_PlugStillOnline_UsesLiveEnergy: when the plug is
+// still reporting at cancellation time (it may have kept delivering energy
+// right up to this moment), the end percent must come from the LIVE meter
+// reading, not the older persisted blended value.
+func TestCancelActiveSession_PlugStillOnline_UsesLiveEnergy(t *testing.T) {
+	db := setupServiceTestDB(t)
+
+	ctrl := newMockPlugCtrl()
+	// Live meter is ahead of the last persisted blended value:
+	// live blended = 0.4 + (101.5-100.0)*0.8 = 1.6 kWh ≈ 78.97% of 2.026.
+	ctrl.SetEnergy(testPlugID, &tasmota.EnergyData{Total: 101.5, Power: 600})
+
+	service := NewChargeSessionService(context.Background(), repository.NewChargeSessionRepository(db), repository.NewVehicleRepository(db), nil, ctrl, nil, nil)
+	defer service.Shutdown()
+
+	startTotal := 100.0
+	lastBlended := 1.0 // ≈49.4% - stale relative to the live meter
+	require.NoError(t, testdb.InsertChargeSession(db, &testdb.ChargeSessionOpts{
+		ID:             "cancel_live_energy",
+		VehicleID:      testVehicleID,
+		UserID:         testUserID,
+		PlugID:         testPlugID,
+		Status:         "active",
+		StartKwh:       0.4,
+		TargetKwh:      1.6208,
+		StartPct:       20,
+		TargetPct:      80,
+		StartTotalKwh:  &startTotal,
+		LastBlendedKwh: &lastBlended,
+	}))
+
+	session, err := service.sessionReader.FindByID(context.Background(), "cancel_live_energy")
+	require.NoError(t, err)
+	require.NoError(t, service.CancelActiveSession(context.Background(), session))
+
+	cancelled, err := service.sessionReader.FindByID(context.Background(), "cancel_live_energy")
+	require.NoError(t, err)
+	require.NotNil(t, cancelled.EndPercent)
+	assert.InDelta(t, 78.97, *cancelled.EndPercent, 0.1, "live meter reading must win over the stale persisted blended value")
+
+	vehicle, err := service.vehicleRepo.FindByID(context.Background(), testVehicleID)
+	require.NoError(t, err)
+	assert.InDelta(t, 78.97, vehicle.CurrentPercent, 0.1)
+}

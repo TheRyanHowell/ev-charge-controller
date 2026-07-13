@@ -30,7 +30,7 @@ type ChargeSessionRepo interface {
 	UpdateStartTotalKwh(ctx context.Context, id string, startTotalKwh float64) error
 	UpdateStatus(ctx context.Context, id, status string) error
 	UpdateEndedAt(ctx context.Context, id string, endedAt time.Time) error
-	UpdateCancelData(ctx context.Context, id string, endedAt time.Time) error
+	UpdateCancelData(ctx context.Context, id string, endedAt time.Time, endPercent *float64) error
 	CancelPending(ctx context.Context, id string, endedAt time.Time) error
 	UpdateEndWithStats(ctx context.Context, id string, endedAt time.Time, endKwh, endPercent float64, batteryKwh, wallKwh, co2Grams float64, avgCarbonIntensity *float64, costPence, offPeakKwh float64) error
 	UpdateLastBlendedKwh(ctx context.Context, id string, lastBlendedKwh float64) error
@@ -74,7 +74,7 @@ type SessionWriter interface {
 	UpdateStartTotalKwh(ctx context.Context, id string, startTotalKwh float64) error
 	UpdateStatus(ctx context.Context, id, status string) error
 	UpdateEndedAt(ctx context.Context, id string, endedAt time.Time) error
-	UpdateCancelData(ctx context.Context, id string, endedAt time.Time) error
+	UpdateCancelData(ctx context.Context, id string, endedAt time.Time, endPercent *float64) error
 	CancelPending(ctx context.Context, id string, endedAt time.Time) error
 	UpdateEndWithStats(ctx context.Context, id string, endedAt time.Time, endKwh, endPercent float64, batteryKwh, wallKwh, co2Grams float64, avgCarbonIntensity *float64, costPence, offPeakKwh float64) error
 	UpdateLastBlendedKwh(ctx context.Context, id string, lastBlendedKwh float64) error

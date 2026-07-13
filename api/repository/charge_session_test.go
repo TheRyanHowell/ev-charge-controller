@@ -1742,7 +1742,7 @@ func TestChargeSessionRepository_UpdateCancelData(t *testing.T) {
 	require.NoError(t, repo.Create(t.Context(), session))
 
 	endedAt := time.Now()
-	err := repo.UpdateCancelData(t.Context(), session.ID, endedAt)
+	err := repo.UpdateCancelData(t.Context(), session.ID, endedAt, nil)
 	assert.NoError(t, err)
 
 	updated, err := repo.FindByID(t.Context(), session.ID)
@@ -2513,7 +2513,7 @@ func TestChargeSessionRepository_UpdateCancelData_PreservesEndedAtInstant(t *tes
 	session := insertTimeTestSession(t, repo, "active")
 
 	endedAt := bstNow()
-	require.NoError(t, repo.UpdateCancelData(t.Context(), session.ID, endedAt))
+	require.NoError(t, repo.UpdateCancelData(t.Context(), session.ID, endedAt, nil))
 
 	found, err := repo.FindByID(t.Context(), session.ID)
 	require.NoError(t, err)
