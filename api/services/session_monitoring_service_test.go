@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"ev-charge-controller/api/carbonintensity"
+	"ev-charge-controller/api/internal"
 	"ev-charge-controller/api/models"
 	"ev-charge-controller/api/repository"
 	"ev-charge-controller/api/tasmota"
@@ -283,6 +284,48 @@ func TestSessionMonitoringService_CheckAndAutoStopReachingSession_NilEnergy(t *t
 	stopper := &mockSessionStopper{}
 	service.CheckAndAutoStopReachingSession(context.Background(), stopper)
 	assert.False(t, stopper.stopped)
+}
+
+func TestSessionMonitoringService_CheckAndAutoStopReachingSession_VehicleLookupFails_NoPanic(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	socWorker := NewSOCWorker(nil)
+	lock := newSessionLock()
+
+	// The vehicle lookup returns nil (deleted mid-session, or a transient
+	// failure). The check must skip the session, not panic the auto-stop worker.
+	service := NewSessionMonitoringService(sessRepo, sessRepo, sessRepo, sessRepo, &nilVehicleRepo{vehicleRepo}, ctrl, nil, socWorker, lock)
+
+	startTotal := 0.5
+	session := &models.ChargeSession{
+		VehicleID:     testVehicleID,
+		UserID:        testUserIDPtr,
+		PlugID:        testPlugIDPtr,
+		StartPercent:  20,
+		StartKwh:      0.38,
+		TargetPercent: 80,
+		TargetKwh:     1.52,
+		Status:        models.SessionStatusActive,
+		StartTotalKwh: &startTotal,
+	}
+	require.NoError(t, sessRepo.Create(context.Background(), session))
+
+	ctrl.SetEnergy(testPlugID, &tasmota.EnergyData{Total: 1.0, Power: 600})
+
+	stopper := &mockSessionStopper{}
+	service.CheckAndAutoStopReachingSession(context.Background(), stopper)
+	assert.False(t, stopper.stopped)
+}
+
+// nilVehicleRepo wraps a real VehicleRepo but reports every vehicle as missing.
+type nilVehicleRepo struct {
+	internal.VehicleRepo
+}
+
+func (r *nilVehicleRepo) FindByID(_ context.Context, _ string) (*models.Vehicle, error) {
+	return nil, nil
 }
 
 func TestSessionMonitoringService_SaveEnergyReadings_AttachesCarbonIntensity(t *testing.T) {

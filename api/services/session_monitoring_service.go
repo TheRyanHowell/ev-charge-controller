@@ -346,7 +346,11 @@ func (s *SessionMonitoringService) autoStopReachingSession(ctx context.Context, 
 
 	vehicle, err := s.vehicleRepo.FindByID(ctx, activeSession.VehicleID)
 	if err != nil || vehicle == nil || vehicle.CapacityKwh <= 0 {
-		slog.Info("[AUTO-STOP] Skip: vehicle lookup failed", "err", err, "vehicle", vehicle != nil, "capacity", vehicle.CapacityKwh)
+		capacity := 0.0
+		if vehicle != nil {
+			capacity = vehicle.CapacityKwh
+		}
+		slog.Info("[AUTO-STOP] Skip: vehicle lookup failed", "err", err, "vehicle", vehicle != nil, "capacity", capacity)
 		return
 	}
 
