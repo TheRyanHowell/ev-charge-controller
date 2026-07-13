@@ -78,6 +78,8 @@ export default function StatsPanel({
     targetPercent,
     vehicle,
     renderTimeMs,
+    energyAddedKwh,
+    startPercent,
   });
 
   const chargingEfficiency = vehicle?.chargingEfficiency ?? 0.8;

@@ -5,9 +5,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useElapsedEta } from "./useElapsedEta";
 
-// Isolate the timing/anchoring logic from the ETA physics model.
+// Isolate the timing logic from the ETA physics model: 1 minute per percent
+// still to charge, so the live estimate shrinks as currentPercent rises.
 vi.mock("@/utils/eta", () => ({
-  calculateETA: vi.fn(() => 60), // 60 minutes
+  calculateETA: vi.fn(
+    ({
+      currentPercent,
+      targetPercent,
+    }: {
+      currentPercent: number;
+      targetPercent: number;
+    }) => (targetPercent > currentPercent ? targetPercent - currentPercent : null),
+  ),
 }));
 
 const vehicle = {
@@ -61,16 +70,18 @@ describe("useElapsedEta", () => {
     expect(result.current.remainingSec).toBe(60 * 60);
   });
 
-  it("ticks elapsed and decrements remaining while charging", () => {
+  it("ticks elapsed and tracks the live ETA while charging", () => {
     const start = Date.now();
-    const { result } = renderHook(() =>
-      useElapsedEta({
-        status: "charging",
-        sessionStartTime: start,
-        currentPercent: 20,
-        targetPercent: 80,
-        vehicle,
-      }),
+    const { result, rerender } = renderHook(
+      ({ currentPercent }: { currentPercent: number }) =>
+        useElapsedEta({
+          status: "charging",
+          sessionStartTime: start,
+          currentPercent,
+          targetPercent: 80,
+          vehicle,
+        }),
+      { initialProps: { currentPercent: 20 } },
     );
 
     act(() => {
@@ -78,7 +89,56 @@ describe("useElapsedEta", () => {
     });
 
     expect(result.current.elapsed).toBeGreaterThanOrEqual(120_000);
-    // duration + remaining stays anchored to the original 60-minute estimate.
-    expect(result.current.remainingSec).toBe(60 * 60 - 120);
+    // Remaining reflects the live estimate from the CURRENT percent, so it
+    // stays truthful even when charging is slower or faster than first quoted.
+    expect(result.current.remainingSec).toBe(60 * 60);
+
+    // Charge progresses to 50% → live estimate is now 30 minutes.
+    rerender({ currentPercent: 50 });
+    expect(result.current.remainingSec).toBe(30 * 60);
+  });
+
+  it("never clamps remaining to 0 while still below target (regression: slow charge past original quote)", () => {
+    const start = Date.now();
+    const { result, rerender } = renderHook(
+      ({ currentPercent }: { currentPercent: number }) =>
+        useElapsedEta({
+          status: "charging",
+          sessionStartTime: start,
+          currentPercent,
+          targetPercent: 80,
+          vehicle,
+        }),
+      { initialProps: { currentPercent: 20 } },
+    );
+
+    // Charging ran 70 minutes - PAST the original 60-minute quote - but the
+    // battery is only at 75%. The old anchored countdown showed 0 remaining
+    // here; the display must instead show the honest live estimate.
+    act(() => {
+      vi.advanceTimersByTime(70 * 60_000);
+    });
+    rerender({ currentPercent: 75 });
+
+    expect(result.current.elapsed).toBeGreaterThanOrEqual(70 * 60_000);
+    expect(result.current.remainingSec).toBe(5 * 60);
+
+    // Target completion stays consistent: session start + elapsed + remaining.
+    expect(result.current.baseTime).toBe(start);
+    expect(result.current.totalTimeMin).toBeCloseTo(70 + 5, 1);
+  });
+
+  it("reports 0 remaining once the target is reached but the session is still wrapping up", () => {
+    const start = Date.now();
+    const { result } = renderHook(() =>
+      useElapsedEta({
+        status: "conditioning",
+        sessionStartTime: start,
+        currentPercent: 100,
+        targetPercent: 100,
+        vehicle,
+      }),
+    );
+    expect(result.current.remainingSec).toBe(0);
   });
 });

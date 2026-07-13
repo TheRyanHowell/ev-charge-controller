@@ -522,51 +522,32 @@ describe("StatsPanel timing synchronization", () => {
     vi.useFakeTimers();
   });
 
-  it("duration + remaining equals initial ETA at session start", () => {
+  it("remaining equals the live ETA at session start", () => {
     const startTime = Date.now();
     render(<StatsPanel {...chargingProps} sessionStartTime={startTime} />);
-    expect(getDurationSec() + getRemainingSec()).toBe(etaSec(25, 80));
+    expect(getDurationSec()).toBe(0);
+    expect(getRemainingSec()).toBe(etaSec(25, 80));
   });
 
-  it("duration ticks up and remaining ticks down by the same amount", () => {
+  it("duration ticks up while remaining tracks the live estimate", () => {
     const startTime = Date.now();
     render(<StatsPanel {...chargingProps} sessionStartTime={startTime} />);
 
     act(() => {
       vi.advanceTimersByTime(30000);
     });
-    const dur1 = getDurationSec();
-    const rem1 = getRemainingSec();
+    expect(getDurationSec()).toBe(30);
+    // No SOC change yet → the honest estimate to target is unchanged.
+    expect(getRemainingSec()).toBe(etaSec(25, 80));
 
     act(() => {
       vi.advanceTimersByTime(30000);
     });
-    const dur2 = getDurationSec();
-    const rem2 = getRemainingSec();
-
-    expect(dur2 - dur1).toBe(30);
-    expect(rem1 - rem2).toBe(30);
+    expect(getDurationSec()).toBe(60);
+    expect(getRemainingSec()).toBe(etaSec(25, 80));
   });
 
-  it("duration + remaining sum stays constant as timer advances", () => {
-    const startTime = Date.now();
-    render(<StatsPanel {...chargingProps} sessionStartTime={startTime} />);
-    const total = etaSec(25, 80);
-
-    act(() => {
-      vi.advanceTimersByTime(60000);
-    });
-    expect(getDurationSec() + getRemainingSec()).toBe(total);
-
-    act(() => {
-      vi.advanceTimersByTime(60000);
-    });
-    expect(getDurationSec() + getRemainingSec()).toBe(total);
-  });
-
-  it("SOC update mid-charge does not change duration + remaining sum", () => {
-    // Regression: previously each SOC poll recalculated totalTimeMin via
-    // Math.ceil(ETA) + elapsed, causing cumulative drift of several seconds.
+  it("SOC update mid-charge re-derives remaining from the current percent", () => {
     const startTime = Date.now();
     const { rerender } = render(
       <StatsPanel
@@ -579,7 +560,6 @@ describe("StatsPanel timing synchronization", () => {
     act(() => {
       vi.advanceTimersByTime(30000);
     });
-    const sumBefore = getDurationSec() + getRemainingSec();
 
     rerender(
       <StatsPanel
@@ -588,15 +568,14 @@ describe("StatsPanel timing synchronization", () => {
         currentPercent={30}
       />,
     );
-    act(() => {
-      vi.advanceTimersByTime(1000);
-    });
 
-    expect(getDurationSec() + getRemainingSec()).toBe(sumBefore);
+    expect(getRemainingSec()).toBe(etaSec(30, 80));
   });
 
-  it("multiple consecutive SOC updates do not cause drift", () => {
-    // Regression: 10 SOC ticks would previously add up to ~6s of drift.
+  it("never shows 0 remaining while still below target (regression: slow charge past original quote)", () => {
+    // A charge running far past the originally-quoted ETA (slow charging,
+    // held sessions, cold battery) must keep showing the honest live
+    // estimate. The old anchored countdown clamped to 0 here.
     const startTime = Date.now();
     const { rerender } = render(
       <StatsPanel
@@ -605,42 +584,23 @@ describe("StatsPanel timing synchronization", () => {
         currentPercent={25}
       />,
     );
-    const total = etaSec(25, 80);
-
-    for (let pct = 26; pct <= 35; pct++) {
-      act(() => {
-        vi.advanceTimersByTime(30000);
-      });
-      rerender(
-        <StatsPanel
-          {...chargingProps}
-          sessionStartTime={startTime}
-          currentPercent={pct}
-        />,
-      );
-    }
-    act(() => {
-      vi.advanceTimersByTime(1000);
-    });
-
-    expect(getDurationSec() + getRemainingSec()).toBe(total);
-  });
-
-  it("sum is exact with no floor-rounding error", () => {
-    // Regression: previously both formatDuration and formatEstimatedTime called
-    // Math.floor independently, so the displayed sum could be totalTimeSec - 1.
-    const startTime = Date.now();
-    render(<StatsPanel {...chargingProps} sessionStartTime={startTime} />);
 
     act(() => {
-      vi.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(etaSec(25, 80) * 1000 * 2); // 2× the original quote
     });
-    expect(getDurationSec()).toBe(1);
-    expect(getRemainingSec()).toBe(etaSec(25, 80) - 1);
-    expect(getDurationSec() + getRemainingSec()).toBe(etaSec(25, 80));
+    rerender(
+      <StatsPanel
+        {...chargingProps}
+        sessionStartTime={startTime}
+        currentPercent={70}
+      />,
+    );
+
+    expect(getRemainingSec()).toBeGreaterThan(0);
+    expect(getRemainingSec()).toBe(etaSec(70, 80));
   });
 
-  it("target change mid-charge anchors sum to new ETA plus elapsed at change", () => {
+  it("target change mid-charge re-derives remaining to the new target", () => {
     const startTime = Date.now();
     const { rerender } = render(
       <StatsPanel
@@ -662,13 +622,20 @@ describe("StatsPanel timing synchronization", () => {
         targetPercent={90}
       />,
     );
-    act(() => {
-      vi.advanceTimersByTime(1000);
-    });
 
-    // New total = ETA(25→90) + 60s elapsed at the moment of target change
-    const expectedSum = etaSec(25, 90) + 60;
-    expect(getDurationSec()).toBe(61);
-    expect(getDurationSec() + getRemainingSec()).toBe(expectedSum);
+    expect(getRemainingSec()).toBe(etaSec(25, 90));
+  });
+
+  it("shows 0 remaining once the target is reached but the session is wrapping up", () => {
+    const startTime = Date.now();
+    render(
+      <StatsPanel
+        {...chargingProps}
+        sessionStartTime={startTime}
+        currentPercent={80}
+        targetPercent={80}
+      />,
+    );
+    expect(getRemainingSec()).toBe(0);
   });
 });
