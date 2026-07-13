@@ -265,16 +265,20 @@ func (r *ChargeSessionRepository) UpdateStartTotalKwh(ctx context.Context, id st
 	return err
 }
 
+// UpdateEndedAt binds endedAt as time.Time (not a timezone-naive string): the
+// driver serializes it with its UTC offset, matching created_at. A naive
+// wall-clock string is read back as UTC, shifting the end time by the server's
+// UTC offset (e.g. +1h under TZ=Europe/London).
 func (r *ChargeSessionRepository) UpdateEndedAt(ctx context.Context, id string, endedAt time.Time) error {
 	query := `UPDATE charge_sessions SET ended_at = ? WHERE id = ?`
-	_, err := r.db.ExecContext(ctx, query, endedAt.Format(time.DateTime), id)
+	_, err := r.db.ExecContext(ctx, query, endedAt, id)
 
 	return err
 }
 
 func (r *ChargeSessionRepository) UpdateCancelData(ctx context.Context, id string, endedAt time.Time) error {
 	query := `UPDATE charge_sessions SET status = ?, ended_at = ? WHERE id = ?`
-	_, err := r.db.ExecContext(ctx, query, models.SessionStatusCancelled, endedAt.Format(time.DateTime), id)
+	_, err := r.db.ExecContext(ctx, query, models.SessionStatusCancelled, endedAt, id)
 
 	return err
 }
@@ -283,7 +287,7 @@ func (r *ChargeSessionRepository) UpdateCancelData(ctx context.Context, id strin
 // Returns ErrSessionNotPending if no rows were affected (session not pending).
 func (r *ChargeSessionRepository) CancelPending(ctx context.Context, id string, endedAt time.Time) error {
 	query := `UPDATE charge_sessions SET status = ?, ended_at = ? WHERE id = ? AND status = ?`
-	result, err := r.db.ExecContext(ctx, query, models.SessionStatusCancelled, endedAt.Format(time.DateTime), id, models.SessionStatusPending)
+	result, err := r.db.ExecContext(ctx, query, models.SessionStatusCancelled, endedAt, id, models.SessionStatusPending)
 	if err != nil {
 		return err
 	}

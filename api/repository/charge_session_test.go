@@ -2476,3 +2476,78 @@ func TestChargeSessionRepository_GetActiveByVehicle_UserIsolation(t *testing.T) 
 	require.NotNil(t, gotB, "user B must see their vehicle's session")
 	assert.Equal(t, sessionB.ID, gotB.ID)
 }
+
+// --- ended_at timezone round-trip regressions ---
+//
+// ended_at used to be written with the timezone-NAIVE time.DateTime format
+// while created_at carried its offset. On a server running a non-UTC zone
+// (TZ=Europe/London in production), the naive wall-clock string was read back
+// as UTC, shifting every cancelled/ended session's end time by the UTC offset
+// - the Charge History showed seconds-long cancelled sessions as "1h 0m".
+
+// bstNow returns the current time in a fixed +01:00 zone so these tests fail
+// under any server TZ (including the UTC used in CI) if a write path drops
+// the offset.
+func bstNow() time.Time {
+	return time.Now().In(time.FixedZone("BST", 3600)).Truncate(time.Second)
+}
+
+func insertTimeTestSession(t *testing.T, repo *ChargeSessionRepository, status string) *models.ChargeSession {
+	t.Helper()
+	session := &models.ChargeSession{
+		VehicleID: "rm1",
+		UserID:    repoTestUserIDPtr,
+		PlugID:    repoTestPlugIDPtr,
+		StartKwh:  0.38,
+		TargetKwh: 1.9,
+		Status:    status,
+	}
+	require.NoError(t, repo.Create(t.Context(), session))
+	return session
+}
+
+func TestChargeSessionRepository_UpdateCancelData_PreservesEndedAtInstant(t *testing.T) {
+	db := setupChargeSessionDB(t)
+	defer db.Close()
+	repo := NewChargeSessionRepository(db)
+	session := insertTimeTestSession(t, repo, "active")
+
+	endedAt := bstNow()
+	require.NoError(t, repo.UpdateCancelData(t.Context(), session.ID, endedAt))
+
+	found, err := repo.FindByID(t.Context(), session.ID)
+	require.NoError(t, err)
+	require.NotNil(t, found.EndedAt)
+	assert.Equal(t, endedAt.Unix(), found.EndedAt.Unix(),
+		"cancelled session's ended_at must round-trip to the same instant regardless of server TZ")
+}
+
+func TestChargeSessionRepository_CancelPending_PreservesEndedAtInstant(t *testing.T) {
+	db := setupChargeSessionDB(t)
+	defer db.Close()
+	repo := NewChargeSessionRepository(db)
+	session := insertTimeTestSession(t, repo, models.SessionStatusPending)
+
+	endedAt := bstNow()
+	require.NoError(t, repo.CancelPending(t.Context(), session.ID, endedAt))
+
+	found, err := repo.FindByID(t.Context(), session.ID)
+	require.NoError(t, err)
+	require.NotNil(t, found.EndedAt)
+	assert.Equal(t, endedAt.Unix(), found.EndedAt.Unix())
+}
+
+func TestChargeSessionRepository_UpdateEndedAt_PreservesEndedAtInstant(t *testing.T) {
+	db := setupChargeSessionDB(t)
+	defer db.Close()
+	repo := NewChargeSessionRepository(db)
+	session := insertTimeTestSession(t, repo, "active")
+
+	endedAt := bstNow()
+	require.NoError(t, repo.UpdateEndedAt(t.Context(), session.ID, endedAt))
+
+	found, err := repo.FindByID(t.Context(), session.ID)
+	require.NoError(t, err)
+	require.NotNil(t, found.EndedAt)
+	assert.Equal(t, endedAt.Unix(), found.EndedAt.Unix())
+}
