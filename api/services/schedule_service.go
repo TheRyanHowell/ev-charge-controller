@@ -73,6 +73,15 @@ type ScheduleService struct {
 	lastActivationMu sync.Mutex
 	lastActivation   time.Time
 
+	// lastStartFailure paces retries of FORCED (deadline-guard / failsafe)
+	// session starts per plug. Forced starts bypass the activation throttle
+	// by design, so without this a start that keeps failing (plug offline,
+	// power confirmation timeout - e.g. the vehicle isn't plugged in yet)
+	// would create and cancel a session on every poll tick until the plug
+	// becomes reachable. Keyed by plug ID; guarded by lastStartFailureMu.
+	lastStartFailureMu sync.Mutex
+	lastStartFailure   map[string]time.Time
+
 	// Carbon-aware deps - set via SetCarbonAwareDeps after construction.
 	forecaster internal.CarbonForecaster
 	estimator  DurationEstimator
@@ -826,17 +835,49 @@ func (s *ScheduleService) loadCandidate(ctx context.Context, plugID string) *can
 	return &candidate{vehicle: vehicle}
 }
 
+// startFailureBackoffActive reports whether a recent failed session-start
+// attempt for this plug is still inside its backoff window.
+func (s *ScheduleService) startFailureBackoffActive(plugID string, now time.Time) bool {
+	s.lastStartFailureMu.Lock()
+	defer s.lastStartFailureMu.Unlock()
+	last, ok := s.lastStartFailure[plugID]
+	return ok && now.Sub(last) < scheduleThrottleDuration
+}
+
+// recordStartFailure notes a failed session-start attempt for backoff pacing.
+func (s *ScheduleService) recordStartFailure(plugID string, now time.Time) {
+	s.lastStartFailureMu.Lock()
+	defer s.lastStartFailureMu.Unlock()
+	if s.lastStartFailure == nil {
+		s.lastStartFailure = make(map[string]time.Time)
+	}
+	s.lastStartFailure[plugID] = now
+}
+
+// clearStartFailure resets the backoff after a successful start.
+func (s *ScheduleService) clearStartFailure(plugID string) {
+	s.lastStartFailureMu.Lock()
+	defer s.lastStartFailureMu.Unlock()
+	delete(s.lastStartFailure, plugID)
+}
+
 // startCarbonAwareSession starts a charge session and optionally notifies of a shortfall.
 // throttleExempt=true skips the throttle check (used for forced/failsafe starts).
 func (s *ScheduleService) startCarbonAwareSession(ctx context.Context, plugID string, vehicle *models.Vehicle, now, windowEnd time.Time, dMin int, throttleExempt bool) {
+	if s.startFailureBackoffActive(plugID, now) {
+		slog.Debug("schedule: start failure backoff active, deferring retry", "plugID", plugID)
+		return
+	}
 	sess, err := s.chargeService.StartSession(ctx, plugID, vehicle.ID, vehicle.CurrentPercent, vehicle.TargetPercent)
 	if err != nil {
 		if errors.Is(err, ErrActiveSessionExists) {
 			return
 		}
+		s.recordStartFailure(plugID, now)
 		slog.Error("schedule: carbon_aware start failed", "plugID", plugID, "vehicleID", vehicle.ID, "err", err)
 		return
 	}
+	s.clearStartFailure(plugID)
 
 	s.lastActivationMu.Lock()
 	s.lastActivation = now
@@ -860,15 +901,21 @@ func (s *ScheduleService) startCarbonAwareSession(ctx context.Context, plugID st
 // independently guarantees windowEnd is met, so there's nothing uncertain to warn
 // about at stage-1 activation time.
 func (s *ScheduleService) startCarbonAwareTwoStageSession(ctx context.Context, plugID string, vehicle *models.Vehicle, now, windowEnd time.Time, holdPercent float64, throttleExempt bool) {
+	if s.startFailureBackoffActive(plugID, now) {
+		slog.Debug("schedule: start failure backoff active, deferring retry", "plugID", plugID)
+		return
+	}
 	readyBy := formatTime(windowEnd.In(now.Location()))
 	_, err := s.chargeService.StartTwoStageSession(ctx, plugID, vehicle.ID, vehicle.CurrentPercent, vehicle.TargetPercent, holdPercent, readyBy, true)
 	if err != nil {
 		if errors.Is(err, ErrActiveSessionExists) {
 			return
 		}
+		s.recordStartFailure(plugID, now)
 		slog.Error("schedule: carbon_aware two-stage start failed", "plugID", plugID, "vehicleID", vehicle.ID, "err", err)
 		return
 	}
+	s.clearStartFailure(plugID)
 
 	s.lastActivationMu.Lock()
 	s.lastActivation = now

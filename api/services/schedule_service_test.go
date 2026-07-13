@@ -636,6 +636,7 @@ type mockChargeServiceAdapter struct {
 	createPendingErr      error
 	createPendingResult   *models.ChargeSession
 	createPendingCalled   bool
+	createPendingCalls    int
 
 	twoStageErr            error
 	twoStageResult         *models.ChargeSession
@@ -651,6 +652,7 @@ func (m *mockChargeServiceAdapter) GetActiveByPlug(context.Context, string) (*mo
 
 func (m *mockChargeServiceAdapter) StartSession(context.Context, string, string, float64, float64) (*models.ChargeSession, error) {
 	m.createPendingCalled = true
+	m.createPendingCalls++
 	return m.createPendingResult, m.createPendingErr
 }
 
@@ -1270,6 +1272,55 @@ func TestScheduleService_CarbonAware_AfterMidnight_StillConsidersWindowOpen(t *t
 
 	svc.CheckAndActivateAll(t.Context())
 	assert.True(t, chargeAdapter.createPendingCalled, "overnight window still open after midnight should reach the deadline guard and start")
+}
+
+// TestScheduleService_CarbonAware_DeadlineGuard_FailureBackoff guards against
+// the session-start retry storm: forced (deadline-guard) starts bypass the
+// activation throttle, so when StartSession keeps failing (plug offline, power
+// confirmation timeout - e.g. the bike isn't plugged in yet), the scheduler
+// would otherwise create and cancel a session on EVERY 5-second poll tick for
+// as long as the plug stays unreachable. A failed start must back off and
+// retry at most once per scheduleThrottleDuration, then resume normally.
+func TestScheduleService_CarbonAware_DeadlineGuard_FailureBackoff(t *testing.T) {
+	svc, scheduleRepo, plugRepo, vehicleRepo, chargeAdapter := newMockScheduleService()
+	scheduleRepo.listAllResult = []models.Schedule{carbonAwareSchedule("09:00", "13:00")}
+	plugRepo.findByIDResult = &models.Plug{ID: testPlugID, VehicleID: stringPtr("v1")}
+	vehicleRepo.findByIDResult = &models.Vehicle{ID: "v1", CurrentPercent: 20, TargetPercent: 80}
+	chargeAdapter.createPendingErr = errors.New("power confirmation failed")
+
+	// D = 60min → latestStart = 12:00. now = 12:30, past latestStart: the
+	// deadline guard forces a start on every check.
+	svc.SetCarbonAwareDeps(nil, func(_ *models.Vehicle, _, _ float64) (int, error) {
+		return 60, nil
+	}, nil)
+
+	now := time.Date(2024, 1, 1, 12, 30, 0, 0, time.UTC)
+	old := scheduleNowFunc
+	scheduleNowFunc = func() time.Time { return now }
+	t.Cleanup(func() { scheduleNowFunc = old })
+
+	// First tick: attempts and fails.
+	svc.CheckAndActivateAll(t.Context())
+	assert.Equal(t, 1, chargeAdapter.createPendingCalls, "first tick should attempt the forced start")
+
+	// Ticks 5s and 10s later: still failing - must NOT retry yet.
+	for _, offset := range []time.Duration{5 * time.Second, 10 * time.Second} {
+		now = time.Date(2024, 1, 1, 12, 30, 0, 0, time.UTC).Add(offset)
+		svc.CheckAndActivateAll(t.Context())
+	}
+	assert.Equal(t, 1, chargeAdapter.createPendingCalls, "failed forced start must back off, not retry every poll tick")
+
+	// After the backoff window: retries once more.
+	now = time.Date(2024, 1, 1, 12, 30, 0, 0, time.UTC).Add(scheduleThrottleDuration + time.Second)
+	svc.CheckAndActivateAll(t.Context())
+	assert.Equal(t, 2, chargeAdapter.createPendingCalls, "forced start should retry after the backoff window")
+
+	// The plug comes back: the next allowed attempt succeeds and clears the backoff.
+	chargeAdapter.createPendingErr = nil
+	chargeAdapter.createPendingResult = &models.ChargeSession{ID: "sess1"}
+	now = now.Add(scheduleThrottleDuration + time.Second)
+	svc.CheckAndActivateAll(t.Context())
+	assert.Equal(t, 3, chargeAdapter.createPendingCalls, "start should succeed once the plug is reachable again")
 }
 
 func TestScheduleService_CarbonAware_EstimatorError_FailsafeStart(t *testing.T) {
