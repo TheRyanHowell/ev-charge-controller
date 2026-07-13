@@ -264,3 +264,148 @@ func TestTasmotaHandler_MQTTCommand_PowerOnOff(t *testing.T) {
 	assert.True(t, h.powerState)
 	h.mu.RUnlock()
 }
+
+// mqttCommander connects a throwaway MQTT client for publishing cmnd messages.
+func mqttCommander(t *testing.T, brokerURL string) *pahopkg.Client {
+	t.Helper()
+	mqttURL, err := url.Parse(brokerURL)
+	require.NoError(t, err)
+	conn, err := net.Dial("tcp", mqttURL.Host)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	client := pahopkg.NewClient(pahopkg.ClientConfig{
+		Conn:     conn,
+		ClientID: "test-commander",
+		OnPublishReceived: []func(pahopkg.PublishReceived) (bool, error){
+			func(_ pahopkg.PublishReceived) (bool, error) { return true, nil },
+		},
+	})
+	_, err = client.Connect(context.Background(), &pahopkg.Connect{ClientID: "test-commander", KeepAlive: 5})
+	require.NoError(t, err)
+	return client
+}
+
+// TestTasmotaHandler_MQTTCommand_Status10 verifies that publishing "10" to
+// cmnd/<slug>/Status makes the mock reply with a stat/<slug>/STATUS10 message
+// carrying the StatusSNS/ENERGY envelope - mirroring real Tasmota, which the
+// API uses to prime its energy cache when a plug comes online.
+func TestTasmotaHandler_MQTTCommand_Status10(t *testing.T) {
+	brokerURL := startTestBroker(t)
+
+	h := &TasmotaHandler{maxPowerWatts: 600, voltage: 230, frequency: 50}
+	h.energyData = EnergyData{Total: 7.25, Voltage: 230, Freq: 50}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	t.Cleanup(h.Close)
+
+	u, err := url.Parse(brokerURL)
+	require.NoError(t, err)
+
+	statusCh := subscribeAndCollect(t, brokerURL, "evcc/ns-status/stat/plug1/STATUS10")
+	lwtCh := subscribeAndCollect(t, brokerURL, "evcc/ns-status/tele/plug1/LWT")
+
+	configureMQTT(t, srv.URL, u.Hostname(), u.Port(), "u1", "p1",
+		"evcc/ns-status/%prefix%/%topic%/", "plug1")
+
+	select {
+	case <-lwtCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for MQTT connect")
+	}
+
+	client := mqttCommander(t, brokerURL)
+	_, err = client.Publish(context.Background(), &pahopkg.Publish{
+		Topic:   "evcc/ns-status/cmnd/plug1/Status",
+		QoS:     0,
+		Payload: []byte("10"),
+	})
+	require.NoError(t, err)
+
+	select {
+	case payload := <-statusCh:
+		var msg struct {
+			StatusSNS struct {
+				ENERGY struct {
+					Total   float64 `json:"Total"`
+					Voltage float64 `json:"Voltage"`
+				} `json:"ENERGY"`
+			} `json:"StatusSNS"`
+		}
+		require.NoError(t, json.Unmarshal(payload, &msg))
+		assert.InDelta(t, 7.25, msg.StatusSNS.ENERGY.Total, 1e-9)
+		assert.Equal(t, 230.0, msg.StatusSNS.ENERGY.Voltage)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for stat/STATUS10 response")
+	}
+}
+
+// TestTasmotaHandler_MQTTCommand_SensorRetain verifies that publishing "1" to
+// cmnd/<slug>/SensorRetain makes subsequent tele/SENSOR publishes retained:
+// a late subscriber (like the API right after a restart) immediately receives
+// the last energy reading.
+func TestTasmotaHandler_MQTTCommand_SensorRetain(t *testing.T) {
+	brokerURL := startTestBroker(t)
+
+	h := &TasmotaHandler{maxPowerWatts: 600, voltage: 230, frequency: 50}
+	h.energyData = EnergyData{Total: 3.5, Voltage: 230, Freq: 50}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	t.Cleanup(h.Close)
+
+	u, err := url.Parse(brokerURL)
+	require.NoError(t, err)
+
+	lwtCh := subscribeAndCollect(t, brokerURL, "evcc/ns-retain/tele/plug1/LWT")
+
+	configureMQTT(t, srv.URL, u.Hostname(), u.Port(), "u1", "p1",
+		"evcc/ns-retain/%prefix%/%topic%/", "plug1")
+
+	select {
+	case <-lwtCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for MQTT connect")
+	}
+
+	client := mqttCommander(t, brokerURL)
+	_, err = client.Publish(context.Background(), &pahopkg.Publish{
+		Topic:   "evcc/ns-retain/cmnd/plug1/SensorRetain",
+		QoS:     0,
+		Payload: []byte("1"),
+	})
+	require.NoError(t, err)
+
+	// Wait for the flag to take effect and a SENSOR publish to happen with it
+	// (the sensor loop publishes every 5s).
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		h.mu.RLock()
+		retained := h.sensorRetain
+		h.mu.RUnlock()
+		if retained {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("sensorRetain flag never set from MQTT command")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	// Give the sensor loop time to publish at least once with retain set.
+	time.Sleep(6 * time.Second)
+
+	// A brand-new late subscriber must receive the retained SENSOR immediately.
+	lateCh := subscribeAndCollect(t, brokerURL, "evcc/ns-retain/tele/plug1/SENSOR")
+	select {
+	case payload := <-lateCh:
+		var msg struct {
+			ENERGY struct {
+				Total float64 `json:"Total"`
+			} `json:"ENERGY"`
+		}
+		require.NoError(t, json.Unmarshal(payload, &msg))
+		assert.GreaterOrEqual(t, msg.ENERGY.Total, 3.5)
+	case <-time.After(4 * time.Second):
+		t.Fatal("late subscriber did not receive a retained SENSOR message")
+	}
+}

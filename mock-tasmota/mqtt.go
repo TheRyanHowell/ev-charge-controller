@@ -114,7 +114,9 @@ func (h *TasmotaHandler) reconnectMQTT() {
 	}
 
 	lwtTopic := fmt.Sprintf("evcc/%s/tele/%s/LWT", conf.Namespace, conf.Slug)
-	cmndTopic := fmt.Sprintf("evcc/%s/cmnd/%s/POWER", conf.Namespace, conf.Slug)
+	// Subscribe to every command leaf (POWER, Status, SensorRetain, …) the way
+	// real Tasmota listens on cmnd/%topic%/#.
+	cmndTopic := fmt.Sprintf("evcc/%s/cmnd/%s/+", conf.Namespace, conf.Slug)
 
 	ccfg := autopaho.ClientConfig{
 		BrokerUrls:        []*url.URL{brokerURL},
@@ -150,7 +152,7 @@ func (h *TasmotaHandler) reconnectMQTT() {
 			ClientID: "mock-tasmota-" + conf.Slug,
 			OnPublishReceived: []func(pahopkg.PublishReceived) (bool, error){
 				func(pr pahopkg.PublishReceived) (bool, error) {
-					h.handleMQTTPower(ctx, pr.Packet.Topic, pr.Packet.Payload)
+					h.handleMQTTCommand(ctx, pr.Packet.Topic, pr.Packet.Payload)
 					return true, nil
 				},
 			},
@@ -169,6 +171,100 @@ func (h *TasmotaHandler) reconnectMQTT() {
 	h.mqttMu.Lock()
 	h.mqttConn = cm
 	h.mqttMu.Unlock()
+}
+
+// handleMQTTCommand routes cmnd/<slug>/<Command> messages by command leaf,
+// mirroring how real Tasmota dispatches commands received over MQTT.
+func (h *TasmotaHandler) handleMQTTCommand(ctx context.Context, topic string, payload []byte) {
+	leaf := topic
+	if idx := strings.LastIndex(topic, "/"); idx >= 0 {
+		leaf = topic[idx+1:]
+	}
+	switch strings.ToUpper(leaf) {
+	case "POWER":
+		h.handleMQTTPower(ctx, topic, payload)
+	case "STATUS":
+		h.handleMQTTStatus(ctx, topic, payload)
+	case "SENSORRETAIN":
+		h.handleMQTTSensorRetain(topic, payload)
+	default:
+		log.Printf("mqtt: ignoring unsupported command %q on topic %s", leaf, topic)
+	}
+}
+
+// handleMQTTStatus processes cmnd/<slug>/Status messages. Only "10" (sensor
+// snapshot) is supported; the response is published to stat/<slug>/STATUS10
+// with the StatusSNS/ENERGY envelope, like real Tasmota.
+func (h *TasmotaHandler) handleMQTTStatus(ctx context.Context, topic string, payload []byte) {
+	arg := strings.TrimSpace(string(payload))
+	if arg != "10" && arg != "8" {
+		log.Printf("mqtt: Status %q not supported (topic %s)", arg, topic)
+		return
+	}
+
+	h.mqttMu.RLock()
+	conf := h.mqttConf
+	cm := h.mqttConn
+	h.mqttMu.RUnlock()
+	if cm == nil {
+		return
+	}
+
+	h.mu.Lock()
+	if h.energyData.Power > 0 {
+		elapsed := time.Since(h.lastUpdate).Hours()
+		kwh := (h.energyData.Power * elapsed) / 1000
+		h.energyData.Total += kwh
+		h.energyData.Today += kwh
+		h.lastUpdate = time.Now()
+	}
+	energy := h.energyData
+	h.mu.Unlock()
+
+	factor := 0.70
+	apparent := math.Round(energy.Power / factor)
+	reactive := 0.0
+	if apparent > energy.Power {
+		reactive = math.Sqrt(apparent*apparent - energy.Power*energy.Power)
+	}
+
+	respPayload, err := json.Marshal(map[string]interface{}{
+		"StatusSNS": map[string]interface{}{
+			"Time": time.Now().Format(time.RFC3339),
+			"ENERGY": map[string]interface{}{
+				"TotalStartTime": "2024-03-19T13:49:14",
+				"Total":          energy.Total,
+				"Yesterday":      energy.Yesterday / 1000,
+				"Today":          energy.Today,
+				"Power":          energy.Power,
+				"ApparentPower":  apparent,
+				"ReactivePower":  reactive,
+				"Factor":         factor,
+				"Voltage":        energy.Voltage,
+				"Current":        energy.Current,
+			},
+		},
+	})
+	if err != nil {
+		return
+	}
+
+	statTopic := fmt.Sprintf("evcc/%s/stat/%s/STATUS10", conf.Namespace, conf.Slug)
+	if _, err := cm.Publish(ctx, &pahopkg.Publish{Topic: statTopic, QoS: 0, Payload: respPayload}); err != nil {
+		log.Printf("mqtt: STATUS10 publish failed on %s: %v", statTopic, err)
+	} else {
+		log.Printf("mqtt: STATUS10 published to %s (total=%.3fkWh)", statTopic, energy.Total)
+	}
+}
+
+// handleMQTTSensorRetain processes cmnd/<slug>/SensorRetain messages ("0"/"1").
+func (h *TasmotaHandler) handleMQTTSensorRetain(topic string, payload []byte) {
+	arg := strings.TrimSpace(string(payload))
+	enabled := arg == "1" || strings.EqualFold(arg, "on")
+	h.mu.Lock()
+	h.sensorRetain = enabled
+	h.mu.Unlock()
+	log.Printf("mqtt: SensorRetain set to %v (topic %s)", enabled, topic)
 }
 
 // handleMQTTPower processes cmnd/<slug>/POWER messages.
@@ -245,6 +341,7 @@ func (h *TasmotaHandler) publishSensor(ctx context.Context, cm *autopaho.Connect
 		h.lastUpdate = time.Now()
 	}
 	energy := h.energyData
+	retain := h.sensorRetain
 	h.mu.Unlock()
 
 	factor := 0.70
@@ -272,7 +369,7 @@ func (h *TasmotaHandler) publishSensor(ctx context.Context, cm *autopaho.Connect
 	if err != nil {
 		return
 	}
-	_, err = cm.Publish(ctx, &pahopkg.Publish{Topic: topic, QoS: 0, Payload: payload})
+	_, err = cm.Publish(ctx, &pahopkg.Publish{Topic: topic, QoS: 0, Retain: retain, Payload: payload})
 	if err != nil {
 		log.Printf("mqtt: SENSOR publish failed on %s: %v", topic, err)
 	} else {

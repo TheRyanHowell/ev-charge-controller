@@ -23,6 +23,9 @@ type TasmotaHandler struct {
 	authUsername  string
 	authPassword  string
 	energyRes     int
+	// sensorRetain mirrors Tasmota's SensorRetain setting: when true,
+	// tele/SENSOR publishes carry the MQTT retain flag.
+	sensorRetain bool
 
 	// MQTT state
 	mqttMu        sync.RWMutex
