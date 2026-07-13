@@ -164,7 +164,10 @@ export default function StatsPanel({
         >
           Time Remaining
         </span>
-        <div className="mt-1.5 text-2xl font-bold text-fg tabular-nums whitespace-nowrap">
+        <div
+          data-testid="time-remaining"
+          className="mt-1.5 text-2xl font-bold text-fg tabular-nums whitespace-nowrap"
+        >
           {remainingSec != null ? formatDuration(remainingSec * 1000) : "-"}
         </div>
       </div>

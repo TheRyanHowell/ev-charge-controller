@@ -833,3 +833,113 @@ test.describe.serial("Plug Switching", () => {
       .catch(() => undefined);
   });
 });
+
+/**
+ * SSR accuracy during an active session.
+ *
+ * Regression coverage for: "on first load the gauge shows the session's START
+ * percent, and only switches to the actual current percent after polling."
+ * The server-rendered page must carry the session's live percent, and the
+ * client must not regress it while waiting for the first poll.
+ *
+ * Uses the mock's EnergyTotal command to advance the meter deterministically
+ * instead of waiting minutes for real-time accumulation.
+ */
+const MOCK_TASMOTA_URL =
+  process.env.E2E_MOCK_TASMOTA_URL ?? "http://mock-tasmota:8081";
+
+test.describe.serial("SSR accuracy during an active session", () => {
+  test.beforeEach(async ({ page }) => {
+    await navigateToDashboard(page);
+    await expect(page.getByTestId("speedometer-gauge-svg")).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(page.getByLabel("Online").first()).toBeVisible({
+      timeout: 15_000,
+    });
+    await page
+      .getByRole("button", { name: /My RM1/ })
+      .first()
+      .click();
+    await expect(
+      page.getByRole("button", { name: /My RM1/ }).first(),
+    ).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("reload mid-session shows the live percent immediately and a non-zero time remaining", async ({
+    page,
+    api,
+  }) => {
+    const vehicles = await api.getJson<Vehicle[]>("/api/vehicles");
+    const vehicleId = vehicles[0].id;
+
+    // Start charging.
+    const startButton = page.getByRole("button", { name: /start charging/i });
+    await expect(startButton).toBeEnabled({ timeout: 10_000 });
+    const [response] = await Promise.all([
+      page.waitForResponse(
+        (resp) =>
+          resp.url().includes("/api/charge-sessions") &&
+          resp.request().method() === "POST",
+        { timeout: 25_000 },
+      ),
+      startButton.click(),
+    ]);
+    expect(response.status()).toBe(201);
+
+    const session = await api.getSession(
+      `/api/charge-sessions?vehicleId=${vehicleId}`,
+    );
+    expect(session).not.toBeNull();
+    const startPercent = session?.startPercent ?? 20;
+
+    // Advance the wall meter by +0.5 kWh so the session's live percent moves
+    // well past the start percent without waiting for real-time accumulation.
+    const statusResp = await fetch(
+      `${MOCK_TASMOTA_URL}/cm?cmnd=${encodeURIComponent("STATUS 10")}`,
+    );
+    const status = (await statusResp.json()) as {
+      StatusSNS: { ENERGY: { Total: number } };
+    };
+    const newTotal = (status.StatusSNS.ENERGY.Total + 0.5).toFixed(4);
+    const setResp = await fetch(
+      `${MOCK_TASMOTA_URL}/cm?cmnd=${encodeURIComponent(`EnergyTotal ${newTotal}`)}`,
+    );
+    expect(setResp.ok).toBe(true);
+
+    // Wait until the SERVER reports the advanced percent (SENSOR publishes
+    // every ~5s; the blended percent follows).
+    let serverPercent = startPercent;
+    await expect(async () => {
+      const live = await api.getSession(
+        `/api/charge-sessions?vehicleId=${vehicleId}`,
+      );
+      serverPercent = live?.currentPercent ?? startPercent;
+      expect(serverPercent).toBeGreaterThan(startPercent + 10);
+    }).toPass({ timeout: 30_000, intervals: [1_000] });
+
+    // Reload: the FIRST rendered gauge value must be the server's live
+    // percent - not the start percent corrected later by polling. The short
+    // timeout (well under the 5s poll interval) is what catches a regression
+    // where only a later poll fixes the display.
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("gauge-percent")).toHaveText(
+      `${serverPercent.toFixed(0)}%`,
+      { timeout: 3_000 },
+    );
+
+    // Still charging, and Time Remaining must be a real, non-zero estimate.
+    await expect(
+      page.getByRole("button", { name: /stop charging/i }),
+    ).toBeVisible({ timeout: 10_000 });
+    const remainingValue = page.getByTestId("time-remaining").first();
+    await expect(remainingValue).not.toHaveText("00:00:00");
+    await expect(remainingValue).not.toHaveText("-");
+
+    // Clean up.
+    await page.getByRole("button", { name: /stop charging/i }).click();
+    await expect(
+      page.getByRole("button", { name: /start charging/i }),
+    ).toBeVisible({ timeout: 15_000 });
+  });
+});
