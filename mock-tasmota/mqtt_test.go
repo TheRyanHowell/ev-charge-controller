@@ -409,3 +409,93 @@ func TestTasmotaHandler_MQTTCommand_SensorRetain(t *testing.T) {
 		t.Fatal("late subscriber did not receive a retained SENSOR message")
 	}
 }
+
+// TestTasmotaHandler_StatPowerNotRetainedByDefault mirrors real Tasmota:
+// PowerRetain defaults to 0, so stat/POWER must NOT be retained - a late
+// subscriber gets nothing. Power state syncs via periodic tele/STATE instead.
+func TestTasmotaHandler_StatPowerNotRetainedByDefault(t *testing.T) {
+	brokerURL := startTestBroker(t)
+
+	h := &TasmotaHandler{maxPowerWatts: 600, voltage: 230, frequency: 50}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	t.Cleanup(h.Close)
+
+	u, err := url.Parse(brokerURL)
+	require.NoError(t, err)
+
+	lwtCh := subscribeAndCollect(t, brokerURL, "evcc/ns-pr/tele/plug1/LWT")
+	configureMQTT(t, srv.URL, u.Hostname(), u.Port(), "u1", "p1",
+		"evcc/ns-pr/%prefix%/%topic%/", "plug1")
+	select {
+	case <-lwtCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for MQTT connect")
+	}
+
+	// Flip power via HTTP (publishes stat/POWER).
+	resp, err := http.Get(srv.URL + "/cm?cmnd=" + url.QueryEscape("Power ON"))
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	time.Sleep(500 * time.Millisecond)
+
+	// A late subscriber must NOT receive a retained stat/POWER.
+	lateCh := subscribeAndCollect(t, brokerURL, "evcc/ns-pr/stat/plug1/POWER")
+	select {
+	case payload := <-lateCh:
+		t.Fatalf("stat/POWER must not be retained by default (PowerRetain 0), got %q", payload)
+	case <-time.After(1 * time.Second):
+	}
+
+	// ...but the periodic tele/STATE must carry the power state.
+	stateCh := subscribeAndCollect(t, brokerURL, "evcc/ns-pr/tele/plug1/STATE")
+	select {
+	case payload := <-stateCh:
+		var msg struct {
+			POWER string `json:"POWER"`
+		}
+		require.NoError(t, json.Unmarshal(payload, &msg))
+		assert.Equal(t, "ON", msg.POWER)
+	case <-time.After(10 * time.Second):
+		t.Fatal("expected a periodic tele/STATE message carrying the power state")
+	}
+}
+
+// TestTasmotaHandler_StatPowerRetainedWhenConfigured: PowerRetain 1 makes
+// stat/POWER retained, like real Tasmota.
+func TestTasmotaHandler_StatPowerRetainedWhenConfigured(t *testing.T) {
+	brokerURL := startTestBroker(t)
+
+	h := &TasmotaHandler{maxPowerWatts: 600, voltage: 230, frequency: 50}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	t.Cleanup(h.Close)
+
+	u, err := url.Parse(brokerURL)
+	require.NoError(t, err)
+
+	lwtCh := subscribeAndCollect(t, brokerURL, "evcc/ns-pr2/tele/plug1/LWT")
+	configureMQTT(t, srv.URL, u.Hostname(), u.Port(), "u1", "p1",
+		"evcc/ns-pr2/%prefix%/%topic%/", "plug1")
+	select {
+	case <-lwtCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for MQTT connect")
+	}
+
+	resp, err := http.Get(srv.URL + "/cm?cmnd=" + url.QueryEscape("PowerRetain 1"))
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	resp, err = http.Get(srv.URL + "/cm?cmnd=" + url.QueryEscape("Power ON"))
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	time.Sleep(500 * time.Millisecond)
+
+	lateCh := subscribeAndCollect(t, brokerURL, "evcc/ns-pr2/stat/plug1/POWER")
+	select {
+	case payload := <-lateCh:
+		assert.Equal(t, "ON", string(payload))
+	case <-time.After(3 * time.Second):
+		t.Fatal("stat/POWER should be retained when PowerRetain 1 is set")
+	}
+}

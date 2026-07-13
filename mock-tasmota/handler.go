@@ -26,6 +26,10 @@ type TasmotaHandler struct {
 	// sensorRetain mirrors Tasmota's SensorRetain setting: when true,
 	// tele/SENSOR publishes carry the MQTT retain flag.
 	sensorRetain bool
+	// powerRetain mirrors Tasmota's PowerRetain setting (default 0): when true,
+	// stat/POWER publishes carry the MQTT retain flag. Real Tasmota does NOT
+	// retain power state by default - state syncs via periodic tele/STATE.
+	powerRetain bool
 
 	// MQTT state
 	mqttMu        sync.RWMutex

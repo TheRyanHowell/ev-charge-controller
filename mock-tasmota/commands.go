@@ -182,9 +182,15 @@ func (h *TasmotaHandler) handleCM(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]int{"EnergyRes": res})
 
 	case strings.ToUpper(cmd) == "POWERRETAIN 1" || strings.ToUpper(cmd) == "POWERRETAIN ON":
+		h.mu.Lock()
+		h.powerRetain = true
+		h.mu.Unlock()
 		_ = json.NewEncoder(w).Encode(map[string]int{"PowerRetain": 1})
 
 	case strings.ToUpper(cmd) == "POWERRETAIN 0" || strings.ToUpper(cmd) == "POWERRETAIN OFF":
+		h.mu.Lock()
+		h.powerRetain = false
+		h.mu.Unlock()
 		_ = json.NewEncoder(w).Encode(map[string]int{"PowerRetain": 0})
 
 	case strings.ToUpper(cmd) == "POWERRETAIN":

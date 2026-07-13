@@ -187,6 +187,8 @@ func (h *TasmotaHandler) handleMQTTCommand(ctx context.Context, topic string, pa
 		h.handleMQTTStatus(ctx, topic, payload)
 	case "SENSORRETAIN":
 		h.handleMQTTSensorRetain(topic, payload)
+	case "POWERRETAIN":
+		h.handleMQTTPowerRetain(topic, payload)
 	default:
 		log.Printf("mqtt: ignoring unsupported command %q on topic %s", leaf, topic)
 	}
@@ -267,6 +269,16 @@ func (h *TasmotaHandler) handleMQTTSensorRetain(topic string, payload []byte) {
 	log.Printf("mqtt: SensorRetain set to %v (topic %s)", enabled, topic)
 }
 
+// handleMQTTPowerRetain processes cmnd/<slug>/PowerRetain messages ("0"/"1").
+func (h *TasmotaHandler) handleMQTTPowerRetain(topic string, payload []byte) {
+	arg := strings.TrimSpace(string(payload))
+	enabled := arg == "1" || strings.EqualFold(arg, "on")
+	h.mu.Lock()
+	h.powerRetain = enabled
+	h.mu.Unlock()
+	log.Printf("mqtt: PowerRetain set to %v (topic %s)", enabled, topic)
+}
+
 // handleMQTTPower processes cmnd/<slug>/POWER messages.
 func (h *TasmotaHandler) handleMQTTPower(ctx context.Context, topic string, payload []byte) {
 	h.mqttMu.RLock()
@@ -300,10 +312,15 @@ func (h *TasmotaHandler) handleMQTTPower(ctx context.Context, topic string, payl
 		return
 	}
 
+	h.mu.RLock()
+	retain := h.powerRetain
+	h.mu.RUnlock()
+
 	statTopic := fmt.Sprintf("evcc/%s/stat/%s/POWER", conf.Namespace, conf.Slug)
-	log.Printf("mqtt: publishing stat/POWER %q to %s", state, statTopic)
-	// Publish as retained so that late subscribers receive the current power state.
-	resp, err := cm.Publish(ctx, &pahopkg.Publish{Topic: statTopic, QoS: 1, Retain: true, Payload: []byte(state)})
+	log.Printf("mqtt: publishing stat/POWER %q to %s (retain=%v)", state, statTopic, retain)
+	// Retained only when PowerRetain is enabled, mirroring real Tasmota
+	// (default 0 - late subscribers sync state via periodic tele/STATE).
+	resp, err := cm.Publish(ctx, &pahopkg.Publish{Topic: statTopic, QoS: 1, Retain: retain, Payload: []byte(state)})
 	if err != nil {
 		log.Printf("mqtt: stat/POWER: failed to publish: %v", err)
 	} else if resp != nil && resp.ReasonCode != 0 {
@@ -313,21 +330,46 @@ func (h *TasmotaHandler) handleMQTTPower(ctx context.Context, topic string, payl
 	}
 }
 
-// publishSensorLoop publishes tele/SENSOR every 5 seconds while ctx is active.
+// publishSensorLoop publishes tele/SENSOR and tele/STATE every 5 seconds while
+// ctx is active - real Tasmota publishes both at every TelePeriod tick. STATE
+// carries the relay state, which is how subscribers sync power state without
+// retained stat/POWER messages (PowerRetain defaults to 0).
 func (h *TasmotaHandler) publishSensorLoop(ctx context.Context, cm *autopaho.ConnectionManager, ns, slug string) {
-	topic := fmt.Sprintf("evcc/%s/tele/%s/SENSOR", ns, slug)
+	sensorTopic := fmt.Sprintf("evcc/%s/tele/%s/SENSOR", ns, slug)
+	stateTopic := fmt.Sprintf("evcc/%s/tele/%s/STATE", ns, slug)
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
-	h.publishSensor(ctx, cm, topic)
+	h.publishSensor(ctx, cm, sensorTopic)
+	h.publishState(ctx, cm, stateTopic)
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			h.publishSensor(ctx, cm, topic)
+			h.publishSensor(ctx, cm, sensorTopic)
+			h.publishState(ctx, cm, stateTopic)
 		}
+	}
+}
+
+// publishState publishes the tele/STATE telemetry message (never retained,
+// matching real Tasmota's StateRetain default).
+func (h *TasmotaHandler) publishState(ctx context.Context, cm *autopaho.ConnectionManager, topic string) {
+	h.mu.RLock()
+	state := h.getPowerState()
+	h.mu.RUnlock()
+
+	payload, err := json.Marshal(map[string]interface{}{
+		"Time":  time.Now().Format(time.RFC3339),
+		"POWER": state,
+	})
+	if err != nil {
+		return
+	}
+	if _, err := cm.Publish(ctx, &pahopkg.Publish{Topic: topic, QoS: 0, Payload: payload}); err != nil {
+		log.Printf("mqtt: STATE publish failed on %s: %v", topic, err)
 	}
 }
 
@@ -386,12 +428,17 @@ func (h *TasmotaHandler) publishPowerState(state string) {
 	if conf.Namespace == "" || conf.Slug == "" || cm == nil {
 		return
 	}
+	h.mu.RLock()
+	retain := h.powerRetain
+	h.mu.RUnlock()
+
 	topic := fmt.Sprintf("evcc/%s/stat/%s/POWER", conf.Namespace, conf.Slug)
-	log.Printf("mqtt: publishing stat/POWER %q to %s (HTTP trigger)", state, topic)
+	log.Printf("mqtt: publishing stat/POWER %q to %s (HTTP trigger, retain=%v)", state, topic, retain)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	// Publish as retained so that late subscribers receive the current power state.
-	resp, err := cm.Publish(ctx, &pahopkg.Publish{Topic: topic, QoS: 1, Retain: true, Payload: []byte(state)})
+	// Retained only when PowerRetain is enabled, mirroring real Tasmota
+	// (default 0 - late subscribers sync state via periodic tele/STATE).
+	resp, err := cm.Publish(ctx, &pahopkg.Publish{Topic: topic, QoS: 1, Retain: retain, Payload: []byte(state)})
 	if err != nil {
 		log.Printf("mqtt: stat/POWER: failed to publish: %v", err)
 	} else if resp != nil && resp.ReasonCode != 0 {
