@@ -943,3 +943,59 @@ test.describe.serial("SSR accuracy during an active session", () => {
     ).toBeVisible({ timeout: 15_000 });
   });
 });
+
+/**
+ * Session deletion through the browser (Next.js proxy → Go API).
+ *
+ * Regression coverage for a production 404: the Go API exposed
+ * DELETE /api/charge-sessions/{id} but the Next.js proxy tree had no
+ * charge-sessions/[id] route, so deleting from the history page died inside
+ * Next.js. Existing stateless tests only opened and cancelled the dialog;
+ * this stateful test confirms the delete end-to-end.
+ */
+test.describe.serial("History session deletion", () => {
+  test("deletes a session from the history page through the proxy", async ({
+    page,
+  }) => {
+    await page.goto("/history", {
+      waitUntil: "domcontentloaded",
+      timeout: 30_000,
+    });
+    await expect(
+      page.getByRole("heading", { name: /charge history/i }),
+    ).toBeVisible({ timeout: 10_000 });
+
+    const sessionCards = page.getByRole("button").filter({
+      hasText: /completed|cancelled|stopped/i,
+    });
+    await expect(sessionCards.first()).toBeVisible({ timeout: 10_000 });
+    const countBefore = await sessionCards.count();
+
+    const deleteButtons = page.getByRole("button", {
+      name: /delete.*session/i,
+    });
+    await expect(deleteButtons.first()).toBeVisible({ timeout: 10_000 });
+    await deleteButtons.first().click();
+
+    const dialog = page.getByRole("dialog", { name: /delete session/i });
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+
+    // Confirm and require the proxied DELETE to actually succeed - a missing
+    // proxy route returns 404 here.
+    const [response] = await Promise.all([
+      page.waitForResponse(
+        (resp) =>
+          resp.url().includes("/api/charge-sessions/") &&
+          resp.request().method() === "DELETE",
+        { timeout: 15_000 },
+      ),
+      dialog.getByRole("button", { name: "Delete" }).click(),
+    ]);
+    expect(response.status()).toBeLessThan(300);
+
+    await expect(dialog).not.toBeVisible({ timeout: 5_000 });
+    await expect(sessionCards).toHaveCount(countBefore - 1, {
+      timeout: 10_000,
+    });
+  });
+});
