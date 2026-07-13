@@ -99,7 +99,35 @@ func (d *Dispatcher) Dispatch(ctx context.Context, topic string, payload []byte,
 		d.dispatchSTATE(ctx, *pt, payload)
 	case pt.Prefix == "stat" && pt.Leaf == "POWER":
 		d.dispatchSTAT_POWER(ctx, *pt, payload)
+	case pt.Prefix == "stat" && pt.Leaf == "STATUS10":
+		d.dispatchSTATUS10(ctx, topic, *pt, payload)
 	}
+}
+
+// dispatchSTATUS10 primes the per-plug energy cache from an on-demand
+// "Status 10" response. This is a state sync (requested when a plug comes
+// online, including via retained LWT right after an API restart), not a live
+// telemetry tick, so it only fills an EMPTY cache slot and never reaches the
+// power-reading pipeline - live SENSOR data is always at least as fresh.
+func (d *Dispatcher) dispatchSTATUS10(_ context.Context, topic string, pt ParsedTopic, payload []byte) {
+	energy, err := ParseSTATUS10(payload)
+	if err != nil {
+		slog.Warn("mqtt: bad STATUS10 payload", "topic", topic, "err", err)
+		return
+	}
+
+	plugID, ok := d.plugCache.Lookup(pt.Namespace, pt.Slug)
+	if !ok {
+		slog.Warn("mqtt: STATUS10 for unknown plug", "namespace", pt.Namespace, "slug", pt.Slug)
+		return
+	}
+
+	d.mu.Lock()
+	if _, exists := d.lastEnergy[plugID]; !exists {
+		d.lastEnergy[plugID] = energy
+		slog.Info("mqtt: STATUS10 primed energy cache", "plugID", plugID, "total_kwh", energy.Total)
+	}
+	d.mu.Unlock()
 }
 
 func (d *Dispatcher) dispatchSENSOR(ctx context.Context, topic string, pt ParsedTopic, payload []byte) {

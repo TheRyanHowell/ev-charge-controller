@@ -266,3 +266,49 @@ func (m *mockPowerRepo) SetPowerState(_ context.Context, plugID string, on bool)
 	}
 	return nil
 }
+
+// TestDispatcher_DispatchSTATUS10_PrimesEnergyCache verifies that an
+// on-demand "Status 10" response (stat/<slug>/STATUS10) populates the per-plug
+// energy cache, so a session started right after an API restart can capture
+// its wall-side energy baseline without waiting for the next TelePeriod tick.
+func TestDispatcher_DispatchSTATUS10_PrimesEnergyCache(t *testing.T) {
+	plugCache := NewStaticPlugCache(map[NamespaceSlug]string{
+		{Namespace: "ns-test", Slug: "plug1"}: "plug-id-1",
+	})
+	var handlerCalled bool
+	dispatcher := NewDispatcher(plugCache, func(_ context.Context, _ string, _ *tasmota.EnergyData) {
+		handlerCalled = true
+	}, nil, nil)
+
+	payload := []byte(`{"StatusSNS":{"Time":"2026-07-13T01:00:00","ENERGY":{"Total":42.5,"Yesterday":0.5,"Today":0.1,"Power":0,"ApparentPower":0,"ReactivePower":0,"Factor":0.7,"Voltage":230,"Current":0}}}`)
+	dispatcher.Dispatch(context.Background(), "evcc/ns-test/stat/plug1/STATUS10", payload, false)
+
+	energy := dispatcher.LastEnergy("plug-id-1")
+	if assert.NotNil(t, energy, "STATUS10 must prime the energy cache") {
+		assert.InDelta(t, 42.5, energy.Total, 1e-9)
+	}
+	// A STATUS10 snapshot is a state sync, not a telemetry tick - it must not
+	// flow into the power-reading pipeline.
+	assert.False(t, handlerCalled, "STATUS10 must not invoke the SENSOR handler")
+}
+
+// TestDispatcher_DispatchSTATUS10_DoesNotClobberFresherSensor verifies a
+// STATUS10 snapshot never overwrites a cache entry that already exists -
+// live SENSOR telemetry is always at least as fresh.
+func TestDispatcher_DispatchSTATUS10_DoesNotClobberFresherSensor(t *testing.T) {
+	plugCache := NewStaticPlugCache(map[NamespaceSlug]string{
+		{Namespace: "ns-test", Slug: "plug1"}: "plug-id-1",
+	})
+	dispatcher := NewDispatcher(plugCache, nil, nil, nil)
+
+	sensor := []byte(`{"Time":"2026-07-13T01:00:05","ENERGY":{"Total":43.0,"Yesterday":0,"Today":0,"Power":600,"ApparentPower":857,"ReactivePower":612,"Factor":0.7,"Voltage":230,"Current":2.6}}`)
+	dispatcher.Dispatch(context.Background(), "evcc/ns-test/tele/plug1/SENSOR", sensor, false)
+
+	status10 := []byte(`{"StatusSNS":{"Time":"2026-07-13T01:00:00","ENERGY":{"Total":42.5,"Yesterday":0,"Today":0,"Power":0,"ApparentPower":0,"ReactivePower":0,"Factor":0.7,"Voltage":230,"Current":0}}}`)
+	dispatcher.Dispatch(context.Background(), "evcc/ns-test/stat/plug1/STATUS10", status10, false)
+
+	energy := dispatcher.LastEnergy("plug-id-1")
+	if assert.NotNil(t, energy) {
+		assert.InDelta(t, 43.0, energy.Total, 1e-9, "existing SENSOR data must win over a STATUS10 snapshot")
+	}
+}

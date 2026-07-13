@@ -20,6 +20,26 @@ type plugCommandPublisher interface {
 	PublishCommand(ctx context.Context, namespace, slug, cmd, payload string) error
 }
 
+// ensureCommands are Tasmota commands re-asserted on EVERY online transition,
+// including for plugs provisioned before a command joined the init set (they
+// are already marked initialized, so initCommands never reach them again).
+// Each entry is [command, value].
+//
+// SensorRetain 1 makes tele/%topic%/SENSOR retained by the broker, so the API
+// repopulates its per-plug energy cache immediately after a restart or
+// reconnect instead of waiting for the next TelePeriod tick. Without it, a
+// session started during that gap has no wall-side energy baseline. Power
+// state retention (PowerRetain) is deliberately NOT enabled - retained power
+// messages override PowerOnState and cause ghost switching.
+//
+// Status 10 requests an immediate sensor snapshot (stat/%topic%/STATUS10),
+// priming the energy cache the moment a plug comes online - covering the gap
+// before the first retained/periodic SENSOR message exists.
+var ensureCommands = [][2]string{
+	{"SensorRetain", "1"},
+	{"Status", "10"},
+}
+
 // initCommands are the Tasmota commands pushed to a plug on first connect.
 // Each entry is [command, value].
 var initCommands = [][2]string{
@@ -58,6 +78,14 @@ func (s *PlugInitializerService) OnPlugOnline(ctx context.Context, plugID string
 	if plug == nil {
 		return fmt.Errorf("plug initializer: plug %s not found", plugID)
 	}
+
+	for _, cmdPair := range ensureCommands {
+		cmd, val := cmdPair[0], cmdPair[1]
+		if err := s.publisher.PublishCommand(ctx, plug.Namespace, plug.MqttTopic, cmd, val); err != nil {
+			return fmt.Errorf("plug initializer: publish %s to %s: %w", cmd, plugID, err)
+		}
+	}
+
 	if plug.Initialized {
 		return nil
 	}

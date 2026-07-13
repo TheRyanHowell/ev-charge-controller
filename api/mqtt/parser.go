@@ -78,6 +78,36 @@ func ParseSENSOR(payload []byte) (*tasmota.EnergyData, error) {
 	}, nil
 }
 
+// status10Payload matches the Tasmota stat/STATUS10 JSON envelope - the
+// response to an on-demand "Status 10" command. The inner StatusSNS object
+// carries the same ENERGY shape as tele/SENSOR.
+type status10Payload struct {
+	StatusSNS *sensorPayload `json:"StatusSNS"`
+}
+
+// ParseSTATUS10 decodes a stat/STATUS10 payload into a tasmota.EnergyData.
+func ParseSTATUS10(payload []byte) (*tasmota.EnergyData, error) {
+	var p status10Payload
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return nil, fmt.Errorf("parse STATUS10: %w", err)
+	}
+	if p.StatusSNS == nil {
+		return nil, fmt.Errorf("parse STATUS10: missing StatusSNS envelope")
+	}
+	e := p.StatusSNS.ENERGY
+	return &tasmota.EnergyData{
+		Total:       e.Total,
+		Yesterday:   e.Yesterday,
+		Today:       e.Today,
+		Power:       e.Power,
+		Apparent:    e.ApparentPower,
+		Reactive:    e.ReactivePower,
+		PowerFactor: e.Factor,
+		Voltage:     e.Voltage,
+		Current:     e.Current,
+	}, nil
+}
+
 // statePayload matches the Tasmota tele/STATE JSON envelope.
 type statePayload struct {
 	Power string `json:"POWER"`

@@ -129,3 +129,32 @@ func TestParsePowerState(t *testing.T) {
 		})
 	}
 }
+
+func TestParseSTATUS10(t *testing.T) {
+	payload := []byte(`{"StatusSNS":{"Time":"2026-07-13T01:00:00","ENERGY":{"TotalStartTime":"2024-03-19T13:49:14","Total":12.345,"Yesterday":0.5,"Today":0.1,"Power":600,"ApparentPower":857,"ReactivePower":612,"Factor":0.7,"Voltage":230,"Current":2.6}}}`)
+	energy, err := mqtt.ParseSTATUS10(payload)
+	if err != nil {
+		t.Fatalf("ParseSTATUS10 returned error: %v", err)
+	}
+	if energy.Total != 12.345 {
+		t.Errorf("Total = %v, want 12.345", energy.Total)
+	}
+	if energy.Power != 600 {
+		t.Errorf("Power = %v, want 600", energy.Power)
+	}
+	if energy.Voltage != 230 {
+		t.Errorf("Voltage = %v, want 230", energy.Voltage)
+	}
+}
+
+func TestParseSTATUS10_InvalidJSON(t *testing.T) {
+	if _, err := mqtt.ParseSTATUS10([]byte("not-json")); err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+}
+
+func TestParseSTATUS10_MissingStatusSNS(t *testing.T) {
+	if _, err := mqtt.ParseSTATUS10([]byte(`{"Status":{"Module":0}}`)); err == nil {
+		t.Fatal("expected error when StatusSNS envelope is missing")
+	}
+}

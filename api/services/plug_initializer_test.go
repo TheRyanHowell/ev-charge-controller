@@ -59,9 +59,9 @@ func TestPlugInitializerService_OnPlugOnline_FirstTime(t *testing.T) {
 	err := svc.OnPlugOnline(context.Background(), "plug-1")
 	require.NoError(t, err)
 
-	// Should publish all init commands
-	assert.Len(t, pub.published, len(initCommands))
-	for i, cmdPair := range initCommands {
+	// Should publish the every-online ensure commands followed by all init commands
+	require.Len(t, pub.published, len(ensureCommands)+len(initCommands))
+	for i, cmdPair := range append(append([][2]string{}, ensureCommands...), initCommands...) {
 		assert.Equal(t, "evcc-ns", pub.published[i].namespace)
 		assert.Equal(t, "my-plug", pub.published[i].slug)
 		assert.Equal(t, cmdPair[0], pub.published[i].cmd)
@@ -75,6 +75,8 @@ func TestPlugInitializerService_OnPlugOnline_FirstTime(t *testing.T) {
 func TestPlugInitializerService_OnPlugOnline_AlreadyInitialized(t *testing.T) {
 	plug := &models.Plug{
 		ID:          "plug-2",
+		Namespace:   "evcc-ns",
+		MqttTopic:   "my-plug",
 		Initialized: true,
 	}
 	repo := &mockInitializerRepo{plug: plug}
@@ -84,9 +86,40 @@ func TestPlugInitializerService_OnPlugOnline_AlreadyInitialized(t *testing.T) {
 	err := svc.OnPlugOnline(context.Background(), "plug-2")
 	require.NoError(t, err)
 
-	// No commands published; no SetInitialized call
-	assert.Empty(t, pub.published)
+	// Only the every-online ensure commands are published; no SetInitialized call.
+	assert.Len(t, pub.published, len(ensureCommands))
 	assert.False(t, repo.setInitialized)
+}
+
+// TestPlugInitializerService_OnPlugOnline_EnsuresSensorRetain verifies that
+// SensorRetain is re-asserted on EVERY online transition, including for plugs
+// provisioned before the command was added to the init set. Retained SENSOR
+// telemetry is what lets the API repopulate its energy cache immediately after
+// a restart, so a scheduled session start can always capture its wall-side
+// energy baseline.
+func TestPlugInitializerService_OnPlugOnline_EnsuresSensorRetain(t *testing.T) {
+	for _, initialized := range []bool{false, true} {
+		plug := &models.Plug{
+			ID:          "plug-sr",
+			Namespace:   "evcc-ns",
+			MqttTopic:   "my-plug",
+			Initialized: initialized,
+		}
+		repo := &mockInitializerRepo{plug: plug}
+		pub := &mockCommandPublisher{}
+		svc := NewPlugInitializerService(repo, pub)
+
+		err := svc.OnPlugOnline(context.Background(), "plug-sr")
+		require.NoError(t, err)
+
+		found := false
+		for _, cmd := range pub.published {
+			if cmd.cmd == "SensorRetain" && cmd.payload == "1" {
+				found = true
+			}
+		}
+		assert.True(t, found, "SensorRetain 1 must be published when initialized=%v", initialized)
+	}
 }
 
 func TestPlugInitializerService_OnPlugOnline_PlugNotFound(t *testing.T) {
@@ -137,8 +170,8 @@ func TestPlugInitializerService_OnPlugOnline_MaintenancePlug_SendsPowerON(t *tes
 	err := svc.OnPlugOnline(context.Background(), "plug-maint")
 	require.NoError(t, err)
 
-	// Should publish initCommands + one extra Power ON
-	assert.Len(t, pub.published, len(initCommands)+1)
+	// Should publish ensureCommands + initCommands + one extra Power ON
+	assert.Len(t, pub.published, len(ensureCommands)+len(initCommands)+1)
 
 	last := pub.published[len(pub.published)-1]
 	assert.Equal(t, "Power", last.cmd)
@@ -162,7 +195,7 @@ func TestPlugInitializerService_OnPlugOnline_ChargingPlug_NoExtraPowerON(t *test
 	require.NoError(t, err)
 
 	// Charging plug should NOT get an extra Power ON
-	assert.Len(t, pub.published, len(initCommands))
+	assert.Len(t, pub.published, len(ensureCommands)+len(initCommands))
 	for _, cmd := range pub.published {
 		assert.NotEqual(t, "Power", cmd.cmd, "charging plug must not receive Power command on init")
 	}
