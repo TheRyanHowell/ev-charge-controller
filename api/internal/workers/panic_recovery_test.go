@@ -15,17 +15,19 @@ func TestRunWithRecovery_RecoveriesPanic(t *testing.T) {
 	defer slog.SetDefault(origWarn)
 	slog.SetDefault(logger)
 
-	done := make(chan struct{})
-	func() {
-		defer func() {
-			close(done)
-		}()
-		RunWithRecovery(t.Context(), "test-worker", func(ctx context.Context) {
-			panic("test panic")
-		})
-	}()
+	ctx, cancel := context.WithCancel(t.Context())
+	done := RunWithRecovery(ctx, "test-worker", func(ctx context.Context) {
+		panic("test panic")
+	})
 
-	<-done
+	// Join the worker goroutine before the test returns so it can't race a
+	// later test's workerRestartDelay override.
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("worker did not exit after context cancellation")
+	}
 }
 
 func TestRunWithRecovery_NoPanic(t *testing.T) {
@@ -46,7 +48,7 @@ func TestRunWithRecovery_RestartsAfterPanic(t *testing.T) {
 
 	var calls atomic.Int32
 	restarted := make(chan struct{})
-	RunWithRecovery(ctx, "test-worker", func(ctx context.Context) {
+	done := RunWithRecovery(ctx, "test-worker", func(ctx context.Context) {
 		if calls.Add(1) == 1 {
 			panic("first run panics")
 		}
@@ -59,6 +61,14 @@ func TestRunWithRecovery_RestartsAfterPanic(t *testing.T) {
 		// success: the worker ran again after the recovered panic
 	case <-time.After(2 * time.Second):
 		t.Fatal("worker was not restarted after a recovered panic")
+	}
+
+	// Join the worker goroutine before restoring workerRestartDelay.
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("worker did not exit after context cancellation")
 	}
 }
 
