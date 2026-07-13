@@ -134,6 +134,36 @@ describe("useSessionPolling", () => {
     expect(useGaugeStore.getState().targetPercent).toBe(75);
   });
 
+  it("marks the gauge store initialized when syncing session data", async () => {
+    // Regression: without this, Dashboard's mount-time reset left the store
+    // uninitialized after the session sync ran, so the display fell back to
+    // stale values until the next poll happened to change the percent.
+    useGaugeStore.setState({
+      currentPercent: 20,
+      targetPercent: 80,
+      initialized: false,
+    });
+
+    renderHook(() =>
+      useSessionPolling({
+        selectedVehicle: testVehicle,
+        initialSession: {
+          status: "active",
+          powerDraw: 1000,
+          startPercent: 20,
+          currentPercent: 55,
+          targetPercent: 80,
+          startedAt: "2024-01-01T10:00:00Z",
+        },
+        isDraggingRef,
+      }),
+    );
+
+    await flushMicrotasks();
+    expect(useGaugeStore.getState().currentPercent).toBe(55);
+    expect(useGaugeStore.getState().initialized).toBe(true);
+  });
+
   it("skips gauge store sync while isDraggingRef is true", async () => {
     isDraggingRef.current = true;
 

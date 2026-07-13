@@ -125,6 +125,15 @@ export default function Dashboard({
     ? storeTargetPercent
     : (initialSession?.targetPercent ?? selectedVehicle?.targetPercent ?? 80);
 
+  // Reset the gauge on mount BEFORE useChargeSession registers its effects:
+  // effects run in registration order, so the session gauge-sync (inside
+  // useChargeSession → useSessionPolling) must run AFTER this reset or its
+  // freshly-synced session percents would be wiped straight back to defaults.
+  const gaugeReset = useGaugeStore((s) => s.reset);
+  useEffect(() => {
+    gaugeReset();
+  }, [gaugeReset]);
+
   const {
     session,
     chargeStartPercent,
@@ -165,28 +174,35 @@ export default function Dashboard({
     ensurePushSubscription();
   }, []);
 
-  const gaugeReset = useGaugeStore((s) => s.reset);
-  const markInitialized = useGaugeStore((s) => s.markInitialized);
-  const setPercents = useGaugeStore((s) => s.setPercents);
-  useEffect(() => {
-    gaugeReset();
-  }, [gaugeReset]);
-
-  // Re-sync gauge when vehicle selection changes.
-  useEffect(() => {
-    if (!selectedVehicle) return;
-    if (useGaugeStore.getState().isDragging !== "none") return;
-    const c = selectedVehicle.currentPercent ?? 0;
-    const t = selectedVehicle.targetPercent ?? 80;
-    setPercents(c, t);
-    markInitialized();
-  }, [selectedVehicle, selectedVehicleId, setPercents, markInitialized]);
-
   const isChargingOrPending =
     session.status === "charging" ||
     session.status === "pending" ||
     session.status === "conditioning" ||
     session.status === "holding";
+
+  const markInitialized = useGaugeStore((s) => s.markInitialized);
+  const setPercents = useGaugeStore((s) => s.setPercents);
+
+  // Re-sync gauge when vehicle selection changes. While a session is in
+  // progress the session polling sync owns the gauge - the vehicle record
+  // still holds the session's START percent (it's only updated at stop), so
+  // syncing from it here would regress the gauge to the start percent until
+  // the next poll happened to change the value.
+  useEffect(() => {
+    if (!selectedVehicle) return;
+    if (isChargingOrPending) return;
+    if (useGaugeStore.getState().isDragging !== "none") return;
+    const c = selectedVehicle.currentPercent ?? 0;
+    const t = selectedVehicle.targetPercent ?? 80;
+    setPercents(c, t);
+    markInitialized();
+  }, [
+    selectedVehicle,
+    selectedVehicleId,
+    isChargingOrPending,
+    setPercents,
+    markInitialized,
+  ]);
   const isActive =
     session.status === "charging" ||
     session.status === "conditioning" ||

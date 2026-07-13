@@ -697,6 +697,93 @@ describe("Home Page", () => {
     expect(updatePercents).not.toHaveBeenCalled();
   });
 
+  describe("Gauge percents with an active session", () => {
+    // Regression: on first load with an active session, the vehicle re-sync
+    // effect used to overwrite the gauge with the vehicle's persisted
+    // currentPercent - which is the session's START percent (vehicle percents
+    // are only updated when a session stops). The session polling sync owns
+    // the gauge while a session is in progress.
+    function mockPlugWithSelectedVehicle() {
+      (usePlug as any).mockImplementation(() => ({
+        plugs: [
+          createPlug({
+            id: "plug-rm1",
+            name: "Plug RM1",
+            vehicleId: "rm1",
+            type: "charging",
+          }),
+        ],
+        selectedVehicleId: "rm1",
+        selectVehicle: vi.fn(),
+        toggleMaintenancePower: vi.fn(),
+        isTogglingPower: false,
+        isLoading: false,
+        error: null,
+        createPlug: vi.fn(),
+        isCreating: false,
+        updatePlug: vi.fn(),
+        deletePlug: vi.fn(),
+      }));
+    }
+
+    it("does not clobber the gauge with the stale vehicle percent while charging", async () => {
+      mockPlugWithSelectedVehicle();
+      useGaugeStore.setState({
+        currentPercent: 20,
+        targetPercent: 80,
+        initialized: false,
+      });
+      mockVehicle({
+        vehicles: defaultVehicles.map((v) => ({
+          ...v,
+          currentPercent: 33, // stale: equals the session's start percent
+          targetPercent: 88,
+        })),
+      });
+      mockChargeSession({
+        session: { status: "charging", powerDraw: 300 },
+      });
+
+      customRender(<Dashboard />);
+      await waitFor(() => {
+        expect(screen.getByText(/CHARGING/i)).toBeInTheDocument();
+      });
+
+      // The vehicle re-sync must NOT have applied the stale 33/88 while a
+      // session is active - the session polling sync owns the gauge.
+      const state = useGaugeStore.getState();
+      expect(state.currentPercent).not.toBe(33);
+      expect(state.targetPercent).not.toBe(88);
+    });
+
+    it("still syncs the gauge from the vehicle when idle", async () => {
+      mockPlugWithSelectedVehicle();
+      useGaugeStore.setState({
+        currentPercent: 20,
+        targetPercent: 80,
+        initialized: false,
+      });
+      mockVehicle({
+        vehicles: defaultVehicles.map((v) => ({
+          ...v,
+          currentPercent: 33,
+          targetPercent: 88,
+        })),
+      });
+      mockChargeSession({
+        session: { status: "idle", powerDraw: 0 },
+      });
+
+      customRender(<Dashboard />);
+      await waitFor(() => {
+        expect(useGaugeStore.getState().initialized).toBe(true);
+      });
+
+      expect(useGaugeStore.getState().currentPercent).toBe(33);
+      expect(useGaugeStore.getState().targetPercent).toBe(88);
+    });
+  });
+
   describe("Gauge percents on vehicle switch", () => {
     // Two vehicles with different percents - switching selectedVehicleId
     // must re-sync the gauge to the new vehicle's percents.

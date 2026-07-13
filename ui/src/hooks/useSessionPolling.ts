@@ -187,9 +187,13 @@ export function useSessionPolling(deps: SessionPollingDeps) {
     return { status };
   }, [queryData, selectedVehicle]);
 
-  // Gauge store sync (side effect only, no setState)
+  // Gauge store sync (side effect only, no setState). Marks the store
+  // initialized so the display switches from SSR fallbacks to the synced
+  // session percents - without it, Dashboard's mount-time gauge reset would
+  // leave the store uninitialized until a later poll changed the values.
+  const setPercents = useGaugeStore((s) => s.setPercents);
   const setCurrentPercent = useGaugeStore((s) => s.setCurrentPercent);
-  const setTargetPercent = useGaugeStore((s) => s.setTargetPercent);
+  const markInitialized = useGaugeStore((s) => s.markInitialized);
   useEffect(() => {
     if (!queryData || isDraggingRef.current) return;
     const cp = queryData.currentPercent ?? queryData.startPercent ?? 0;
@@ -197,21 +201,23 @@ export function useSessionPolling(deps: SessionPollingDeps) {
     const dataStr = JSON.stringify({ cp, tp });
     if (dataStr !== lastSyncedDataRef.current) {
       lastSyncedDataRef.current = dataStr;
-      setCurrentPercent(cp);
       if (tp != null) {
-        setTargetPercent(tp);
+        setPercents(cp, tp);
+      } else {
+        setCurrentPercent(cp);
       }
+      markInitialized();
     }
   }, [
     queryData,
     isDraggingRef,
     lastSyncedDataRef,
+    setPercents,
     setCurrentPercent,
-    setTargetPercent,
+    markInitialized,
   ]);
 
   // Auto-stop detection: when queryData transitions from active to null
-  const setPercents = useGaugeStore((s) => s.setPercents);
   useEffect(() => {
     if (queryData === undefined) return;
     if (queryData !== null) {
