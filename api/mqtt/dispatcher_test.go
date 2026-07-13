@@ -3,6 +3,7 @@ package mqtt
 import (
 	"context"
 	"testing"
+	"time"
 
 	"ev-charge-controller/api/tasmota"
 	"github.com/stretchr/testify/assert"
@@ -311,4 +312,116 @@ func TestDispatcher_DispatchSTATUS10_DoesNotClobberFresherSensor(t *testing.T) {
 	if assert.NotNil(t, energy) {
 		assert.InDelta(t, 43.0, energy.Total, 1e-9, "existing SENSOR data must win over a STATUS10 snapshot")
 	}
+}
+
+// --- Manual power edge detection ---
+
+type manualEdge struct {
+	plugID string
+	on     bool
+}
+
+func manualEdgeCollector() (chan manualEdge, ManualPowerHandler) {
+	ch := make(chan manualEdge, 8)
+	return ch, func(_ context.Context, plugID string, on bool) {
+		ch <- manualEdge{plugID, on}
+	}
+}
+
+func expectEdge(t *testing.T, ch chan manualEdge) manualEdge {
+	t.Helper()
+	select {
+	case e := <-ch:
+		return e
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected a manual power edge, got none")
+		return manualEdge{}
+	}
+}
+
+func expectNoEdge(t *testing.T, ch chan manualEdge) {
+	t.Helper()
+	select {
+	case e := <-ch:
+		t.Fatalf("expected no manual power edge, got %+v", e)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func newManualEdgeDispatcher() (*Dispatcher, chan manualEdge) {
+	plugCache := NewStaticPlugCache(map[NamespaceSlug]string{
+		{Namespace: "ns-test", Slug: "plug1"}: "plug-id-1",
+	})
+	d := NewDispatcher(plugCache, nil, nil, nil)
+	ch, handler := manualEdgeCollector()
+	d.SetManualPowerHandler(handler)
+	return d, ch
+}
+
+// A stat/POWER change with no registered confirmer is an EXTERNAL change
+// (physical button, Tasmota web UI) and must reach the manual handler.
+func TestDispatcher_ManualPowerEdge_Reported(t *testing.T) {
+	d, ch := newManualEdgeDispatcher()
+
+	// Establish known prior state (ON) - first report is state sync, no edge.
+	d.Dispatch(context.Background(), "evcc/ns-test/stat/plug1/POWER", []byte("ON"), false)
+	expectNoEdge(t, ch)
+
+	// External OFF: a real edge.
+	d.Dispatch(context.Background(), "evcc/ns-test/stat/plug1/POWER", []byte("OFF"), false)
+	e := expectEdge(t, ch)
+	assert.Equal(t, "plug-id-1", e.plugID)
+	assert.False(t, e.on)
+}
+
+// An app-initiated change has a confirmer registered - never treated as manual.
+func TestDispatcher_ManualPowerEdge_SkippedWhenAppInitiated(t *testing.T) {
+	d, ch := newManualEdgeDispatcher()
+	d.Dispatch(context.Background(), "evcc/ns-test/stat/plug1/POWER", []byte("OFF"), false)
+	for len(ch) > 0 {
+		<-ch
+	}
+
+	confirm := d.RegisterPowerConfirm("plug-id-1")
+	d.Dispatch(context.Background(), "evcc/ns-test/stat/plug1/POWER", []byte("ON"), false)
+
+	select {
+	case on := <-confirm:
+		assert.True(t, on)
+	case <-time.After(time.Second):
+		t.Fatal("confirmer should have been signalled")
+	}
+	expectNoEdge(t, ch)
+}
+
+// Retained stat/POWER is state sync on (re)connect, not a live button press.
+func TestDispatcher_ManualPowerEdge_SkippedWhenRetained(t *testing.T) {
+	d, ch := newManualEdgeDispatcher()
+	d.Dispatch(context.Background(), "evcc/ns-test/stat/plug1/POWER", []byte("OFF"), false)
+	for len(ch) > 0 {
+		<-ch
+	}
+
+	d.Dispatch(context.Background(), "evcc/ns-test/stat/plug1/POWER", []byte("ON"), true)
+	expectNoEdge(t, ch)
+}
+
+// Without a known prior state (fresh API start), a report is state sync, not an edge.
+func TestDispatcher_ManualPowerEdge_SkippedWhenPriorStateUnknown(t *testing.T) {
+	d, ch := newManualEdgeDispatcher()
+
+	d.Dispatch(context.Background(), "evcc/ns-test/stat/plug1/POWER", []byte("ON"), false)
+	expectNoEdge(t, ch)
+}
+
+// Re-reporting the same state (telemetry echo, command re-assertion) is not an edge.
+func TestDispatcher_ManualPowerEdge_SkippedWhenUnchanged(t *testing.T) {
+	d, ch := newManualEdgeDispatcher()
+	d.Dispatch(context.Background(), "evcc/ns-test/stat/plug1/POWER", []byte("OFF"), false)
+	for len(ch) > 0 {
+		<-ch
+	}
+
+	d.Dispatch(context.Background(), "evcc/ns-test/stat/plug1/POWER", []byte("OFF"), false)
+	expectNoEdge(t, ch)
 }

@@ -266,6 +266,9 @@ func startMQTTClient(ctx context.Context, cfg *internal.Config, db *sql.DB, char
 	}
 	lwtManager := mqttclient.NewLWTManager(plugRepo, chargeRepo, chargeService, chargeService, nil)
 	dispatcher := mqttclient.NewDispatcher(plugCache, energyHandler, lwtManager, plugRepo)
+	dispatcher.SetManualPowerHandler(func(handlerCtx context.Context, plugID string, on bool) {
+		chargeService.HandleManualPowerToggle(handlerCtx, plugID, on)
+	})
 	client, err := mqttclient.NewClient(ctx, mqttclient.ClientConfig{
 		BrokerURL: cfg.MQTTBrokerURL,
 		Username:  cfg.MQTTUsername,

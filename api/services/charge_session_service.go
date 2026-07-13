@@ -84,6 +84,7 @@ type ChargeSessionService struct {
 	sessionWriter internal.SessionWriter
 	snapshotRepo  internal.SnapshotReader
 	vehicleRepo   internal.VehicleRepo
+	plugRepo      internal.PlugRepo
 	plugCtrl      internal.PlugController
 	socGenerator  *SOCGenerator
 	notifier      *ChargeNotifier
@@ -110,6 +111,7 @@ func NewChargeSessionService(
 		sessionWriter: repo,
 		snapshotRepo:  repo,
 		vehicleRepo:   vehicleRepo,
+		plugRepo:      plugRepo,
 		plugCtrl:      plugCtrl,
 		socGenerator:  NewSOCGenerator(),
 		notifier:      notifier,
@@ -451,6 +453,108 @@ func (s *ChargeSessionService) CancelActiveSession(ctx context.Context, session 
 // Satisfies mqtt.lwtNotifier.
 func (s *ChargeSessionService) NotifyPlugUnavailable(ctx context.Context, plug *models.Plug) {
 	s.notifier.NotifyPlugUnavailable(ctx, plug)
+}
+
+// HandleManualPowerToggle reacts to an EXTERNAL relay change on a charging
+// plug - a physical button press, the Tasmota web UI, or a third-party MQTT
+// command - so manual actions behave like first-class charge controls instead
+// of silently desyncing state:
+//
+//   - OFF while a session is running: complete the session gracefully,
+//     recording the energy actually delivered (like pressing STOP in the app).
+//   - ON with no session: start a tracked session toward the vehicle's target,
+//     so auto-stop still protects the battery. If the vehicle is already at
+//     target (or the plug has no vehicle), power is cut back off - energy must
+//     never flow untracked.
+//   - ON while a two-stage session is holding: the user wants to charge NOW -
+//     resume stage 2 immediately.
+//
+// App-initiated relay changes never reach this method: the dispatcher only
+// reports edges with no registered power confirmer (see dispatchSTAT_POWER).
+// Maintenance plugs are ignored entirely - their relay is user-controlled.
+func (s *ChargeSessionService) HandleManualPowerToggle(ctx context.Context, plugID string, on bool) {
+	if s.plugRepo == nil {
+		return
+	}
+	plug, err := s.plugRepo.FindByID(ctx, plugID)
+	if err != nil || plug == nil || plug.Type != models.PlugTypeCharging {
+		return
+	}
+
+	session, err := s.sessionReader.GetActiveByPlug(ctx, plugID)
+	if err != nil {
+		slog.Error("[MANUAL-TOGGLE] failed to resolve session", "plugID", plugID, "err", err)
+		return
+	}
+
+	if !on {
+		s.handleManualPowerOff(ctx, plugID, session)
+		return
+	}
+	s.handleManualPowerOn(ctx, plug, session)
+}
+
+// handleManualPowerOff completes (or cancels, when still pending) the plug's
+// session after an external power-off.
+func (s *ChargeSessionService) handleManualPowerOff(ctx context.Context, plugID string, session *models.ChargeSession) {
+	if session == nil {
+		return
+	}
+	// A holding session's relay is already off; a spurious OFF report must not
+	// touch it - the hold owns the relay until resume.
+	if session.Status == models.SessionStatusHolding {
+		return
+	}
+	slog.Info("[MANUAL-TOGGLE] external power-off, stopping session", "plugID", plugID, "sessionID", session.ID)
+	view := s.buildSessionView(ctx, session)
+	if _, err := s.lifecycle.Stop(ctx, view); err != nil {
+		slog.Error("[MANUAL-TOGGLE] failed to stop session after external power-off", "sessionID", session.ID, "err", err)
+	}
+}
+
+// handleManualPowerOn starts, resumes, or vetoes charging after an external power-on.
+func (s *ChargeSessionService) handleManualPowerOn(ctx context.Context, plug *models.Plug, session *models.ChargeSession) {
+	if session != nil {
+		if session.Status == models.SessionStatusHolding {
+			slog.Info("[MANUAL-TOGGLE] external power-on during hold, resuming session", "plugID", plug.ID, "sessionID", session.ID)
+			s.lock.Lock()
+			err := s.sessionWriter.ResumeHolding(ctx, session.ID)
+			s.lock.Unlock()
+			if err != nil {
+				slog.Error("[MANUAL-TOGGLE] failed to resume holding session", "sessionID", session.ID, "err", err)
+			}
+		}
+		// Active/pending/conditioning: the relay being on is expected.
+		return
+	}
+
+	cutPower := func(reason string) {
+		slog.Warn("[MANUAL-TOGGLE] external power-on refused, cutting power", "plugID", plug.ID, "reason", reason)
+		if s.plugCtrl != nil {
+			if err := s.plugCtrl.SetPower(ctx, plug.ID, false); err != nil {
+				slog.Error("[MANUAL-TOGGLE] failed to cut power", "plugID", plug.ID, "err", err)
+			}
+		}
+	}
+
+	if plug.VehicleID == nil {
+		cutPower("no vehicle assigned")
+		return
+	}
+	vehicle, err := s.vehicleRepo.FindByID(ctx, *plug.VehicleID)
+	if err != nil || vehicle == nil {
+		cutPower("vehicle not found")
+		return
+	}
+	if vehicle.CurrentPercent >= vehicle.TargetPercent {
+		cutPower("vehicle already at target")
+		return
+	}
+
+	slog.Info("[MANUAL-TOGGLE] external power-on, starting tracked session", "plugID", plug.ID, "vehicleID", vehicle.ID)
+	if _, err := s.StartSession(ctx, plug.ID, vehicle.ID, vehicle.CurrentPercent, vehicle.TargetPercent); err != nil && !errors.Is(err, ErrActiveSessionExists) {
+		slog.Error("[MANUAL-TOGGLE] failed to start session after external power-on", "plugID", plug.ID, "err", err)
+	}
 }
 
 // HandleSensorMessage processes an MQTT SENSOR message for a plug, updating energy

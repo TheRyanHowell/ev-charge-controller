@@ -11,6 +11,12 @@ import (
 // EnergyHandler is called by the dispatcher when a SENSOR message arrives.
 type EnergyHandler func(ctx context.Context, plugID string, energy *tasmota.EnergyData)
 
+// ManualPowerHandler is called when a plug's relay changes OUTSIDE this API -
+// a physical button press, the Tasmota web UI, or a third-party MQTT command.
+// App-initiated changes (which always register a power confirmer first),
+// retained state replays, and same-state re-reports are never reported.
+type ManualPowerHandler func(ctx context.Context, plugID string, on bool)
+
 // powerConfirmer provides a one-shot signal channel for stat/POWER confirmation.
 type powerConfirmer struct {
 	done chan bool // closed when stat/POWER arrives
@@ -38,11 +44,12 @@ type Dispatcher struct {
 	lwtManager *LWTManager
 	powerRepo  powerStatePersister
 
-	mu              sync.RWMutex
-	lastEnergy      map[string]*tasmota.EnergyData // keyed by plugID
-	lastPowerStates map[string]powerStateEntry      // keyed by plugID
-	plugLocks       map[string]*sync.Mutex
-	locksMu         sync.Mutex
+	mu                 sync.RWMutex
+	lastEnergy         map[string]*tasmota.EnergyData // keyed by plugID
+	lastPowerStates    map[string]powerStateEntry     // keyed by plugID
+	manualPowerHandler ManualPowerHandler
+	plugLocks          map[string]*sync.Mutex
+	locksMu            sync.Mutex
 
 	confirmersMu sync.Mutex
 	confirmers   map[string]*powerConfirmer // plugID -> confirmer
@@ -98,7 +105,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, topic string, payload []byte,
 	case pt.Prefix == "tele" && pt.Leaf == "STATE":
 		d.dispatchSTATE(ctx, *pt, payload)
 	case pt.Prefix == "stat" && pt.Leaf == "POWER":
-		d.dispatchSTAT_POWER(ctx, *pt, payload)
+		d.dispatchSTAT_POWER(ctx, *pt, payload, retained)
 	case pt.Prefix == "stat" && pt.Leaf == "STATUS10":
 		d.dispatchSTATUS10(ctx, topic, *pt, payload)
 	}
@@ -188,7 +195,7 @@ func (d *Dispatcher) dispatchSTATE(ctx context.Context, pt ParsedTopic, payload 
 	d.persistPowerState(ctx, plugID, on)
 }
 
-func (d *Dispatcher) dispatchSTAT_POWER(ctx context.Context, pt ParsedTopic, payload []byte) {
+func (d *Dispatcher) dispatchSTAT_POWER(ctx context.Context, pt ParsedTopic, payload []byte, retained bool) {
 	on, err := ParsePowerState(payload)
 	if err != nil {
 		slog.Warn("mqtt: bad stat/POWER payload", "namespace", pt.Namespace, "slug", pt.Slug, "err", err)
@@ -201,7 +208,9 @@ func (d *Dispatcher) dispatchSTAT_POWER(ctx context.Context, pt ParsedTopic, pay
 		return
 	}
 
-	slog.Info("mqtt: stat/POWER received", "plugID", plugID, "power_on", on, "namespace", pt.Namespace, "slug", pt.Slug, "payload", string(payload))
+	slog.Info("mqtt: stat/POWER received", "plugID", plugID, "power_on", on, "retained", retained, "namespace", pt.Namespace, "slug", pt.Slug, "payload", string(payload))
+
+	prevOn, prevKnown := d.LastPowerState(plugID)
 
 	// Persist relay state so app-driven and external toggles both update the DB.
 	d.cachePowerState(plugID, on)
@@ -223,6 +232,26 @@ func (d *Dispatcher) dispatchSTAT_POWER(ctx context.Context, pt ParsedTopic, pay
 	} else {
 		slog.Warn("mqtt: stat/POWER no pending confirmation", "plugID", plugID, "power_on", on)
 	}
+
+	// An unconfirmed, non-retained state CHANGE is an external action (physical
+	// button, Tasmota web UI, third-party command). Runs in its own goroutine:
+	// the handler may block on MQTT round-trips (starting a session waits for
+	// power confirmation), and blocking here would stall the client's inbound
+	// message loop - including the very confirmation being waited on.
+	d.mu.RLock()
+	handler := d.manualPowerHandler
+	d.mu.RUnlock()
+	if handler != nil && !retained && !exists && prevKnown && prevOn != on {
+		slog.Info("mqtt: external power change detected", "plugID", plugID, "power_on", on)
+		go handler(ctx, plugID, on)
+	}
+}
+
+// SetManualPowerHandler wires the handler for external relay changes.
+func (d *Dispatcher) SetManualPowerHandler(h ManualPowerHandler) {
+	d.mu.Lock()
+	d.manualPowerHandler = h
+	d.mu.Unlock()
 }
 
 // cachePowerState stores the relay state in memory.

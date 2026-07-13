@@ -999,3 +999,99 @@ test.describe.serial("History session deletion", () => {
     });
   });
 });
+
+/**
+ * Manual plug button presses (simulated via the mock's HTTP power endpoint,
+ * which flips the relay and publishes stat/POWER exactly like a physical
+ * button press - no app-registered confirmer).
+ *
+ * - Pressing OFF mid-charge must gracefully complete the session.
+ * - Pressing ON while idle must start a tracked session so auto-stop still
+ *   protects the battery.
+ */
+test.describe.serial("Manual plug button presses", () => {
+  test.beforeEach(async ({ page }) => {
+    await navigateToDashboard(page);
+    await expect(page.getByTestId("speedometer-gauge-svg")).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(page.getByLabel("Online").first()).toBeVisible({
+      timeout: 15_000,
+    });
+    await page
+      .getByRole("button", { name: /My RM1/ })
+      .first()
+      .click();
+    await expect(
+      page.getByRole("button", { name: /My RM1/ }).first(),
+    ).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("pressing the plug's button OFF completes the running session", async ({
+    page,
+    api,
+  }) => {
+    const vehicles = await api.getJson<Vehicle[]>("/api/vehicles");
+    const vehicleId = vehicles[0].id;
+
+    // Start charging via the app.
+    const startButton = page.getByRole("button", { name: /start charging/i });
+    await expect(startButton).toBeEnabled({ timeout: 10_000 });
+    await startButton.click();
+    await expect(
+      page.getByRole("button", { name: /stop charging/i }),
+    ).toBeVisible({ timeout: 25_000 });
+
+    // Physical button press: relay OFF outside the app.
+    const resp = await fetch(
+      `${MOCK_TASMOTA_URL}/cm?cmnd=${encodeURIComponent("Power OFF")}`,
+    );
+    expect(resp.ok).toBe(true);
+
+    // The session must complete gracefully (server side)...
+    await expect(async () => {
+      const session = await api.getSession(
+        `/api/charge-sessions?vehicleId=${vehicleId}`,
+      );
+      expect(session, "session should end after the button press").toBeNull();
+    }).toPass({ timeout: 20_000, intervals: [1_000] });
+
+    // ...and the UI must return to the idle state via polling.
+    await expect(
+      page.getByRole("button", { name: /start charging/i }),
+    ).toBeVisible({ timeout: 15_000 });
+  });
+
+  test("pressing the plug's button ON starts a tracked session", async ({
+    page,
+    api,
+  }) => {
+    const vehicles = await api.getJson<Vehicle[]>("/api/vehicles");
+    const vehicleId = vehicles[0].id;
+
+    // Physical button press: relay ON with no session.
+    const resp = await fetch(
+      `${MOCK_TASMOTA_URL}/cm?cmnd=${encodeURIComponent("Power ON")}`,
+    );
+    expect(resp.ok).toBe(true);
+
+    // A tracked session must appear (server side)...
+    await expect(async () => {
+      const session = await api.getSession(
+        `/api/charge-sessions?vehicleId=${vehicleId}`,
+      );
+      expect(session, "a tracked session should start").not.toBeNull();
+      expect(session?.status).toBe("active");
+    }).toPass({ timeout: 20_000, intervals: [1_000] });
+
+    // ...and the UI must show it via polling.
+    const stopButton = page.getByRole("button", { name: /stop charging/i });
+    await expect(stopButton).toBeVisible({ timeout: 15_000 });
+
+    // Clean up: stop via the app.
+    await stopButton.click();
+    await expect(
+      page.getByRole("button", { name: /start charging/i }),
+    ).toBeVisible({ timeout: 15_000 });
+  });
+});
