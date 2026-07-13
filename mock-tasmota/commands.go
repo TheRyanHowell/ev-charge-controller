@@ -155,6 +155,21 @@ func (h *TasmotaHandler) handleCM(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]string{"Restart": "1"})
 		go h.reconnectMQTT()
 
+	case strings.HasPrefix(strings.ToUpper(cmd), "ENERGYTOTAL"):
+		// Set the cumulative energy meter (kWh), mirroring real Tasmota's
+		// EnergyTotal command. Used by E2E tests to advance a charge session
+		// deterministically without waiting for real-time accumulation.
+		var total float64
+		if _, err := fmt.Sscanf(cmd, "EnergyTotal %f", &total); err != nil || total < 0 {
+			_ = json.NewEncoder(w).Encode(CommandResponse{Command: "Unknown"})
+			return
+		}
+		h.mu.Lock()
+		h.energyData.Total = total
+		h.lastUpdate = time.Now()
+		h.mu.Unlock()
+		_ = json.NewEncoder(w).Encode(map[string]float64{"EnergyTotal": total})
+
 	case strings.HasPrefix(strings.ToUpper(cmd), "ENERGYRES"):
 		var res int
 		_, _ = fmt.Sscanf(cmd, "EnergyRes %d", &res)
@@ -176,9 +191,15 @@ func (h *TasmotaHandler) handleCM(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]int{"PowerRetain": 1})
 
 	case strings.ToUpper(cmd) == "SENSORRETAIN 1" || strings.ToUpper(cmd) == "SENSORRETAIN ON":
+		h.mu.Lock()
+		h.sensorRetain = true
+		h.mu.Unlock()
 		_ = json.NewEncoder(w).Encode(map[string]int{"SensorRetain": 1})
 
 	case strings.ToUpper(cmd) == "SENSORRETAIN 0" || strings.ToUpper(cmd) == "SENSORRETAIN OFF":
+		h.mu.Lock()
+		h.sensorRetain = false
+		h.mu.Unlock()
 		_ = json.NewEncoder(w).Encode(map[string]int{"SensorRetain": 0})
 
 	case strings.ToUpper(cmd) == "SENSORRETAIN":

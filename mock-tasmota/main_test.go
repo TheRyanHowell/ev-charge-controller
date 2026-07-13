@@ -1304,3 +1304,41 @@ func TestStatus_StatusRetain(t *testing.T) {
 
 	assert.InDelta(t, 0.0, resp.Status["StatusRetain"], 0.01)
 }
+
+// --- EnergyTotal (set the cumulative meter, mirrors real Tasmota) ---
+
+func TestEnergyTotal_Set(t *testing.T) {
+	h := newTestHandler()
+	server := testServer(h)
+	defer server.Close()
+
+	body := getBody(t, &http.Client{}, server.URL+"/cm?cmnd=EnergyTotal%205.5")
+	var resp map[string]float64
+	require.NoError(t, json.Unmarshal(body, &resp))
+	assert.InDelta(t, 5.5, resp["EnergyTotal"], 1e-9)
+
+	// The new total must be reflected in Status 10.
+	body = getBody(t, &http.Client{}, server.URL+"/cm?cmnd=STATUS%2010")
+	var status struct {
+		StatusSNS struct {
+			ENERGY struct {
+				Total float64 `json:"Total"`
+			} `json:"ENERGY"`
+		} `json:"StatusSNS"`
+	}
+	require.NoError(t, json.Unmarshal(body, &status))
+	assert.InDelta(t, 5.5, status.StatusSNS.ENERGY.Total, 1e-9)
+}
+
+func TestEnergyTotal_Invalid(t *testing.T) {
+	h := newTestHandler()
+	server := testServer(h)
+	defer server.Close()
+
+	before := h.energyData.Total
+	body := getBody(t, &http.Client{}, server.URL+"/cm?cmnd=EnergyTotal%20abc")
+	var resp CommandResponse
+	require.NoError(t, json.Unmarshal(body, &resp))
+	assert.Equal(t, "Unknown", resp.Command)
+	assert.InDelta(t, before, h.energyData.Total, 1e-9)
+}
