@@ -2,6 +2,7 @@
 
 import type { Vehicle, VehicleModel } from "@/lib/schemas";
 
+import { hasBattery } from "@/lib/vehicle";
 import { useId } from "react";
 
 export { parseVehicleSelectorValue } from "@/lib/vehicle-selector";
@@ -25,9 +26,15 @@ export default function VehicleSelector({
 }: VehicleSelectorProps) {
   const selectId = useId();
 
+  // This selector attaches a charging plug, so battery-less (generic)
+  // vehicles and models are excluded - they only take 12V maintenance plugs.
+  const chargeableVehicles = vehicles.filter(hasBattery);
+
   // Models the user doesn't already have
   const usedModelIds = new Set(vehicles.map((v) => v.modelId).filter(Boolean));
-  const availableModels = (models ?? []).filter((m) => !usedModelIds.has(m.id));
+  const availableModels = (models ?? []).filter(
+    (m) => !usedModelIds.has(m.id) && hasBattery(m),
+  );
 
   return (
     <div>
@@ -44,7 +51,7 @@ export default function VehicleSelector({
         <option value="" disabled>
           Select a vehicle…
         </option>
-        {vehicles.map((v) => {
+        {chargeableVehicles.map((v) => {
           const modelName =
             v.modelName && v.modelName !== v.name ? ` (${v.modelName})` : "";
           return (
