@@ -130,6 +130,10 @@ test.describe.serial("Generic Vehicle", () => {
       page.getByTestId("speedometer-gauge-svg"),
       "Charge gauge must not render for a battery-less vehicle",
     ).toHaveCount(0);
+    await expect(
+      page.getByText("Power Draw"),
+      "Charts section must not render for a battery-less vehicle",
+    ).toHaveCount(0);
   });
 
   test("should reject starting an EV charge session for a generic vehicle", async ({

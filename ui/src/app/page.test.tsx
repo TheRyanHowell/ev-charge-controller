@@ -328,6 +328,52 @@ describe("Home Page", () => {
     );
   });
 
+  it("renders the charts section for a battery vehicle", async () => {
+    customRender(<Dashboard />);
+    await waitFor(() =>
+      expect(screen.getByTestId("power-chart")).toBeInTheDocument(),
+    );
+  });
+
+  it("hides the charts section for a battery-less vehicle", async () => {
+    (usePlug as any).mockImplementation(() => ({
+      plugs: [
+        createPlug({
+          id: "m1",
+          name: "12V Charger",
+          type: "maintenance",
+          vehicleId: "gv1",
+          online: true,
+        }),
+      ],
+      selectedVehicleId: "gv1",
+      selectVehicle: vi.fn(),
+      toggleMaintenancePower: vi.fn(),
+      isTogglingPower: false,
+      isLoading: false,
+      error: null,
+      createPlug: vi.fn(),
+      isCreating: false,
+      updatePlug: vi.fn(),
+      deletePlug: vi.fn(),
+    }));
+    mockVehicle({
+      vehicles: [
+        createVehicle({
+          id: "gv1",
+          name: "My Petrol Bike",
+          capacityKwh: 0,
+          chargerOutputW: 0,
+        }),
+      ],
+    });
+    customRender(<Dashboard />);
+    await waitFor(() =>
+      expect(screen.getByText("12V Maintenance Charger")).toBeInTheDocument(),
+    );
+    expect(screen.queryByTestId("power-chart")).not.toBeInTheDocument();
+  });
+
   it("displays no vehicle message when not selected", async () => {
     customRender(<Dashboard />);
     await waitFor(() =>

@@ -32,6 +32,7 @@ import { apiGet } from "@/lib/api";
 import { ensurePushSubscription } from "@/lib/push";
 import { queryKeys } from "@/lib/queryKeys";
 import { PlugSchema, VehicleSchema } from "@/lib/schemas";
+import { hasBattery } from "@/lib/vehicle";
 import { useGaugeStore } from "@/stores/gaugeStore";
 import { activeRatePence } from "@/utils/gauge";
 import { useQueryClient } from "@tanstack/react-query";
@@ -373,12 +374,16 @@ export default function Dashboard({
             onAdd12V={() => setAdd12VOpen(true)}
           />
 
-          <ChartsSection
-            vehicleId={selectedVehicle?.id ?? null}
-            shouldPoll={!!isChargingOrPending}
-            initialPowerReadings={initialPowerReadings}
-            initialSocSnapshots={initialSocSnapshots}
-          />
+          {/* No charge sessions ever exist for a battery-less vehicle, so the
+              power/SoC/current/carbon charts have nothing to show. */}
+          {(!selectedVehicle || hasBattery(selectedVehicle)) && (
+            <ChartsSection
+              vehicleId={selectedVehicle?.id ?? null}
+              shouldPoll={!!isChargingOrPending}
+              initialPowerReadings={initialPowerReadings}
+              initialSocSnapshots={initialSocSnapshots}
+            />
+          )}
         </div>
 
         <ErrorBoundary fallback={null}>
