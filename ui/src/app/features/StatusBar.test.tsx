@@ -41,6 +41,21 @@ describe("StatusBar", () => {
     expect(screen.getByText("600 W")).toBeInTheDocument();
   });
 
+  it("shows a 12V-maintenance-only chip instead of battery specs for battery-less vehicles", () => {
+    const genericVehicle = {
+      ...testVehicle,
+      name: "My Petrol Bike",
+      capacityKwh: 0,
+      chargerOutputW: 0,
+      chargingEfficiency: 1,
+    };
+    render(<StatusBar tempError={null} selectedVehicle={genericVehicle} />);
+    expect(screen.getByText("My Petrol Bike")).toBeInTheDocument();
+    expect(screen.getByText(/12V maintenance only/i)).toBeInTheDocument();
+    expect(screen.queryByText(/0 kWh/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/0 W/)).not.toBeInTheDocument();
+  });
+
   it("renders temp error with role=alert", () => {
     render(
       <StatusBar

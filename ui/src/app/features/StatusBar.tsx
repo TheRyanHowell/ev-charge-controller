@@ -1,5 +1,6 @@
 import type { Vehicle } from "@/lib/schemas";
 
+import { hasBattery } from "@/lib/vehicle";
 import { formatPower } from "@/utils/gauge";
 
 interface StatusBarProps {
@@ -33,20 +34,32 @@ export default function StatusBar({
             ></i>
             {selectedVehicle.name}
           </span>
-          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface border border-border text-xs text-fg-secondary">
-            <i
-              className="fas fa-battery-three-quarters text-fg-muted text-[10px]"
-              aria-hidden="true"
-            ></i>
-            {selectedVehicle.capacityKwh} kWh
-          </span>
-          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface border border-border text-xs text-fg-secondary">
-            <i
-              className="fas fa-bolt text-fg-muted text-[10px]"
-              aria-hidden="true"
-            ></i>
-            {formatPower(selectedVehicle.chargerOutputW)}
-          </span>
+          {hasBattery(selectedVehicle) ? (
+            <>
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface border border-border text-xs text-fg-secondary">
+                <i
+                  className="fas fa-battery-three-quarters text-fg-muted text-[10px]"
+                  aria-hidden="true"
+                ></i>
+                {selectedVehicle.capacityKwh} kWh
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface border border-border text-xs text-fg-secondary">
+                <i
+                  className="fas fa-bolt text-fg-muted text-[10px]"
+                  aria-hidden="true"
+                ></i>
+                {formatPower(selectedVehicle.chargerOutputW)}
+              </span>
+            </>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface border border-border text-xs text-fg-secondary">
+              <i
+                className="fas fa-car-battery text-fg-muted text-[10px]"
+                aria-hidden="true"
+              ></i>
+              12V maintenance only
+            </span>
+          )}
         </div>
       )}
 

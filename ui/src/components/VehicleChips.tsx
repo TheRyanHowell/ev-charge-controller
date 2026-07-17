@@ -2,6 +2,8 @@
 
 import type { Plug, Vehicle } from "@/lib/schemas";
 
+import { hasBattery } from "@/lib/vehicle";
+
 interface VehicleChipsProps {
   vehicles: Vehicle[];
   plugs: Plug[];
@@ -20,10 +22,14 @@ export default function VehicleChips({
   return (
     <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
       {vehicles.map((vehicle) => {
-        const chargingPlug = plugs.find(
-          (p) => p.type === "charging" && p.vehicleId === vehicle.id,
+        // Battery vehicles report their charging plug's state; battery-less
+        // (generic) vehicles only have a 12V maintenance plug to report.
+        const statusPlug = plugs.find(
+          (p) =>
+            p.vehicleId === vehicle.id &&
+            p.type === (hasBattery(vehicle) ? "charging" : "maintenance"),
         );
-        const isOnline = chargingPlug?.online ?? false;
+        const isOnline = statusPlug?.online ?? false;
         const isSelected = selectedVehicleId === vehicle.id;
 
         return (

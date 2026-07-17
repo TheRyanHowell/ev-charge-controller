@@ -148,4 +148,31 @@ describe("VehicleChips", () => {
     // Maintenance plug does not count - online dot should be "Offline"
     expect(screen.getByLabelText("Offline")).toBeInTheDocument();
   });
+
+  it("uses maintenance plug online status for battery-less vehicles", () => {
+    const maintenancePlug = createPlug({
+      id: "m1",
+      vehicleId: "v1",
+      type: "maintenance",
+      online: true,
+    });
+    render(
+      <VehicleChips
+        vehicles={[
+          createVehicle({
+            id: "v1",
+            name: "My Petrol Bike",
+            capacityKwh: 0,
+            chargerOutputW: 0,
+          }),
+        ]}
+        plugs={[maintenancePlug]}
+        selectedVehicleId={null}
+        onSelect={vi.fn()}
+      />,
+    );
+    // A generic vehicle can only have a maintenance plug, so its online
+    // state is the vehicle's online state.
+    expect(screen.getByLabelText("Online")).toBeInTheDocument();
+  });
 });
