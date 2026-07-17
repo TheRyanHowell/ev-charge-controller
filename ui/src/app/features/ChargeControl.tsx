@@ -89,7 +89,7 @@ export default function ChargeControl({
   // maintenance charger is controllable.
   if (selectedVehicle && !hasBattery(selectedVehicle)) {
     return (
-      <div className="w-full max-w-[540px]">
+      <div className="w-full py-6 sm:py-10">
         <MaintenanceControl
           plug={maintenancePlug ?? null}
           onToggle={onToggleMaintenance}
