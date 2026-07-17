@@ -38,7 +38,7 @@ smart plugs. It has four runtime components:
 
 | Entity | Purpose |
 |--------|---------|
-| **VehicleModel** | Global catalog row (e.g. Maeving RM1/RM1S/RM2): capacity, charger output, efficiency, charge-time curve, range. Read-only. |
+| **VehicleModel** | Global catalog row (e.g. Maeving RM1/RM1S/RM2): capacity, charger output, efficiency, charge-time curve, range. Read-only. The `generic` entry (listed first) has no battery data (`capacity_kwh = 0`) and represents e.g. a petrol vehicle that only uses a 12V maintenance charger; EV charge sessions are rejected for its instances (`400 vehicle-has-no-battery`). |
 | **Vehicle** | A user's instance of a model. Holds live state (current/target SoC), lifetime aggregates, and per-vehicle notification preferences. API responses merge the catalog fields in so consumers see a full shape. |
 | **Plug** | A Tasmota smart plug owned by a user. Type is `charging` (driven by charge sessions) or `maintenance` (a 12V trickle charger toggled directly). Carries its MQTT namespace, topic, online state, and the vehicle it is assigned to. |
 | **ChargeSession** | A charging run for a vehicle. Tracks start/target/end SoC, wall- and battery-side energy, average carbon intensity, CO2 grams, cost in pence, and off-peak energy. |

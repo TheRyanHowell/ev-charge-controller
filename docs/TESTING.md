@@ -87,7 +87,10 @@ real IDs from list responses.
 ### Bikes (vehicles)
 
 The catalog (`vehicle-models`) is global and read-only; a `vehicle` is the user's
-instance of a model and carries live SoC and preferences.
+instance of a model and carries live SoC and preferences. The `generic` model
+(listed first) has no battery data (`capacityKwh: 0`) and exists for vehicles
+that only use a 12V maintenance charger; starting a charge session for one of
+its instances fails with `400 vehicle-has-no-battery`.
 
 | Method | Endpoint | Body / Params | Success |
 |--------|----------|---------------|---------|
@@ -342,6 +345,7 @@ The `type` fragment is a stable error id you can assert on. Common ids:
 | `#target-must-be-higher` | 400 | start >= target |
 | `#invalid-schedule-time` / `#window-required` / `#window-equal` | 400 | Bad schedule input |
 | `#wrong-plug-type` / `#maintenance-plug-schedule` | 400 | Operation not valid for plug type |
+| `#vehicle-has-no-battery` | 400 | EV charge session start on a battery-less (generic) vehicle |
 | `#invalid-credentials` | 401 | Bad email/password |
 | `#invalid-token` / `#missing-token` | 401 | Refresh token bad/absent |
 | `#unauthorized` | 401 | Missing/invalid access token |

@@ -29,10 +29,11 @@ test.describe.serial("Vehicle CRUD", () => {
       /maeving/i,
     );
 
-    // Select the first available model
+    // Select the first Maeving model (the battery-less Generic Vehicle is
+    // listed first; generic creation is covered by generic-vehicle.spec.ts)
     const modelButton = dialog
       .getByRole("button")
-      .filter({ hasNotText: /cancel/i })
+      .filter({ hasText: /maeving/i })
       .first();
     await modelButton.click();
 
