@@ -9,6 +9,13 @@ import {
 } from "@/lib/push";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+function setNotificationPermission(permission: NotificationPermission) {
+  global.Notification = {
+    permission,
+    requestPermission: vi.fn().mockResolvedValue(permission),
+  } as unknown as typeof Notification;
+}
+
 describe("push utilities", () => {
   const mockPushManager = {
     getSubscription: vi.fn(),
@@ -28,20 +35,9 @@ describe("push utilities", () => {
       writable: true,
       configurable: true,
     });
-    global.fetch = vi.fn();
-    global.Notification = {
-      requestPermission: vi.fn().mockResolvedValue("granted"),
-    } as unknown as typeof Notification;
-
-    // Reset localStorage mock
-    Object.defineProperty(window, "localStorage", {
-      value: {
-        getItem: vi.fn().mockReturnValue(null),
-        setItem: vi.fn(),
-      },
-      writable: true,
-      configurable: true,
-    });
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 201 });
+    setNotificationPermission("granted");
+    mockPushManager.getSubscription.mockResolvedValue(null);
   });
 
   describe("getVapidPublicKey", () => {
@@ -75,12 +71,14 @@ describe("push utilities", () => {
   });
 
   describe("registerServiceWorker", () => {
-    it("returns the registration on success", async () => {
+    it("registers sw.js with updateViaCache disabled so fixes propagate", async () => {
       const mockSw = navigator.serviceWorker as any;
       const reg = { pushManager: mockPushManager };
       mockSw.register.mockResolvedValueOnce(reg);
       const result = await registerServiceWorker();
-      expect(mockSw.register).toHaveBeenCalledWith("/sw.js");
+      expect(mockSw.register).toHaveBeenCalledWith("/sw.js", {
+        updateViaCache: "none",
+      });
       expect(result).toBe(reg);
     });
 
@@ -99,7 +97,6 @@ describe("push utilities", () => {
         unsubscribe: vi.fn().mockResolvedValue(true),
       };
       mockPushManager.subscribe.mockResolvedValueOnce(mockSub);
-      global.fetch = vi.fn().mockResolvedValueOnce({ ok: true, status: 201 });
 
       const result = await subscribeToPush();
       expect(result).toEqual({
@@ -113,7 +110,7 @@ describe("push utilities", () => {
       );
     });
 
-    it("unsubscribes and returns null when API rejects", async () => {
+    it("returns null when API rejects but keeps the browser subscription", async () => {
       const mockSub = {
         endpoint: "https://push.example/sub1",
         unsubscribe: vi.fn().mockResolvedValue(true),
@@ -124,7 +121,9 @@ describe("push utilities", () => {
 
       const result = await subscribeToPush();
       expect(result).toBeNull();
-      expect(mockSub.unsubscribe).toHaveBeenCalled();
+      // The browser subscription survives so the app-open sync can retry the
+      // server registration later.
+      expect(mockSub.unsubscribe).not.toHaveBeenCalled();
     });
 
     it("returns null when no service worker registration", async () => {
@@ -139,41 +138,72 @@ describe("push utilities", () => {
       ).mockResolvedValueOnce("denied");
       const result = await subscribeToPush();
       expect(result).toBeNull();
+      expect(mockPushManager.subscribe).not.toHaveBeenCalled();
     });
 
-    it("unsubscribes existing subscription before creating new one", async () => {
+    it("reuses an existing subscription without unsubscribing it", async () => {
       const existingSub = {
+        endpoint: "https://push.example/sub1",
+        toJSON: () => ({ keys: { p256dh: "abc", auth: "xyz" } }),
+        unsubscribe: vi.fn().mockResolvedValue(true),
+      };
+      mockPushManager.getSubscription.mockResolvedValueOnce(existingSub);
+      // subscribe() returns the existing subscription when the key matches.
+      mockPushManager.subscribe.mockResolvedValueOnce(existingSub);
+
+      const result = await subscribeToPush();
+      expect(existingSub.unsubscribe).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        endpoint: "https://push.example/sub1",
+        p256dhKey: "abc",
+        authKey: "xyz",
+      });
+    });
+
+    it("rotates the subscription when the browser rejects subscribing over the old key", async () => {
+      const existingSub = {
+        endpoint: "https://push.example/old",
+        toJSON: () => ({ keys: { p256dh: "abc", auth: "xyz" } }),
         unsubscribe: vi.fn().mockResolvedValue(true),
       };
       mockPushManager.getSubscription.mockResolvedValueOnce(existingSub);
 
-      const mockSub = {
-        endpoint: "https://push.example/sub2",
+      const newSub = {
+        endpoint: "https://push.example/new",
         toJSON: () => ({ keys: { p256dh: "def", auth: "uvw" } }),
         unsubscribe: vi.fn().mockResolvedValue(true),
       };
-      mockPushManager.subscribe.mockResolvedValueOnce(mockSub);
-      global.fetch = vi.fn().mockResolvedValueOnce({ ok: true, status: 201 });
+      mockPushManager.subscribe
+        .mockRejectedValueOnce(new Error("InvalidStateError"))
+        .mockResolvedValueOnce(newSub);
 
       const result = await subscribeToPush();
       expect(existingSub.unsubscribe).toHaveBeenCalled();
       expect(result).toEqual({
-        endpoint: "https://push.example/sub2",
+        endpoint: "https://push.example/new",
         p256dhKey: "def",
         authKey: "uvw",
       });
+      // Old endpoint is cleaned up server-side.
+      expect(global.fetch).toHaveBeenCalledWith(
+        "/api/push-subscriptions",
+        expect.objectContaining({
+          method: "DELETE",
+          body: JSON.stringify({ endpoint: "https://push.example/old" }),
+        }),
+      );
     });
   });
 
   describe("unsubscribeFromPush", () => {
-    it("returns true when API accepts", async () => {
+    it("deletes server-side and unsubscribes browser-side", async () => {
       const mockSub = {
         endpoint: "https://push.example/sub1",
         toJSON: () => ({ keys: { p256dh: "abc", auth: "xyz" } }),
         unsubscribe: vi.fn().mockResolvedValue(true),
       };
       mockPushManager.getSubscription.mockResolvedValueOnce(mockSub);
-      global.fetch = vi.fn().mockResolvedValueOnce({ ok: true, status: 200 });
+      global.fetch = vi.fn().mockResolvedValueOnce({ ok: true, status: 204 });
 
       const result = await unsubscribeFromPush();
       expect(result).toBe(true);
@@ -181,6 +211,7 @@ describe("push utilities", () => {
         "/api/push-subscriptions",
         expect.objectContaining({ method: "DELETE" }),
       );
+      expect(mockSub.unsubscribe).toHaveBeenCalled();
     });
 
     it("returns false when no existing subscription", async () => {
@@ -189,16 +220,20 @@ describe("push utilities", () => {
       expect(result).toBe(false);
     });
 
-    it("returns false when API rejects", async () => {
+    it("still unsubscribes browser-side when the API is unreachable", async () => {
       const mockSub = {
         endpoint: "https://push.example/sub1",
         toJSON: () => ({ keys: { p256dh: "abc", auth: "xyz" } }),
+        unsubscribe: vi.fn().mockResolvedValue(true),
       };
       mockPushManager.getSubscription.mockResolvedValueOnce(mockSub);
-      global.fetch = vi.fn().mockResolvedValueOnce({ ok: false, status: 404 });
+      global.fetch = vi.fn().mockRejectedValueOnce(new Error("offline"));
 
       const result = await unsubscribeFromPush();
-      expect(result).toBe(false);
+      // The user's intent is to stop notifications; the browser unsubscribe
+      // guarantees that even when the server delete fails.
+      expect(mockSub.unsubscribe).toHaveBeenCalled();
+      expect(result).toBe(true);
     });
 
     it("returns false when no service worker registration", async () => {
@@ -238,7 +273,7 @@ describe("push utilities", () => {
   });
 
   describe("ensurePushSubscription", () => {
-    it("resubscribes when subscription has null expirationTime", async () => {
+    it("re-syncs a healthy never-expiring subscription to the server without touching it", async () => {
       const mockSub = {
         endpoint: "https://push.example/sub1",
         expirationTime: null,
@@ -247,30 +282,27 @@ describe("push utilities", () => {
       };
       mockPushManager.getSubscription.mockResolvedValueOnce(mockSub);
 
-      const newMockSub = {
-        endpoint: "https://push.example/sub2",
-        toJSON: () => ({ keys: { p256dh: "def", auth: "uvw" } }),
-        unsubscribe: vi.fn().mockResolvedValue(true),
-      };
-      mockPushManager.subscribe.mockResolvedValueOnce(newMockSub);
-
-      global.fetch = vi.fn().mockResolvedValueOnce({ ok: true, status: 201 });
-
       await ensurePushSubscription();
 
-      expect(mockSub.unsubscribe).toHaveBeenCalled();
-      expect(mockPushManager.subscribe).toHaveBeenCalled();
+      // expirationTime === null means the subscription never expires; it must
+      // never be unsubscribed or rotated.
+      expect(mockSub.unsubscribe).not.toHaveBeenCalled();
+      expect(mockPushManager.subscribe).not.toHaveBeenCalled();
+      // But it is re-upserted so a server that lost the record heals.
       expect(global.fetch).toHaveBeenCalledWith(
         "/api/push-subscriptions",
-        expect.objectContaining({ method: "POST" }),
-      );
-      expect(localStorage.setItem).toHaveBeenCalledWith(
-        "evcc_lastPushResubscribe",
-        expect.any(String),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            endpoint: "https://push.example/sub1",
+            p256dhKey: "abc",
+            authKey: "xyz",
+          }),
+        }),
       );
     });
 
-    it("does nothing when subscription is not expiring", async () => {
+    it("re-syncs a subscription with a far-future expiry without rotating it", async () => {
       const futureTime = Date.now() + 48 * 60 * 60 * 1000;
       const mockSub = {
         endpoint: "https://push.example/sub1",
@@ -284,13 +316,73 @@ describe("push utilities", () => {
 
       expect(mockSub.unsubscribe).not.toHaveBeenCalled();
       expect(mockPushManager.subscribe).not.toHaveBeenCalled();
+      expect(global.fetch).toHaveBeenCalledWith(
+        "/api/push-subscriptions",
+        expect.objectContaining({ method: "POST" }),
+      );
     });
 
-    it("does nothing when within cooldown period", async () => {
-      (localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
-        String(Date.now() - 1000),
-      );
+    it("silently resubscribes when permission is granted but no subscription exists", async () => {
+      mockPushManager.getSubscription.mockResolvedValueOnce(null);
+      const newSub = {
+        endpoint: "https://push.example/new",
+        toJSON: () => ({ keys: { p256dh: "def", auth: "uvw" } }),
+        unsubscribe: vi.fn().mockResolvedValue(true),
+      };
+      mockPushManager.subscribe.mockResolvedValueOnce(newSub);
 
+      await ensurePushSubscription();
+
+      expect(mockPushManager.subscribe).toHaveBeenCalled();
+      // Never prompts: recovery must not depend on a permission dialog.
+      expect(global.Notification.requestPermission).not.toHaveBeenCalled();
+      expect(global.fetch).toHaveBeenCalledWith(
+        "/api/push-subscriptions",
+        expect.objectContaining({ method: "POST" }),
+      );
+    });
+
+    it("renews a genuinely expiring subscription", async () => {
+      const expiringSub = {
+        endpoint: "https://push.example/old",
+        expirationTime: Date.now() + 60 * 1000,
+        toJSON: () => ({ keys: { p256dh: "abc", auth: "xyz" } }),
+        unsubscribe: vi.fn().mockResolvedValue(true),
+      };
+      mockPushManager.getSubscription.mockResolvedValueOnce(expiringSub);
+
+      const newSub = {
+        endpoint: "https://push.example/new",
+        toJSON: () => ({ keys: { p256dh: "def", auth: "uvw" } }),
+        unsubscribe: vi.fn().mockResolvedValue(true),
+      };
+      mockPushManager.subscribe.mockResolvedValueOnce(newSub);
+
+      await ensurePushSubscription();
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        "/api/push-subscriptions",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            endpoint: "https://push.example/new",
+            p256dhKey: "def",
+            authKey: "uvw",
+          }),
+        }),
+      );
+      // Old endpoint removed server-side after the new one is registered.
+      expect(global.fetch).toHaveBeenCalledWith(
+        "/api/push-subscriptions",
+        expect.objectContaining({
+          method: "DELETE",
+          body: JSON.stringify({ endpoint: "https://push.example/old" }),
+        }),
+      );
+    });
+
+    it("does nothing when notification permission is not granted", async () => {
+      setNotificationPermission("default");
       const mockSub = {
         endpoint: "https://push.example/sub1",
         expirationTime: null,
@@ -301,15 +393,9 @@ describe("push utilities", () => {
 
       await ensurePushSubscription();
 
-      expect(mockSub.unsubscribe).not.toHaveBeenCalled();
-    });
-
-    it("does nothing when not subscribed", async () => {
-      mockPushManager.getSubscription.mockResolvedValueOnce(null);
-
-      await ensurePushSubscription();
-
       expect(mockPushManager.subscribe).not.toHaveBeenCalled();
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(global.Notification.requestPermission).not.toHaveBeenCalled();
     });
 
     it("does nothing when push is not enabled", async () => {
@@ -322,26 +408,22 @@ describe("push utilities", () => {
       process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY = originalKey;
     });
 
-    it("silently catches errors during resubscription", async () => {
+    it("keeps the browser subscription when the server sync fails", async () => {
+      global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 500 });
       const mockSub = {
         endpoint: "https://push.example/sub1",
         expirationTime: null,
         toJSON: () => ({ keys: { p256dh: "abc", auth: "xyz" } }),
-        unsubscribe: vi.fn().mockRejectedValue(new Error("boom")),
+        unsubscribe: vi.fn().mockResolvedValue(true),
       };
       mockPushManager.getSubscription.mockResolvedValueOnce(mockSub);
 
       await expect(ensurePushSubscription()).resolves.toBeUndefined();
-      expect(mockPushManager.subscribe).not.toHaveBeenCalled();
+      expect(mockSub.unsubscribe).not.toHaveBeenCalled();
     });
 
-    it("handles localStorage getItem throwing", async () => {
-      (localStorage.getItem as ReturnType<typeof vi.fn>).mockImplementation(
-        () => {
-          throw new Error("localStorage unavailable");
-        },
-      );
-
+    it("silently catches errors", async () => {
+      global.fetch = vi.fn().mockRejectedValue(new Error("offline"));
       const mockSub = {
         endpoint: "https://push.example/sub1",
         expirationTime: null,
@@ -350,43 +432,8 @@ describe("push utilities", () => {
       };
       mockPushManager.getSubscription.mockResolvedValueOnce(mockSub);
 
-      const newMockSub = {
-        endpoint: "https://push.example/sub2",
-        toJSON: () => ({ keys: { p256dh: "def", auth: "uvw" } }),
-        unsubscribe: vi.fn().mockResolvedValue(true),
-      };
-      mockPushManager.subscribe.mockResolvedValueOnce(newMockSub);
-      global.fetch = vi.fn().mockResolvedValueOnce({ ok: true, status: 201 });
-
-      await ensurePushSubscription();
-      expect(mockPushManager.subscribe).toHaveBeenCalled();
-    });
-
-    it("handles localStorage setItem throwing", async () => {
-      (localStorage.setItem as ReturnType<typeof vi.fn>).mockImplementation(
-        () => {
-          throw new Error("localStorage unavailable");
-        },
-      );
-
-      const mockSub = {
-        endpoint: "https://push.example/sub1",
-        expirationTime: null,
-        toJSON: () => ({ keys: { p256dh: "abc", auth: "xyz" } }),
-        unsubscribe: vi.fn().mockResolvedValue(true),
-      };
-      mockPushManager.getSubscription.mockResolvedValueOnce(mockSub);
-
-      const newMockSub = {
-        endpoint: "https://push.example/sub2",
-        toJSON: () => ({ keys: { p256dh: "def", auth: "uvw" } }),
-        unsubscribe: vi.fn().mockResolvedValue(true),
-      };
-      mockPushManager.subscribe.mockResolvedValueOnce(newMockSub);
-      global.fetch = vi.fn().mockResolvedValueOnce({ ok: true, status: 201 });
-
-      await ensurePushSubscription();
-      expect(mockPushManager.subscribe).toHaveBeenCalled();
+      await expect(ensurePushSubscription()).resolves.toBeUndefined();
+      expect(mockSub.unsubscribe).not.toHaveBeenCalled();
     });
   });
 });

@@ -6,38 +6,11 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(clients.claim())
 })
 
-// pushSubscriptionExpiryThresholdMs is the window before expirationTime
-// at which the subscription is considered expiring and should be refreshed.
-const pushSubscriptionExpiryThresholdMs = 24 * 60 * 60 * 1000
-
-// pushResubscribeCooldownMs is the minimum interval between resubscriptions.
-// 24 hours prevents spamming resubscriptions on every notification.
-const pushResubscribeCooldownMs = 24 * 60 * 60 * 1000
-
-// pushLastResubscribeKey is the localStorage key for tracking last resubscribe time.
-const pushLastResubscribeKey = 'evcc_lastPushResubscribe'
-
-function getLastResubscribeTime() {
-  try {
-    return Number(localStorage.getItem(pushLastResubscribeKey)) || 0
-  } catch {
-    return 0
-  }
-}
-
-function setLastResubscribeTime() {
-  try {
-    localStorage.setItem(pushLastResubscribeKey, String(Date.now()))
-  } catch {
-    // localStorage may be unavailable in some contexts
-  }
-}
-
-function canResubscribe() {
-  const last = getLastResubscribeTime()
-  return Date.now() - last >= pushResubscribeCooldownMs
-}
-
+// The push handler only displays the notification. Subscription lifecycle is
+// handled by the pushsubscriptionchange handler below and by the app-open
+// sync in the page (ensurePushSubscription) - tearing down and recreating the
+// subscription from inside the push handler proved destructive: any failure
+// mid-rotation left the device silently unsubscribed.
 self.addEventListener('push', (event) => {
   const data = event.data ? event.data.json() : {}
   const title = data.title || 'EV Charge'
@@ -52,21 +25,79 @@ self.addEventListener('push', (event) => {
       vibrate: vibration,
       requireInteraction: true,
       tag: title,
-    }).then(() => {
-      return maybeResubscribeToPush()
     })
   )
 })
 
-function isSubscriptionExpiring(subscription) {
-  if (!subscription) {
-    return false
+// pushsubscriptionchange fires when the push service rotates, refreshes, or
+// invalidates the subscription. Resubscribe with the same application server
+// key and re-register with the backend so delivery continues without the app
+// having to be opened.
+self.addEventListener('pushsubscriptionchange', (event) => {
+  event.waitUntil(renewSubscription(event))
+})
+
+function renewSubscription(event) {
+  const oldSubscription = event.oldSubscription || null
+  const oldEndpoint = oldSubscription ? oldSubscription.endpoint : null
+
+  // Some browsers hand over the replacement subscription directly.
+  const subscriptionPromise = event.newSubscription
+    ? Promise.resolve(event.newSubscription)
+    : getApplicationServerKey(oldSubscription).then(function (applicationServerKey) {
+        return self.registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: applicationServerKey,
+        })
+      })
+
+  return subscriptionPromise
+    .then(function (newSubscription) {
+      return registerSubscription(newSubscription).then(function () {
+        if (oldEndpoint && oldEndpoint !== newSubscription.endpoint) {
+          return unregisterEndpoint(oldEndpoint)
+        }
+      })
+    })
+    .catch(function (error) {
+      // Best effort: the app-open sync (ensurePushSubscription) repairs the
+      // registration the next time the PWA is opened.
+      console.error('[SW] Failed to renew push subscription:', error)
+    })
+}
+
+function getApplicationServerKey(oldSubscription) {
+  if (oldSubscription && oldSubscription.options && oldSubscription.options.applicationServerKey) {
+    return Promise.resolve(oldSubscription.options.applicationServerKey)
   }
-  if (subscription.expirationTime === null) {
-    return true
-  }
-  const expiresInMs = subscription.expirationTime - Date.now()
-  return expiresInMs < pushSubscriptionExpiryThresholdMs
+  return fetch('/api/push-subscriptions')
+    .then(function (res) {
+      return res.json()
+    })
+    .then(function (data) {
+      return data.publicKey ? urlBase64ToBufferKey(data.publicKey) : undefined
+    })
+}
+
+function registerSubscription(subscription) {
+  const keys = subscription.toJSON().keys || {}
+  return fetch('/api/push-subscriptions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      endpoint: subscription.endpoint,
+      p256dhKey: keys.p256dh || '',
+      authKey: keys.auth || '',
+    }),
+  })
+}
+
+function unregisterEndpoint(endpoint) {
+  return fetch('/api/push-subscriptions', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ endpoint: endpoint }),
+  })
 }
 
 function urlBase64ToBufferKey(base64String) {
@@ -78,38 +109,6 @@ function urlBase64ToBufferKey(base64String) {
     bytes[i] = binaryString.charCodeAt(i)
   }
   return bytes.buffer
-}
-
-function maybeResubscribeToPush() {
-  return self.registration.pushManager.getSubscription().then(function (subscription) {
-    if (!isSubscriptionExpiring(subscription) || !canResubscribe()) {
-      return
-    }
-    return subscription.unsubscribe().then(function () {
-      return fetch('/api/push-subscriptions').then(function (res) {
-        return res.json()
-      }).then(function (data) {
-        var applicationServerKey = data.publicKey ? urlBase64ToBufferKey(data.publicKey) : undefined
-        return self.registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: applicationServerKey,
-        })
-      })
-    }).then(function (newSubscription) {
-      setLastResubscribeTime()
-      return fetch('/api/push-subscriptions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          endpoint: newSubscription.endpoint,
-          p256dh_key: newSubscription.toJSON().keys?.p256dh ?? '',
-          auth_key: newSubscription.toJSON().keys?.auth ?? '',
-        }),
-      })
-    }).catch(function (error) {
-      console.error('[SW] Failed to resubscribe to push:', error)
-    })
-  })
 }
 
 self.addEventListener('notificationclick', (event) => {
