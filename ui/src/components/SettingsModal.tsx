@@ -17,6 +17,7 @@ import {
 } from "@/lib/push";
 import { queryKeys } from "@/lib/queryKeys";
 import { ConsoleCommandsResultSchema } from "@/lib/schemas";
+import { hasBattery } from "@/lib/vehicle";
 import { useThemeStore } from "@/stores/themeStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState, useEffect, useCallback, useId } from "react";
@@ -182,9 +183,16 @@ export default function SettingsModal({
     }
   }, [pushSubscribed]);
 
+  // A 12V-only vehicle (e.g. the battery-less generic model) has no charging
+  // plug, so fall back to the maintenance plug to resolve the vehicle.
+  const selectedVehicleId = plug?.vehicleId ?? maintenancePlug?.vehicleId;
   const selectedVehicle =
-    (plug?.vehicleId ? vehicles.find((v) => v.id === plug.vehicleId) : null) ??
-    null;
+    (selectedVehicleId
+      ? vehicles.find((v) => v.id === selectedVehicleId)
+      : null) ?? null;
+  const vehicleHasBattery = selectedVehicle
+    ? hasBattery(selectedVehicle)
+    : true;
 
   if (!isOpen) return null;
 
@@ -269,45 +277,47 @@ export default function SettingsModal({
               {selectedVehicle?.name ?? "Vehicle"}
             </h3>
 
-            {/* Primary Charger */}
-            <section className="space-y-3">
-              <p className="text-xs font-medium text-fg-muted uppercase tracking-wide">
-                Primary Charger
-              </p>
-              {plug ? (
-                <PlugControls
-                  plugId={plug.id}
-                  name={plug.name}
-                  online={plug.online}
-                  deleteConfirmText="Delete this plug?"
-                  onUpdateName={onUpdateName}
-                  onDelete={() => {
-                    onDelete();
-                    onClose();
-                  }}
-                />
-              ) : (
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-fg-muted">
-                    No charging plug
-                  </span>
-                  {onAddChargingPlug && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onAddChargingPlug();
-                        onClose();
-                      }}
-                      className="text-xs text-accent-muted hover:text-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded transition-colors"
-                    >
-                      Add charging plug →
-                    </button>
-                  )}
-                </div>
-              )}
-            </section>
+            {/* Primary Charger - battery-less vehicles cannot take one */}
+            {vehicleHasBattery && (
+              <section className="space-y-3">
+                <p className="text-xs font-medium text-fg-muted uppercase tracking-wide">
+                  Primary Charger
+                </p>
+                {plug ? (
+                  <PlugControls
+                    plugId={plug.id}
+                    name={plug.name}
+                    online={plug.online}
+                    deleteConfirmText="Delete this plug?"
+                    onUpdateName={onUpdateName}
+                    onDelete={() => {
+                      onDelete();
+                      onClose();
+                    }}
+                  />
+                ) : (
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-fg-muted">
+                      No charging plug
+                    </span>
+                    {onAddChargingPlug && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onAddChargingPlug();
+                          onClose();
+                        }}
+                        className="text-xs text-accent-muted hover:text-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded transition-colors"
+                      >
+                        Add charging plug →
+                      </button>
+                    )}
+                  </div>
+                )}
+              </section>
+            )}
 
-            <div className="border-t border-border" />
+            {vehicleHasBattery && <div className="border-t border-border" />}
 
             {/* 12V Maintenance Charger */}
             <section className="space-y-3">
@@ -348,48 +358,54 @@ export default function SettingsModal({
                     Notifications
                   </p>
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-fg-secondary">
-                        Charge started
-                      </span>
-                      <Toggle
-                        checked={selectedVehicle.notifyChargeStarted}
-                        onChange={(checked) =>
-                          onUpdateNotificationPrefs(selectedVehicle.id, {
-                            notifyChargeStarted: checked,
-                          })
-                        }
-                        label="Charge started"
-                      />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-fg-secondary">
-                        Charge complete
-                      </span>
-                      <Toggle
-                        checked={selectedVehicle.notifyChargeComplete}
-                        onChange={(checked) =>
-                          onUpdateNotificationPrefs(selectedVehicle.id, {
-                            notifyChargeComplete: checked,
-                          })
-                        }
-                        label="Charge complete"
-                      />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-fg-secondary">
-                        Charger offline
-                      </span>
-                      <Toggle
-                        checked={selectedVehicle.notifyChargerOffline}
-                        onChange={(checked) =>
-                          onUpdateNotificationPrefs(selectedVehicle.id, {
-                            notifyChargerOffline: checked,
-                          })
-                        }
-                        label="Charger offline"
-                      />
-                    </div>
+                    {/* Charge-related prefs only apply to vehicles that can
+                        run EV charge sessions. */}
+                    {vehicleHasBattery && (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-fg-secondary">
+                            Charge started
+                          </span>
+                          <Toggle
+                            checked={selectedVehicle.notifyChargeStarted}
+                            onChange={(checked) =>
+                              onUpdateNotificationPrefs(selectedVehicle.id, {
+                                notifyChargeStarted: checked,
+                              })
+                            }
+                            label="Charge started"
+                          />
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-fg-secondary">
+                            Charge complete
+                          </span>
+                          <Toggle
+                            checked={selectedVehicle.notifyChargeComplete}
+                            onChange={(checked) =>
+                              onUpdateNotificationPrefs(selectedVehicle.id, {
+                                notifyChargeComplete: checked,
+                              })
+                            }
+                            label="Charge complete"
+                          />
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-fg-secondary">
+                            Charger offline
+                          </span>
+                          <Toggle
+                            checked={selectedVehicle.notifyChargerOffline}
+                            onChange={(checked) =>
+                              onUpdateNotificationPrefs(selectedVehicle.id, {
+                                notifyChargerOffline: checked,
+                              })
+                            }
+                            label="Charger offline"
+                          />
+                        </div>
+                      </>
+                    )}
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-fg-secondary">
                         12V maintenance charger offline

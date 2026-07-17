@@ -1,6 +1,6 @@
+import { queryKeys } from "@/lib/queryKeys";
 import { customRenderHook as renderHook, act, waitFor } from "@/test-utils";
 import { makeQueryClient } from "@/test-utils";
-import { queryKeys } from "@/lib/queryKeys";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { renderHook as rawRenderHook } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";

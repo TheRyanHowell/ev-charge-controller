@@ -136,6 +136,43 @@ test.describe.serial("Generic Vehicle", () => {
     ).toHaveCount(0);
   });
 
+  test("should offer the 12V-offline notification pref in Settings for a 12V-only vehicle", async ({
+    page,
+    api,
+  }) => {
+    const vehicle = await createGenericVehicle(api);
+    const plugResponse = await api.post("/api/plugs", {
+      name: "Petrol 12V",
+      vehicleId: vehicle.id,
+      type: "maintenance",
+    });
+    expect(
+      plugResponse.ok(),
+      "Creating a maintenance plug for the generic vehicle must succeed",
+    ).toBe(true);
+
+    await page.goto("/dashboard");
+    await page
+      .getByRole("button", { name: /Generic Vehicle/ })
+      .first()
+      .click();
+    await page.getByRole("button", { name: /open settings/i }).click();
+
+    await expect(
+      page.getByText("12V maintenance charger offline"),
+      "12V-offline notification pref must be available for a 12V-only vehicle",
+    ).toBeVisible({ timeout: 5000 });
+    await expect(
+      page.getByText("Primary Charger"),
+      "Primary Charger section must be hidden for a battery-less vehicle",
+    ).toHaveCount(0);
+    await expect(
+      page.getByText("Charge complete"),
+      "Charge-related notification prefs must be hidden for a battery-less vehicle",
+    ).toHaveCount(0);
+    await page.keyboard.press("Escape");
+  });
+
   test("should reject starting an EV charge session for a generic vehicle", async ({
     api,
   }) => {

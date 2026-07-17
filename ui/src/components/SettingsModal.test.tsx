@@ -272,6 +272,69 @@ describe("SettingsModal", () => {
     });
   });
 
+  // - Battery-less (12V-only) vehicle Tests -
+
+  describe("battery-less vehicle with only a 12V charger", () => {
+    const genericVehicle = createVehicle({
+      id: "generic-1",
+      name: "My Petrol Bike",
+      modelName: "Generic Vehicle",
+      capacityKwh: 0,
+      chargerOutputW: 0,
+      chargingEfficiency: 1,
+    });
+    const maintenancePlug = createPlug({
+      id: "m1",
+      name: "12V Charger",
+      type: "maintenance",
+      vehicleId: "generic-1",
+      online: true,
+    });
+    const props = () =>
+      createRenderProps({
+        plug: null,
+        maintenancePlug,
+        vehicles: [genericVehicle],
+        onUpdateNotificationPrefs: vi.fn(),
+      });
+
+    it("resolves the vehicle from the maintenance plug", () => {
+      render(<SettingsModal {...props()} />);
+      expect(screen.getByText("My Petrol Bike")).toBeInTheDocument();
+    });
+
+    it("offers the 12V-offline notification pref and calls onUpdateNotificationPrefs", () => {
+      const onUpdateNotificationPrefs = vi.fn();
+      render(
+        <SettingsModal
+          {...props()}
+          onUpdateNotificationPrefs={onUpdateNotificationPrefs}
+        />,
+      );
+      const row = screen
+        .getByText("12V maintenance charger offline")
+        .closest("div");
+      const toggle = within(row as HTMLElement).getByRole("switch");
+      fireEvent.click(toggle);
+      expect(onUpdateNotificationPrefs).toHaveBeenCalledWith("generic-1", {
+        notifyMaintenanceOffline: false,
+      });
+    });
+
+    it("hides charge-related notification prefs", () => {
+      render(<SettingsModal {...props()} />);
+      expect(screen.queryByText("Charge started")).not.toBeInTheDocument();
+      expect(screen.queryByText("Charge complete")).not.toBeInTheDocument();
+      expect(screen.queryByText("Charger offline")).not.toBeInTheDocument();
+    });
+
+    it("hides the Primary Charger section - a charging plug cannot serve a battery-less vehicle", () => {
+      render(<SettingsModal {...props()} onAddChargingPlug={vi.fn()} />);
+      expect(screen.queryByText("Primary Charger")).not.toBeInTheDocument();
+      expect(screen.queryByText(/add charging plug/i)).not.toBeInTheDocument();
+    });
+  });
+
   // - Dark mode toggle Tests -
 
   describe("Dark mode toggle", () => {
