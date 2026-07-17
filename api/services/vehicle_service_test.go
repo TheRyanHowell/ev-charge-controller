@@ -442,7 +442,7 @@ func TestVehicleService_ListModels(t *testing.T) {
 
 	mods, err := service.ListModels(t.Context())
 	require.NoError(t, err)
-	assert.Len(t, mods, 3)
+	assert.Len(t, mods, 4)
 }
 
 func TestVehicleService_UpdateName_Success(t *testing.T) {

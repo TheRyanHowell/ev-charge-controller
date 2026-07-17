@@ -87,26 +87,9 @@ func Seed(db *sql.DB) error {
 	return nil
 }
 
-// SeedIfEmpty inserts default vehicle_models if the catalog table is empty.
-func SeedIfEmpty(db *sql.DB) error {
-	var count int
-	if err := db.QueryRow("SELECT COUNT(*) FROM vehicle_models").Scan(&count); err != nil {
-		return fmt.Errorf("failed to check vehicle_models count: %w", err)
-	}
-
-	if count > 0 {
-		return nil
-	}
-
-	if err := Seed(db); err != nil {
-		return err
-	}
-
-	slog.Info("Database seeded with default vehicle models")
-	return nil
-}
-
-// Init opens the database, applies pragmas, runs migrations, and seeds if empty.
+// Init opens the database, applies pragmas, runs migrations, and seeds the
+// vehicle catalog. Seeding uses INSERT OR IGNORE, so re-running on an existing
+// database only backfills catalog models added since the first seed.
 func Init(dbPath string) (*sql.DB, error) {
 	db, err := Open(dbPath)
 	if err != nil {
@@ -123,7 +106,7 @@ func Init(dbPath string) (*sql.DB, error) {
 		return nil, err
 	}
 
-	if err := SeedIfEmpty(db); err != nil {
+	if err := Seed(db); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -171,15 +154,18 @@ func BackfillBootstrap(db *sql.DB, bootstrapEmail string) error {
 	}
 
 	// Create one vehicle instance per catalog model for the bootstrap admin.
-	modelRows, err := tx.Query(`SELECT id, name FROM vehicle_models ORDER BY id`)
+	modelRows, err := tx.Query(`SELECT id, name, capacity_kwh FROM vehicle_models ORDER BY id`)
 	if err != nil {
 		return fmt.Errorf("BackfillBootstrap list models: %w", err)
 	}
-	type modelRow struct{ id, name string }
+	type modelRow struct {
+		id, name    string
+		capacityKwh float64
+	}
 	var catalogModels []modelRow
 	for modelRows.Next() {
 		var m modelRow
-		if err := modelRows.Scan(&m.id, &m.name); err != nil {
+		if err := modelRows.Scan(&m.id, &m.name, &m.capacityKwh); err != nil {
 			modelRows.Close()
 			return fmt.Errorf("BackfillBootstrap scan model: %w", err)
 		}
@@ -190,10 +176,12 @@ func BackfillBootstrap(db *sql.DB, bootstrapEmail string) error {
 		return fmt.Errorf("BackfillBootstrap models err: %w", err)
 	}
 
+	// The default plug is a charging plug, so it must be assigned to the first
+	// battery-capable vehicle - the battery-less generic model sorts first.
 	var firstVehicleID string
-	for i, m := range catalogModels {
+	for _, m := range catalogModels {
 		vid := uuid.New().String()
-		if i == 0 {
+		if firstVehicleID == "" && m.capacityKwh > 0 {
 			firstVehicleID = vid
 		}
 		if _, err := tx.Exec(

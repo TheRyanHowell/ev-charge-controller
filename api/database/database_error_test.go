@@ -22,17 +22,6 @@ func TestSeed_DBError(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestSeedIfEmpty_DBError(t *testing.T) {
-	db := setupTestDB(t)
-	defer db.Close()
-
-	// Close DB to force QueryRow error
-	db.Close()
-
-	err := SeedIfEmpty(db)
-	assert.Error(t, err)
-}
-
 func TestBackfillBootstrap_BeginTxError(t *testing.T) {
 	db := setupTestDB(t)
 
@@ -67,11 +56,11 @@ func TestBackfillBootstrap_CreatesVehiclesForAllModels(t *testing.T) {
 	err = BackfillBootstrap(db, "admin@test.com")
 	require.NoError(t, err)
 
-	// Should have one vehicle per model (3 models in seed)
+	// Should have one vehicle per model (4 models in seed)
 	var vehicleCount int
 	err = db.QueryRow(`SELECT COUNT(*) FROM vehicles`).Scan(&vehicleCount)
 	require.NoError(t, err)
-	assert.Equal(t, 3, vehicleCount)
+	assert.Equal(t, 4, vehicleCount)
 }
 
 func TestBackfillBootstrap_Idempotent(t *testing.T) {
@@ -166,7 +155,7 @@ func TestInit_SuccessWithSeed(t *testing.T) {
 	var count int
 	err = db.QueryRow("SELECT COUNT(*) FROM vehicle_models").Scan(&count)
 	require.NoError(t, err)
-	assert.Equal(t, 3, count)
+	assert.Equal(t, 4, count)
 }
 
 func TestSetupTestDB_NoSeed(t *testing.T) {
@@ -190,10 +179,10 @@ func TestInit_Success(t *testing.T) {
 	var count int
 	err = db.QueryRow("SELECT COUNT(*) FROM vehicle_models").Scan(&count)
 	require.NoError(t, err)
-	assert.Equal(t, 3, count)
+	assert.Equal(t, 4, count)
 }
 
-func TestSeedIfEmpty_SeedError(t *testing.T) {
+func TestSeed_InsertError(t *testing.T) {
 	// Create a DB with schema but empty vehicle_models, then corrupt the table
 	// so that INSERT fails
 	db, err := SetupTestDB(false)
@@ -206,7 +195,7 @@ func TestSeedIfEmpty_SeedError(t *testing.T) {
 	_, err = db.Exec(`CREATE TABLE vehicle_models (id TEXT PRIMARY KEY, name TEXT NOT NULL, capacity_kwh REAL)`)
 	require.NoError(t, err)
 
-	err = SeedIfEmpty(db)
+	err = Seed(db)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "seed database")
 }

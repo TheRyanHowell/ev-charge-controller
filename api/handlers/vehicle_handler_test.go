@@ -55,7 +55,7 @@ func TestVehicleHandler_ListModels(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rr.Code)
 	var mods []models.VehicleModel
 	require.NoError(t, json.NewDecoder(rr.Body).Decode(&mods))
-	assert.Len(t, mods, 3)
+	assert.Len(t, mods, 4)
 	byID := make(map[string]string)
 	for _, m := range mods {
 		byID[m.ID] = m.Name

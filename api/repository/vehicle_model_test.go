@@ -17,14 +17,14 @@ func TestVehicleModelRepository_List(t *testing.T) {
 	repo := NewVehicleModelRepository(db)
 	models, err := repo.List(t.Context())
 	require.NoError(t, err)
-	assert.Len(t, models, 3)
+	assert.Len(t, models, 4)
 
 	ids := make(map[string]bool)
 	for _, m := range models {
 		ids[m.ID] = true
 		assert.NotEmpty(t, m.Name)
-		assert.Greater(t, m.CapacityKwh, 0.0)
 	}
+	assert.True(t, ids["generic"])
 	assert.True(t, ids["rm1"])
 	assert.True(t, ids["rm1s"])
 	assert.True(t, ids["rm2"])

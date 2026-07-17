@@ -431,21 +431,21 @@ func TestMigrationIsIdempotent(t *testing.T) {
 	assert.GreaterOrEqual(t, count, 3) // seed models not duplicated
 }
 
-func TestSeedOnlyRunsOnEmptyDB(t *testing.T) {
+func TestSeedIsIdempotentAcrossInits(t *testing.T) {
 	dbPath := "/tmp/test-ev-charge-seed-" + time.Now().Format("20060102-150405") + ".db"
 	defer os.Remove(dbPath)
 
-	// First init - seeds 3 vehicle models
+	// First init - seeds the 4 catalog models
 	db1, err := Init(dbPath)
 	require.NoError(t, err)
 
 	var count1 int
 	err = db1.QueryRow("SELECT COUNT(*) FROM vehicle_models").Scan(&count1)
 	require.NoError(t, err)
-	assert.Equal(t, 3, count1)
+	assert.Equal(t, 4, count1)
 	db1.Close()
 
-	// Second init - should NOT seed again
+	// Second init - must not duplicate catalog rows
 	db2, err := Init(dbPath)
 	require.NoError(t, err)
 	defer db2.Close()
@@ -453,7 +453,54 @@ func TestSeedOnlyRunsOnEmptyDB(t *testing.T) {
 	var count2 int
 	err = db2.QueryRow("SELECT COUNT(*) FROM vehicle_models").Scan(&count2)
 	require.NoError(t, err)
-	assert.Equal(t, 3, count2) // still 3, not 6
+	assert.Equal(t, 4, count2) // still 4, not 8
+}
+
+func TestSeed_IncludesGenericModelFirst(t *testing.T) {
+	db, err := SetupTestDB(true)
+	require.NoError(t, err)
+	defer db.Close()
+
+	repo := repository.NewVehicleModelRepository(db)
+	catalog, err := repo.List(context.Background())
+	require.NoError(t, err)
+	require.NotEmpty(t, catalog)
+
+	generic := catalog[0]
+	assert.Equal(t, "generic", generic.ID, "generic model should be listed first")
+	assert.Equal(t, "Generic Vehicle", generic.Name)
+	// A generic (possibly petrol) vehicle carries no traction-battery data.
+	assert.Zero(t, generic.CapacityKwh)
+	assert.Zero(t, generic.ChargerOutputW)
+	assert.Zero(t, generic.RangeMinMi)
+	assert.Zero(t, generic.RangeMaxMi)
+	assert.Nil(t, generic.Time0to100Min)
+	assert.Nil(t, generic.Time0to80Min)
+	assert.Nil(t, generic.Time20to80Min)
+	assert.Nil(t, generic.Time20to100Min)
+	assert.Nil(t, generic.PackVoltageMaxV)
+	assert.Nil(t, generic.PackCutoffCurrentMa)
+}
+
+func TestInit_BackfillsNewCatalogModels(t *testing.T) {
+	dbPath := "/tmp/test-ev-charge-backfill-" + time.Now().Format("20060102-150405") + ".db"
+	defer os.Remove(dbPath)
+
+	db1, err := Init(dbPath)
+	require.NoError(t, err)
+	// Simulate a database created before the generic model existed.
+	_, err = db1.Exec("DELETE FROM vehicle_models WHERE id = 'generic'")
+	require.NoError(t, err)
+	db1.Close()
+
+	db2, err := Init(dbPath)
+	require.NoError(t, err)
+	defer db2.Close()
+
+	var count int
+	err = db2.QueryRow("SELECT COUNT(*) FROM vehicle_models WHERE id = 'generic'").Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count, "Init should backfill catalog models added after first seed")
 }
 
 func TestSetupTestDBWithoutSeed(t *testing.T) {
@@ -473,7 +520,7 @@ func TestSetupTestDBWithSeed(t *testing.T) {
 	var modelCount int
 	err := db.QueryRow("SELECT COUNT(*) FROM vehicle_models").Scan(&modelCount)
 	assert.NoError(t, err)
-	assert.Equal(t, 3, modelCount)
+	assert.Equal(t, 4, modelCount)
 
 	var instanceCount int
 	err = db.QueryRow("SELECT COUNT(*) FROM vehicles").Scan(&instanceCount)
@@ -602,7 +649,7 @@ func TestBackfillBootstrap_CreatesUserAndPlug(t *testing.T) {
 	var vehicleCount int
 	err = db.QueryRow(`SELECT COUNT(*) FROM vehicles WHERE user_id = ?`, userID).Scan(&vehicleCount)
 	require.NoError(t, err)
-	assert.Equal(t, 3, vehicleCount)
+	assert.Equal(t, 4, vehicleCount)
 }
 
 func TestBackfillBootstrap_IsIdempotent(t *testing.T) {
@@ -679,41 +726,40 @@ func TestBackfillBootstrap_SetsPlugVehicleID(t *testing.T) {
 	assert.True(t, plugVehicleID.Valid, "plug should have vehicle_id set after backfill")
 }
 
-func TestSeedIfEmpty_SkipsWhenSeeded(t *testing.T) {
+func TestBackfillBootstrap_AssignsPlugToBatteryVehicle(t *testing.T) {
+	db, err := SetupTestDB(true)
+	require.NoError(t, err)
+	defer db.Close()
+
+	require.NoError(t, BackfillBootstrap(db, "admin@test.com"))
+
+	// The generic model sorts first in the catalog but has no battery, so the
+	// default charging plug must be assigned to a battery-capable vehicle.
+	var capacityKwh float64
+	err = db.QueryRow(`
+		SELECT m.capacity_kwh FROM plugs p
+		JOIN vehicles v ON v.id = p.vehicle_id
+		JOIN vehicle_models m ON m.id = v.model_id`).Scan(&capacityKwh)
+	require.NoError(t, err)
+	assert.Greater(t, capacityKwh, 0.0, "default plug should be assigned to a vehicle with a battery")
+}
+
+func TestSeed_RepeatCallDoesNotDuplicate(t *testing.T) {
 	db, err := SetupTestDB(true) // SetupTestDB(true) already calls Seed
 	require.NoError(t, err)
 	defer db.Close()
 
-	// SeedIfEmpty should be a no-op when vehicle_models already exist
 	var countBefore int
 	err = db.QueryRow("SELECT COUNT(*) FROM vehicle_models").Scan(&countBefore)
 	require.NoError(t, err)
 
-	err = SeedIfEmpty(db)
+	err = Seed(db)
 	require.NoError(t, err)
 
 	var countAfter int
 	err = db.QueryRow("SELECT COUNT(*) FROM vehicle_models").Scan(&countAfter)
 	require.NoError(t, err)
-	assert.Equal(t, countBefore, countAfter, "SeedIfEmpty should not duplicate data")
-}
-
-func TestSeedIfEmpty_SeedsWhenEmpty(t *testing.T) {
-	db := setupTestDB(t) // SetupTestDB(false) - no seed
-	defer db.Close()
-
-	var countBefore int
-	err := db.QueryRow("SELECT COUNT(*) FROM vehicle_models").Scan(&countBefore)
-	require.NoError(t, err)
-	assert.Equal(t, 0, countBefore)
-
-	err = SeedIfEmpty(db)
-	require.NoError(t, err)
-
-	var countAfter int
-	err = db.QueryRow("SELECT COUNT(*) FROM vehicle_models").Scan(&countAfter)
-	require.NoError(t, err)
-	assert.Greater(t, countAfter, 0, "SeedIfEmpty should seed when table is empty")
+	assert.Equal(t, countBefore, countAfter, "Seed should not duplicate data")
 }
 
 func TestApplyPragmas_EnableForeignKeys(t *testing.T) {
