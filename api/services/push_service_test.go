@@ -180,11 +180,145 @@ func TestPushService_SendNotification_500DoesNotRemove(t *testing.T) {
 	}
 
 	ps := NewPushService(repo, "pub", "priv", client)
+	ps.retryBaseDelay = time.Millisecond
 	err := ps.SendNotification(context.Background(), "Charge Complete", "RM1 reached 80%")
-	require.NoError(t, err)
+	require.Error(t, err, "persistent 500s must surface as a delivery failure")
 
 	all, _ := repo.GetAll(context.Background())
 	require.Len(t, all, 1, "500 should NOT remove subscription")
+}
+
+func TestPushService_SendNotification_RetriesTransient500ThenSucceeds(t *testing.T) {
+	repo := &mockPushRepo{}
+	require.NoError(t, repo.Upsert(context.Background(), &models.PushSubscription{
+		ID:        "sub-1",
+		Endpoint:  "https://fcm.googleapis.com/fcm/send/abc",
+		P256dhKey: testP256dh,
+		AuthKey:   testAuth,
+	}))
+
+	var mu sync.Mutex
+	calls := 0
+	client := &mockHTTPClient{
+		handler: func(r *http.Request) (*http.Response, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			calls++
+			if calls == 1 {
+				return &http.Response{StatusCode: http.StatusInternalServerError, Status: "500 Internal Server Error"}, nil
+			}
+			return &http.Response{StatusCode: http.StatusCreated, Status: "201 Created"}, nil
+		},
+	}
+
+	ps := NewPushService(repo, "pub", "priv", client)
+	ps.retryBaseDelay = time.Millisecond
+	err := ps.SendNotification(context.Background(), "Charge Complete", "RM1 reached 80%")
+	require.NoError(t, err, "a transient 500 followed by success must not be a failure")
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, 2, calls, "expected exactly one retry")
+}
+
+func TestPushService_SendNotification_Retries429(t *testing.T) {
+	repo := &mockPushRepo{}
+	require.NoError(t, repo.Upsert(context.Background(), &models.PushSubscription{
+		ID:        "sub-1",
+		Endpoint:  "https://fcm.googleapis.com/fcm/send/abc",
+		P256dhKey: testP256dh,
+		AuthKey:   testAuth,
+	}))
+
+	var mu sync.Mutex
+	calls := 0
+	client := &mockHTTPClient{
+		handler: func(r *http.Request) (*http.Response, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			calls++
+			if calls == 1 {
+				return &http.Response{StatusCode: http.StatusTooManyRequests, Status: "429 Too Many Requests"}, nil
+			}
+			return &http.Response{StatusCode: http.StatusCreated, Status: "201 Created"}, nil
+		},
+	}
+
+	ps := NewPushService(repo, "pub", "priv", client)
+	ps.retryBaseDelay = time.Millisecond
+	err := ps.SendNotification(context.Background(), "Charge Complete", "RM1 reached 80%")
+	require.NoError(t, err)
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, 2, calls, "429 must be retried")
+}
+
+func TestPushService_SendNotification_DoesNotRetryPermanent400(t *testing.T) {
+	repo := &mockPushRepo{}
+	require.NoError(t, repo.Upsert(context.Background(), &models.PushSubscription{
+		ID:        "sub-1",
+		Endpoint:  "https://fcm.googleapis.com/fcm/send/abc",
+		P256dhKey: testP256dh,
+		AuthKey:   testAuth,
+	}))
+
+	var mu sync.Mutex
+	calls := 0
+	client := &mockHTTPClient{
+		handler: func(r *http.Request) (*http.Response, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			calls++
+			return &http.Response{StatusCode: http.StatusBadRequest, Status: "400 Bad Request"}, nil
+		},
+	}
+
+	ps := NewPushService(repo, "pub", "priv", client)
+	ps.retryBaseDelay = time.Millisecond
+	err := ps.SendNotification(context.Background(), "Charge Complete", "RM1 reached 80%")
+	require.Error(t, err, "a permanent rejection must surface as a delivery failure")
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, 1, calls, "permanent 4xx must not be retried")
+
+	all, _ := repo.GetAll(context.Background())
+	require.Len(t, all, 1, "400 should NOT remove subscription")
+}
+
+func TestPushService_SendNotification_CancelledContextStopsRetries(t *testing.T) {
+	repo := &mockPushRepo{}
+	require.NoError(t, repo.Upsert(context.Background(), &models.PushSubscription{
+		ID:        "sub-1",
+		Endpoint:  "https://fcm.googleapis.com/fcm/send/abc",
+		P256dhKey: testP256dh,
+		AuthKey:   testAuth,
+	}))
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	var mu sync.Mutex
+	calls := 0
+	client := &mockHTTPClient{
+		handler: func(r *http.Request) (*http.Response, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			calls++
+			cancel()
+			return &http.Response{StatusCode: http.StatusInternalServerError, Status: "500 Internal Server Error"}, nil
+		},
+	}
+
+	ps := NewPushService(repo, "pub", "priv", client)
+	// Long delay: cancellation, not the timer, must end the retry loop promptly.
+	ps.retryBaseDelay = time.Hour
+	err := ps.SendNotification(ctx, "Charge Complete", "RM1 reached 80%")
+	require.Error(t, err)
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, 1, calls, "cancelled context must stop further attempts")
 }
 
 func TestNormalizeBase64URLToBase64(t *testing.T) {
@@ -310,6 +444,7 @@ func TestPushService_SendNotification_SendError(t *testing.T) {
 	}
 
 	ps := NewPushService(repo, "pub", "priv", client)
+	ps.retryBaseDelay = time.Millisecond
 	err := ps.SendNotification(context.Background(), "title", "body")
 	require.Error(t, err, "a failed send must surface the failure count")
 	assert.Contains(t, err.Error(), "1 of 1")

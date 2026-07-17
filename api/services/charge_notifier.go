@@ -12,8 +12,10 @@ import (
 	"ev-charge-controller/api/models"
 )
 
-// chargeNotificationTimeout is the maximum time allowed for sending a push notification.
-const chargeNotificationTimeout = 5 * time.Second
+// chargeNotificationTimeout is the maximum time allowed for sending a push
+// notification, including the push service's retries with backoff (up to
+// pushSendMaxAttempts attempts at 2s/4s delays) for transient failures.
+const chargeNotificationTimeout = 30 * time.Second
 
 // pushNotifier is the minimal interface for sending push notifications.
 type pushNotifier interface {

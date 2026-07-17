@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"ev-charge-controller/api/internal"
 	"ev-charge-controller/api/models"
@@ -18,6 +19,16 @@ import (
 
 // pushFanOutConcurrency bounds how many subscription sends run in parallel.
 const pushFanOutConcurrency = 8
+
+// pushSendMaxAttempts bounds delivery attempts per subscription. Transient
+// failures (network errors, 429, 5xx) are retried so a brief blip doesn't
+// lose a notification; permanent rejections are never retried.
+const pushSendMaxAttempts = 3
+
+// pushSendRetryBaseDelay is the delay before the first retry; it doubles on
+// each subsequent attempt (2s, 4s), keeping total retry time within the
+// notifier's send timeout.
+const pushSendRetryBaseDelay = 2 * time.Second
 
 type PushPayload struct {
 	Title     string `json:"title"`
@@ -30,6 +41,8 @@ type PushService struct {
 	vapidPubKey  string
 	vapidPrivKey string
 	httpClient   webpush.HTTPClient
+	// retryBaseDelay is the first retry backoff; overridable in tests.
+	retryBaseDelay time.Duration
 }
 
 func NewPushService(repo internal.PushSubscriptionRepo, publicKey, privateKey string, httpClient webpush.HTTPClient) *PushService {
@@ -37,10 +50,11 @@ func NewPushService(repo internal.PushSubscriptionRepo, publicKey, privateKey st
 		httpClient = http.DefaultClient
 	}
 	return &PushService{
-		repo:         repo,
-		vapidPubKey:  publicKey,
-		vapidPrivKey: privateKey,
-		httpClient:   httpClient,
+		repo:           repo,
+		vapidPubKey:    publicKey,
+		vapidPrivKey:   privateKey,
+		httpClient:     httpClient,
+		retryBaseDelay: pushSendRetryBaseDelay,
 	}
 }
 
@@ -102,8 +116,9 @@ func (ps *PushService) SendNotification(ctx context.Context, title, body string)
 	return nil
 }
 
-// sendToSubscription delivers a single payload to one subscription and removes
-// the subscription if the push service reports it stale (410 Gone / 404).
+// sendToSubscription delivers a single payload to one subscription, retrying
+// transient failures with exponential backoff. The subscription is removed if
+// the push service reports it stale (410 Gone / 404).
 func (ps *PushService) sendToSubscription(ctx context.Context, sub models.PushSubscription, payload []byte) error {
 	authScheme := selectAuthScheme(sub.Endpoint)
 
@@ -126,21 +141,56 @@ func (ps *PushService) sendToSubscription(ctx context.Context, sub models.PushSu
 
 	slog.Info("Sending to subscription", "id", sub.ID, "endpoint", redactEndpoint(sub.Endpoint), "auth", authScheme)
 
+	var lastErr error
+	delay := ps.retryBaseDelay
+	for attempt := 1; attempt <= pushSendMaxAttempts; attempt++ {
+		if attempt > 1 {
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("push send cancelled after %d attempts: %w", attempt-1, lastErr)
+			case <-time.After(delay):
+			}
+			delay *= 2
+		}
+
+		retryable, err := ps.attemptSend(ctx, sub, wpSub, opts, payload)
+		if err == nil || !retryable {
+			return err
+		}
+		lastErr = err
+		slog.Warn("Transient push send failure, will retry", "id", sub.ID, "attempt", attempt, "err", err)
+	}
+	return fmt.Errorf("push send failed after %d attempts: %w", pushSendMaxAttempts, lastErr)
+}
+
+// attemptSend performs one delivery attempt and classifies the outcome.
+// retryable is true only for failures worth another attempt: transport
+// errors, 429 rate limiting, and 5xx. Stale subscriptions (410/404) are
+// pruned and reported as success; other 4xx are permanent rejections.
+func (ps *PushService) attemptSend(ctx context.Context, sub models.PushSubscription, wpSub *webpush.Subscription, opts *webpush.Options, payload []byte) (retryable bool, err error) {
 	resp, err := webpush.SendNotificationWithContext(ctx, payload, wpSub, opts)
 	if err != nil {
-		return err
+		// Context cancellation is terminal; transport errors are retryable.
+		return ctx.Err() == nil, err
 	}
 	defer drainAndCloseBody(resp)
 
 	slog.Info("Response for subscription", "id", sub.ID, "statusCode", resp.StatusCode, "status", resp.Status)
 
-	if isStaleResponse(resp.StatusCode) {
+	switch {
+	case isStaleResponse(resp.StatusCode):
 		slog.Info("Removing stale subscription", "id", sub.ID, "statusCode", resp.StatusCode, "status", resp.Status)
 		if removeErr := ps.repo.RemoveByEndpoint(ctx, sub.Endpoint); removeErr != nil {
 			slog.Error("Failed to remove stale subscription", "id", sub.ID, "err", removeErr)
 		}
+		return false, nil
+	case resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= http.StatusInternalServerError:
+		return true, fmt.Errorf("push service returned %s", resp.Status)
+	case resp.StatusCode >= http.StatusBadRequest:
+		return false, fmt.Errorf("push service rejected notification: %s", resp.Status)
+	default:
+		return false, nil
 	}
-	return nil
 }
 
 // drainAndCloseBody fully reads and closes a response body so the underlying
