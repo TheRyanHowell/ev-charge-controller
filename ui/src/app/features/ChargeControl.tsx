@@ -1,8 +1,10 @@
 import type { CarbonIntensity, Plug, Schedule, Vehicle } from "@/lib/schemas";
 
 import ErrorBoundary from "@/components/ErrorBoundary";
+import MaintenanceControl from "@/components/MaintenanceControl";
 import SpeedometerGauge from "@/components/SpeedometerGauge";
 import StatsPanel from "@/components/StatsPanel";
+import { hasBattery } from "@/lib/vehicle";
 
 interface GaugeState {
   currentPercent: number;
@@ -61,6 +63,8 @@ export interface ChargeControlProps {
   maintenancePlug?: Plug | null;
   onToggleMaintenance?: () => void;
   isMaintenancePending?: boolean;
+  /** Opens the add-12V-charger flow for battery-less vehicles without one. */
+  onAdd12V?: () => void;
 }
 
 export default function ChargeControl({
@@ -79,7 +83,23 @@ export default function ChargeControl({
   maintenancePlug,
   onToggleMaintenance,
   isMaintenancePending,
+  onAdd12V,
 }: ChargeControlProps) {
+  // A battery-less (generic) vehicle has no charge gauge - only its 12V
+  // maintenance charger is controllable.
+  if (selectedVehicle && !hasBattery(selectedVehicle)) {
+    return (
+      <div className="w-full max-w-[540px]">
+        <MaintenanceControl
+          plug={maintenancePlug ?? null}
+          onToggle={onToggleMaintenance}
+          isPending={isMaintenancePending}
+          onAdd12V={onAdd12V}
+        />
+      </div>
+    );
+  }
+
   // Single commit point for marker changes. Fired once per gesture
   // (pointer drag end or debounced keyboard edit) by SpeedometerGauge -
   // never on live, intermediate values during a drag.

@@ -1,4 +1,5 @@
 import { useGaugeStore } from "@/stores/gaugeStore";
+import { createPlug } from "@/test/fixtures";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -275,6 +276,42 @@ describe("ChargeControl", () => {
       });
 
       expect(handleTargetChargeUpdate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("battery-less (generic) vehicle", () => {
+    const genericVehicle = {
+      ...testVehicle,
+      name: "My Petrol Bike",
+      capacityKwh: 0,
+      chargerOutputW: 0,
+      chargingEfficiency: 1,
+    };
+
+    it("renders the maintenance-only panel instead of the gauge", () => {
+      renderComponent({
+        selectedVehicle: genericVehicle,
+        maintenancePlug: createPlug({
+          id: "m1",
+          name: "12V Charger",
+          type: "maintenance",
+          online: true,
+          powerOn: true,
+        }),
+      });
+      expect(screen.queryByTestId("speedometer-gauge")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("stats-panel")).not.toBeInTheDocument();
+      expect(screen.getByText("12V Charger")).toBeInTheDocument();
+    });
+
+    it("prompts to add a 12V charger when the vehicle has none", () => {
+      renderComponent({
+        selectedVehicle: genericVehicle,
+        maintenancePlug: null,
+      });
+      expect(
+        screen.getByText(/No 12V maintenance charger configured/i),
+      ).toBeInTheDocument();
     });
   });
 

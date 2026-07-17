@@ -370,6 +370,7 @@ export default function Dashboard({
               }
             }}
             isMaintenancePending={isTogglingPower}
+            onAdd12V={() => setAdd12VOpen(true)}
           />
 
           <ChartsSection
