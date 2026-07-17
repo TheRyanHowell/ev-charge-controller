@@ -26,14 +26,18 @@ export function useSchedule(
 ) {
   const queryClient = useQueryClient();
 
-  const queryKey = plugId ? queryKeys.plugs.schedule(plugId) : null;
+  // Even a disabled query shares its cache entry by key, so the no-plug case
+  // needs its own key. Falling back to the plugs-list key would attach this
+  // observer to that query; the next plugs-list invalidation would then run
+  // THIS hook's queryFn (resolving null) and wipe the cached plug list.
+  const queryKey = queryKeys.plugs.schedule(plugId ?? "none");
 
   const {
     data: schedule = null,
     isLoading,
     error,
   } = useQuery({
-    queryKey: queryKey ?? queryKeys.plugs.all,
+    queryKey,
     queryFn: () => (plugId ? fetchScheduleData(plugId) : Promise.resolve(null)),
     enabled: !!plugId,
     staleTime: 5 * 60 * 1000,
@@ -51,9 +55,7 @@ export function useSchedule(
       );
     },
     onSuccess: (data) => {
-      if (queryKey) {
-        queryClient.setQueryData(queryKey, data);
-      }
+      queryClient.setQueryData(queryKey, data);
     },
     onError: (err) => {
       console.error(
