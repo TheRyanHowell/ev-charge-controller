@@ -165,6 +165,52 @@ describe("VehicleDetailClient", () => {
     expect(screen.queryByText("(My Tesla)")).not.toBeInTheDocument();
   });
 
+  it("hides battery details, stats, and CC/CV chart for a battery-less vehicle", () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => emptyStats,
+    });
+    const genericVehicle = {
+      ...mockVehicle,
+      name: "My Petrol Bike",
+      modelName: "Generic Vehicle",
+      capacityKwh: 0,
+      chargerOutputW: 0,
+      chargingEfficiency: 1,
+      rangeMinMi: 0,
+      rangeMaxMi: 0,
+      packVoltageMaxV: undefined,
+      packCutoffCurrentMa: undefined,
+      time0to100Min: undefined,
+      time0to80Min: undefined,
+      time20to80Min: undefined,
+      time20to100Min: undefined,
+    };
+    customRender(
+      <VehicleDetailClient
+        vehicleId="v1"
+        initialVehicle={genericVehicle}
+        initialStats={emptyStats}
+        renderTimeMs={0}
+      />,
+    );
+    // Model row still shown; battery-specific details are not.
+    expect(screen.getByText("Generic Vehicle")).toBeInTheDocument();
+    expect(screen.queryByText("Battery Capacity")).not.toBeInTheDocument();
+    expect(screen.queryByText("Charger Output")).not.toBeInTheDocument();
+    expect(screen.queryByText("Charging Efficiency")).not.toBeInTheDocument();
+    // No charging stats UI: time-range filter, no-data hint, CC/CV chart.
+    expect(
+      screen.queryByRole("button", { name: "Week" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("No charging data yet")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("ccv-chart-mock")).not.toBeInTheDocument();
+    // Instead, a hint that this vehicle only supports 12V maintenance charging.
+    expect(
+      screen.getByText(/12V maintenance charging only/i),
+    ).toBeInTheDocument();
+  });
+
   it("shows no data message when no charging data", () => {
     mockFetch.mockResolvedValue({
       ok: true,

@@ -7,6 +7,7 @@ import { useFocusOnMount } from "@/hooks/useFocusOnMount";
 import { apiGet, apiPost, apiDelete, apiPatchNoContent } from "@/lib/api";
 import { queryKeys } from "@/lib/queryKeys";
 import { VehicleSchema, VehicleModelSchema } from "@/lib/schemas";
+import { hasBattery } from "@/lib/vehicle";
 import { formatPenceCost } from "@/utils/gauge";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
@@ -183,7 +184,7 @@ export default function VehiclesClient({
                   )}
 
                   <span className="text-xs text-fg-muted shrink-0">
-                    {v.capacityKwh} kWh
+                    {hasBattery(v) ? `${v.capacityKwh} kWh` : "No battery"}
                   </span>
 
                   {editingId === v.id ? (
@@ -335,7 +336,7 @@ export default function VehiclesClient({
                 >
                   <span>{m.name}</span>
                   <span className="text-fg-muted ml-2">
-                    {m.capacityKwh} kWh
+                    {hasBattery(m) ? `${m.capacityKwh} kWh` : "No battery"}
                   </span>
                 </button>
               ))}

@@ -8,6 +8,7 @@ import { useFocusOnMount } from "@/hooks/useFocusOnMount";
 import { apiDelete, apiGetSingle, apiPatchNoContent } from "@/lib/api";
 import { queryKeys } from "@/lib/queryKeys";
 import { VehicleStatsSchema } from "@/lib/schemas";
+import { hasBattery } from "@/lib/vehicle";
 import { formatPenceCost } from "@/utils/gauge";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
@@ -110,6 +111,7 @@ export default function VehicleDetailClient({
     placeholderData: (prev) => prev,
   });
 
+  const vehicleHasBattery = hasBattery(initialVehicle);
   const hasData = stats && stats.totalSessions > 0;
   const modelName =
     initialVehicle.modelName && initialVehicle.modelName !== initialVehicle.name
@@ -242,18 +244,22 @@ export default function VehicleDetailClient({
             {initialVehicle.modelName && (
               <DetailRow label="Model" value={initialVehicle.modelName} />
             )}
-            <DetailRow
-              label="Battery Capacity"
-              value={`${initialVehicle.capacityKwh} kWh`}
-            />
-            <DetailRow
-              label="Charger Output"
-              value={`${(initialVehicle.chargerOutputW / 1000).toFixed(1)} kW`}
-            />
-            <DetailRow
-              label="Charging Efficiency"
-              value={`${(initialVehicle.chargingEfficiency * 100).toFixed(0)}%`}
-            />
+            {vehicleHasBattery && (
+              <>
+                <DetailRow
+                  label="Battery Capacity"
+                  value={`${initialVehicle.capacityKwh} kWh`}
+                />
+                <DetailRow
+                  label="Charger Output"
+                  value={`${(initialVehicle.chargerOutputW / 1000).toFixed(1)} kW`}
+                />
+                <DetailRow
+                  label="Charging Efficiency"
+                  value={`${(initialVehicle.chargingEfficiency * 100).toFixed(0)}%`}
+                />
+              </>
+            )}
             {initialVehicle.rangeMinMi > 0 && (
               <DetailRow
                 label="Range (min)"
@@ -305,251 +311,294 @@ export default function VehicleDetailClient({
           </div>
         </div>
 
-        {/* Time range filter */}
-        <div className="flex items-center gap-2 mb-6">
-          {TimeRanges.map((tr) => (
-            <button
-              key={tr.value}
-              type="button"
-              onClick={() => setTimeRange(tr.value)}
-              className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-                timeRange === tr.value
-                  ? "bg-blue-600 text-white"
-                  : "bg-surface text-fg-muted hover:bg-surface-hover hover:text-fg"
-              }`}
-            >
-              {tr.label}
-            </button>
-          ))}
-        </div>
-
-        {!hasData ? (
+        {!vehicleHasBattery && (
           <div className="text-center py-16">
-            <p className="text-fg-muted mb-2">No charging data yet</p>
+            <p className="text-fg-muted mb-2">
+              This vehicle has no battery configured
+            </p>
             <p className="text-fg-muted text-sm">
-              Complete a charge session to see statistics
+              It supports 12V maintenance charging only, so there are no EV
+              charging statistics
             </p>
           </div>
-        ) : (
-          <>
-            {/* Stats cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-              <StatCard
-                icon="fa-bolt"
-                label="Total Energy"
-                value={`${totalWallKwh.toFixed(1)} kWh`}
-                color="text-warning"
-              />
-              <StatCard
-                icon="fa-plug-circle-bolt"
-                label="Sessions"
-                value={stats.totalSessions.toString()}
-                color="text-accent-muted"
-              />
-              <StatCard
-                icon="fa-chart-simple"
-                label="Avg per Session"
-                value={`${avgSessionWallKwh.toFixed(2)} kWh`}
-                color="text-purple-400"
-              />
-              <StatCard
-                icon="fa-cloud"
-                label="CO₂ Emissions"
-                value={`${stats.totalCo2Grams > 0 ? formatCo2(stats.totalCo2Grams) : "-"}${stats.avgCarbonGCo2PerKwh != null ? ` (${stats.avgCarbonGCo2PerKwh.toFixed(0)} g/kWh)` : ""}`}
-                color="text-fg-muted"
-              />
-              {totalCost && (
-                <StatCard
-                  icon="fa-sterling-sign"
-                  label="Total Cost"
-                  value={totalCost}
-                  color="text-success"
-                />
-              )}
-              {avgCostPerSession && (
-                <StatCard
-                  icon="fa-coins"
-                  label="Avg Cost / Session"
-                  value={avgCostPerSession}
-                  color="text-success"
-                />
-              )}
-              {hasRange && minAddedRangeMi !== null && (
-                <StatCard
-                  icon="fa-road"
-                  label="Min Added Range"
-                  value={`${minAddedRangeMi} mi`}
-                  color="text-sky-400"
-                />
-              )}
-              {hasRange && maxAddedRangeMi !== null && (
-                <StatCard
-                  icon="fa-road"
-                  label="Max Added Range"
-                  value={`${maxAddedRangeMi} mi`}
-                  color="text-sky-300"
-                />
-              )}
-            </div>
-
-            {/* Energy chart */}
-            <div className="rounded-xl border border-border-subtle bg-surface-raised/80 p-4">
-              <h2 className="text-sm font-medium text-fg-muted mb-4 uppercase tracking-wider">
-                Daily Energy
-              </h2>
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart
-                  data={dailyEnergy}
-                  margin={{ top: 5, right: 5, left: -20, bottom: 5 }}
-                >
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    stroke="var(--color-chart-grid)"
-                  />
-                  <XAxis
-                    dataKey="date"
-                    tick={{ fill: "var(--color-chart-label)", fontSize: 11 }}
-                    tickFormatter={(val) => formatChartDate(val)}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    tick={{ fill: "var(--color-chart-label)", fontSize: 11 }}
-                    tickFormatter={(val: number) => `${val}`}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <Tooltip
-                    contentStyle={CHART_TOOLTIP_STYLE}
-                    labelFormatter={(label) => formatChartDate(label, true)}
-                    formatter={(value, name) => {
-                      if (value == null) return [String(value), String(name)];
-                      if (typeof value !== "number") return [value, name];
-                      if (name === "wallKwh")
-                        return [`${value.toFixed(2)} kWh`, "Wall Energy"];
-                      if (name === "sessionCount")
-                        return [value.toString(), "Sessions"];
-                      return [value, name];
-                    }}
-                  />
-                  <Bar
-                    dataKey="wallKwh"
-                    radius={[4, 4, 0, 0]}
-                    fill="#f59e0b"
-                    name="wallKwh"
-                  >
-                    {dailyEnergy.map((entry, index) => (
-                      <Cell
-                        key={`cell-${index}`}
-                        fill={entry.sessionCount > 1 ? "#d97706" : "#f59e0b"}
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-              <div className="flex items-center justify-center gap-6 mt-3 text-xs text-fg-muted">
-                <span className="flex items-center gap-1.5">
-                  <span className="inline-block w-2.5 h-2.5 rounded-sm bg-warning" />
-                  Wall Energy
-                </span>
-              </div>
-            </div>
-
-            {/* CO2 emissions chart */}
-            {dailyEnergy.some((d) => d.co2Grams > 0) && (
-              <div className="mt-6 rounded-xl border border-border-subtle bg-surface-raised/80 p-4">
-                <h2 className="text-sm font-medium text-fg-muted mb-4 uppercase tracking-wider">
-                  Daily CO₂ Emissions
-                </h2>
-                <ResponsiveContainer width="100%" height={220}>
-                  <LineChart
-                    data={dailyEnergy}
-                    margin={{ top: 5, right: 5, left: -20, bottom: 5 }}
-                  >
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      stroke="var(--color-chart-grid)"
-                    />
-                    <XAxis
-                      dataKey="date"
-                      tick={{ fill: "var(--color-chart-label)", fontSize: 11 }}
-                      tickFormatter={(val) => formatChartDate(val)}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      yAxisId="left"
-                      tick={{ fill: "var(--color-chart-label)", fontSize: 11 }}
-                      tickFormatter={(val: number) =>
-                        val >= 1000 ? `${(val / 1000).toFixed(1)}kg` : `${val}g`
-                      }
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                    <YAxis
-                      yAxisId="right"
-                      tick={{ fill: "var(--color-chart-label)", fontSize: 11 }}
-                      tickFormatter={(val: number) => `${val}`}
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                    <Tooltip
-                      contentStyle={CHART_TOOLTIP_STYLE}
-                      labelFormatter={(label) => formatChartDate(label, true)}
-                      formatter={(value, name) => {
-                        if (value == null) return [String(value), String(name)];
-                        if (typeof value !== "number") return [value, name];
-                        if (name === "co2Grams")
-                          return [formatCo2(value), "CO₂"];
-                        if (name === "avgCarbonIntensityGCo2PerKwh")
-                          return [`${value.toFixed(0)} g/kWh`, "Grid Carbon"];
-                        return [value, name];
-                      }}
-                    />
-                    <Line
-                      yAxisId="left"
-                      type="monotone"
-                      dataKey="co2Grams"
-                      stroke="var(--color-chart-label)"
-                      strokeWidth={2}
-                      dot={{ fill: "var(--color-chart-label)", r: 3 }}
-                      activeDot={{ r: 5, fill: "var(--color-fg-muted)" }}
-                      name="co2Grams"
-                    />
-                    <Line
-                      yAxisId="right"
-                      type="monotone"
-                      dataKey="avgCarbonIntensityGCo2PerKwh"
-                      stroke="var(--color-info)"
-                      strokeWidth={1}
-                      strokeDasharray="4 3"
-                      opacity={0.4}
-                      dot={{ fill: "var(--color-info)", r: 2 }}
-                      activeDot={{ r: 4, fill: "#67e8f9" }}
-                      name="avgCarbonIntensityGCo2PerKwh"
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-                <div className="flex items-center justify-center gap-6 mt-3 text-xs text-fg-muted">
-                  <span className="flex items-center gap-1.5">
-                    <span className="inline-block w-2.5 h-2.5 rounded-sm bg-fg-muted" />
-                    CO₂ Emissions
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="inline-block w-2.5 h-2.5 rounded-sm bg-info opacity-40" />
-                    Grid Carbon Intensity
-                  </span>
-                </div>
-              </div>
-            )}
-          </>
         )}
 
-        {/* CC/CV Charging Profile */}
-        <div className="mt-6 rounded-xl border border-border-subtle bg-surface-raised/80 p-4">
-          <h2 className="text-sm font-medium text-fg-muted mb-4 uppercase tracking-wider">
-            CC/CV Charging Profile
-          </h2>
-          <CCVChart vehicle={initialVehicle} />
-        </div>
+        {/* Time range filter, charging stats, and CC/CV profile only apply to
+            vehicles with a battery. */}
+        {vehicleHasBattery && (
+          <>
+            <div className="flex items-center gap-2 mb-6">
+              {TimeRanges.map((tr) => (
+                <button
+                  key={tr.value}
+                  type="button"
+                  onClick={() => setTimeRange(tr.value)}
+                  className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                    timeRange === tr.value
+                      ? "bg-blue-600 text-white"
+                      : "bg-surface text-fg-muted hover:bg-surface-hover hover:text-fg"
+                  }`}
+                >
+                  {tr.label}
+                </button>
+              ))}
+            </div>
+
+            {!hasData ? (
+              <div className="text-center py-16">
+                <p className="text-fg-muted mb-2">No charging data yet</p>
+                <p className="text-fg-muted text-sm">
+                  Complete a charge session to see statistics
+                </p>
+              </div>
+            ) : (
+              <>
+                {/* Stats cards */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                  <StatCard
+                    icon="fa-bolt"
+                    label="Total Energy"
+                    value={`${totalWallKwh.toFixed(1)} kWh`}
+                    color="text-warning"
+                  />
+                  <StatCard
+                    icon="fa-plug-circle-bolt"
+                    label="Sessions"
+                    value={stats.totalSessions.toString()}
+                    color="text-accent-muted"
+                  />
+                  <StatCard
+                    icon="fa-chart-simple"
+                    label="Avg per Session"
+                    value={`${avgSessionWallKwh.toFixed(2)} kWh`}
+                    color="text-purple-400"
+                  />
+                  <StatCard
+                    icon="fa-cloud"
+                    label="CO₂ Emissions"
+                    value={`${stats.totalCo2Grams > 0 ? formatCo2(stats.totalCo2Grams) : "-"}${stats.avgCarbonGCo2PerKwh != null ? ` (${stats.avgCarbonGCo2PerKwh.toFixed(0)} g/kWh)` : ""}`}
+                    color="text-fg-muted"
+                  />
+                  {totalCost && (
+                    <StatCard
+                      icon="fa-sterling-sign"
+                      label="Total Cost"
+                      value={totalCost}
+                      color="text-success"
+                    />
+                  )}
+                  {avgCostPerSession && (
+                    <StatCard
+                      icon="fa-coins"
+                      label="Avg Cost / Session"
+                      value={avgCostPerSession}
+                      color="text-success"
+                    />
+                  )}
+                  {hasRange && minAddedRangeMi !== null && (
+                    <StatCard
+                      icon="fa-road"
+                      label="Min Added Range"
+                      value={`${minAddedRangeMi} mi`}
+                      color="text-sky-400"
+                    />
+                  )}
+                  {hasRange && maxAddedRangeMi !== null && (
+                    <StatCard
+                      icon="fa-road"
+                      label="Max Added Range"
+                      value={`${maxAddedRangeMi} mi`}
+                      color="text-sky-300"
+                    />
+                  )}
+                </div>
+
+                {/* Energy chart */}
+                <div className="rounded-xl border border-border-subtle bg-surface-raised/80 p-4">
+                  <h2 className="text-sm font-medium text-fg-muted mb-4 uppercase tracking-wider">
+                    Daily Energy
+                  </h2>
+                  <ResponsiveContainer width="100%" height={280}>
+                    <BarChart
+                      data={dailyEnergy}
+                      margin={{ top: 5, right: 5, left: -20, bottom: 5 }}
+                    >
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        stroke="var(--color-chart-grid)"
+                      />
+                      <XAxis
+                        dataKey="date"
+                        tick={{
+                          fill: "var(--color-chart-label)",
+                          fontSize: 11,
+                        }}
+                        tickFormatter={(val) => formatChartDate(val)}
+                        tickLine={false}
+                      />
+                      <YAxis
+                        tick={{
+                          fill: "var(--color-chart-label)",
+                          fontSize: 11,
+                        }}
+                        tickFormatter={(val: number) => `${val}`}
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <Tooltip
+                        contentStyle={CHART_TOOLTIP_STYLE}
+                        labelFormatter={(label) => formatChartDate(label, true)}
+                        formatter={(value, name) => {
+                          if (value == null)
+                            return [String(value), String(name)];
+                          if (typeof value !== "number") return [value, name];
+                          if (name === "wallKwh")
+                            return [`${value.toFixed(2)} kWh`, "Wall Energy"];
+                          if (name === "sessionCount")
+                            return [value.toString(), "Sessions"];
+                          return [value, name];
+                        }}
+                      />
+                      <Bar
+                        dataKey="wallKwh"
+                        radius={[4, 4, 0, 0]}
+                        fill="#f59e0b"
+                        name="wallKwh"
+                      >
+                        {dailyEnergy.map((entry, index) => (
+                          <Cell
+                            key={`cell-${index}`}
+                            fill={
+                              entry.sessionCount > 1 ? "#d97706" : "#f59e0b"
+                            }
+                          />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                  <div className="flex items-center justify-center gap-6 mt-3 text-xs text-fg-muted">
+                    <span className="flex items-center gap-1.5">
+                      <span className="inline-block w-2.5 h-2.5 rounded-sm bg-warning" />
+                      Wall Energy
+                    </span>
+                  </div>
+                </div>
+
+                {/* CO2 emissions chart */}
+                {dailyEnergy.some((d) => d.co2Grams > 0) && (
+                  <div className="mt-6 rounded-xl border border-border-subtle bg-surface-raised/80 p-4">
+                    <h2 className="text-sm font-medium text-fg-muted mb-4 uppercase tracking-wider">
+                      Daily CO₂ Emissions
+                    </h2>
+                    <ResponsiveContainer width="100%" height={220}>
+                      <LineChart
+                        data={dailyEnergy}
+                        margin={{ top: 5, right: 5, left: -20, bottom: 5 }}
+                      >
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          stroke="var(--color-chart-grid)"
+                        />
+                        <XAxis
+                          dataKey="date"
+                          tick={{
+                            fill: "var(--color-chart-label)",
+                            fontSize: 11,
+                          }}
+                          tickFormatter={(val) => formatChartDate(val)}
+                          tickLine={false}
+                        />
+                        <YAxis
+                          yAxisId="left"
+                          tick={{
+                            fill: "var(--color-chart-label)",
+                            fontSize: 11,
+                          }}
+                          tickFormatter={(val: number) =>
+                            val >= 1000
+                              ? `${(val / 1000).toFixed(1)}kg`
+                              : `${val}g`
+                          }
+                          tickLine={false}
+                          axisLine={false}
+                        />
+                        <YAxis
+                          yAxisId="right"
+                          tick={{
+                            fill: "var(--color-chart-label)",
+                            fontSize: 11,
+                          }}
+                          tickFormatter={(val: number) => `${val}`}
+                          tickLine={false}
+                          axisLine={false}
+                        />
+                        <Tooltip
+                          contentStyle={CHART_TOOLTIP_STYLE}
+                          labelFormatter={(label) =>
+                            formatChartDate(label, true)
+                          }
+                          formatter={(value, name) => {
+                            if (value == null)
+                              return [String(value), String(name)];
+                            if (typeof value !== "number") return [value, name];
+                            if (name === "co2Grams")
+                              return [formatCo2(value), "CO₂"];
+                            if (name === "avgCarbonIntensityGCo2PerKwh")
+                              return [
+                                `${value.toFixed(0)} g/kWh`,
+                                "Grid Carbon",
+                              ];
+                            return [value, name];
+                          }}
+                        />
+                        <Line
+                          yAxisId="left"
+                          type="monotone"
+                          dataKey="co2Grams"
+                          stroke="var(--color-chart-label)"
+                          strokeWidth={2}
+                          dot={{ fill: "var(--color-chart-label)", r: 3 }}
+                          activeDot={{ r: 5, fill: "var(--color-fg-muted)" }}
+                          name="co2Grams"
+                        />
+                        <Line
+                          yAxisId="right"
+                          type="monotone"
+                          dataKey="avgCarbonIntensityGCo2PerKwh"
+                          stroke="var(--color-info)"
+                          strokeWidth={1}
+                          strokeDasharray="4 3"
+                          opacity={0.4}
+                          dot={{ fill: "var(--color-info)", r: 2 }}
+                          activeDot={{ r: 4, fill: "#67e8f9" }}
+                          name="avgCarbonIntensityGCo2PerKwh"
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                    <div className="flex items-center justify-center gap-6 mt-3 text-xs text-fg-muted">
+                      <span className="flex items-center gap-1.5">
+                        <span className="inline-block w-2.5 h-2.5 rounded-sm bg-fg-muted" />
+                        CO₂ Emissions
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="inline-block w-2.5 h-2.5 rounded-sm bg-info opacity-40" />
+                        Grid Carbon Intensity
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* CC/CV Charging Profile */}
+            <div className="mt-6 rounded-xl border border-border-subtle bg-surface-raised/80 p-4">
+              <h2 className="text-sm font-medium text-fg-muted mb-4 uppercase tracking-wider">
+                CC/CV Charging Profile
+              </h2>
+              <CCVChart vehicle={initialVehicle} />
+            </div>
+          </>
+        )}
 
         {/* Delete confirmation dialog */}
         <Dialog isOpen={deleteConfirm} onClose={() => setDeleteConfirm(false)}>

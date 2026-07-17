@@ -104,6 +104,43 @@ describe("VehiclesClient", () => {
     expect(capacities2.length).toBeGreaterThanOrEqual(1);
   });
 
+  it("shows 'No battery' instead of capacity for battery-less vehicles", () => {
+    const generic = createVehicle({
+      id: "v3",
+      modelId: "generic",
+      name: "My Petrol Bike",
+      modelName: "Generic Vehicle",
+      capacityKwh: 0,
+      chargerOutputW: 0,
+      rangeMinMi: 0,
+      rangeMaxMi: 0,
+    });
+    renderVehiclesClient({ vehicles: [generic], models: defaultModels });
+    expect(screen.getByText("No battery")).toBeTruthy();
+    expect(screen.queryByText(/0 kWh/)).toBeNull();
+  });
+
+  it("shows generic model in add dialog without a kWh label", async () => {
+    const genericModel = createVehicleModel({
+      id: "generic",
+      name: "Generic Vehicle",
+      capacityKwh: 0,
+      chargerOutputW: 0,
+      rangeMinMi: 0,
+      rangeMaxMi: 0,
+    });
+    renderVehiclesClient({
+      vehicles: [],
+      models: [genericModel, ...defaultModels],
+    });
+    screen.getByText("Add your first vehicle").click();
+    await waitFor(() => {
+      expect(screen.getByText("Generic Vehicle")).toBeTruthy();
+    });
+    expect(screen.getByText("No battery")).toBeTruthy();
+    expect(screen.queryByText(/0 kWh/)).toBeNull();
+  });
+
   it("renders vehicle name as link to detail page", () => {
     renderVehiclesClient({ vehicles: defaultVehicles, models: defaultModels });
     const links = document.querySelectorAll('a[href="/vehicles/v1"]');
