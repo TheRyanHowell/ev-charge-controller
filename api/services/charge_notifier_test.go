@@ -336,3 +336,179 @@ func TestChargeNotifier_NotifyPlugUnavailable_NoPushService(t *testing.T) {
 	// Should return early, no goroutine spawned
 	notifier.Wait()
 }
+
+// erroringPushService always fails sends, exercising the error-log paths in
+// the notification goroutines.
+type erroringPushService struct{}
+
+func (e *erroringPushService) SendNotification(_ context.Context, _, _ string) error {
+	return assert.AnError
+}
+
+func TestNewChargeNotifier_NilBaseCtxDefaultsToBackground(t *testing.T) {
+	//nolint:staticcheck // the nil-baseCtx default is exactly what this test exercises
+	notifier := NewChargeNotifier(nil, nil, &mockNotifierVehicleRepo{}, nil)
+	assert.NotNil(t, notifier.baseCtx)
+}
+
+func TestChargeNotifier_NotifyChargeComplete_PreferenceDisabled(t *testing.T) {
+	vehicle := &models.Vehicle{
+		Name:                 "Test Car",
+		NotifyChargeComplete: false,
+	}
+	repo := &mockNotifierVehicleRepo{vehicle: vehicle}
+	push := &mockNotifierPushService{title: new(string), body: new(string)}
+	notifier := newTestNotifier(push, repo)
+
+	session := &models.ChargeSession{ID: "s1", VehicleID: "v1", UserID: testUserIDPtr, PlugID: testPlugIDPtr}
+	notifier.NotifyChargeComplete(context.Background(), session, 80)
+	notifier.Wait()
+
+	pushTitle, _ := push.GetTitleBody()
+	assert.Equal(t, "", pushTitle, "notification must be suppressed by preference")
+}
+
+func TestChargeNotifier_NotifyPlugUnavailable_VehicleBranches(t *testing.T) {
+	vehicleID := "v1"
+	tests := []struct {
+		name      string
+		plugType  string
+		vehicle   *models.Vehicle
+		wantTitle string
+		wantBody  string
+	}{
+		{
+			name:      "charging plug with preference enabled",
+			plugType:  models.PlugTypeCharging,
+			vehicle:   &models.Vehicle{ID: vehicleID, Name: "Test Car", NotifyChargerOffline: true},
+			wantTitle: "Charger Offline",
+			wantBody:  "Charger for Test Car is offline",
+		},
+		{
+			name:      "charging plug suppressed by preference",
+			plugType:  models.PlugTypeCharging,
+			vehicle:   &models.Vehicle{ID: vehicleID, Name: "Test Car", NotifyChargerOffline: false},
+			wantTitle: "",
+			wantBody:  "",
+		},
+		{
+			name:      "maintenance plug with preference enabled",
+			plugType:  models.PlugTypeMaintenance,
+			vehicle:   &models.Vehicle{ID: vehicleID, Name: "Test Car", NotifyMaintenanceOffline: true},
+			wantTitle: "12V Charger Offline",
+			wantBody:  "12V maintenance charger for Test Car is offline",
+		},
+		{
+			name:      "maintenance plug suppressed by preference",
+			plugType:  models.PlugTypeMaintenance,
+			vehicle:   &models.Vehicle{ID: vehicleID, Name: "Test Car", NotifyMaintenanceOffline: false},
+			wantTitle: "",
+			wantBody:  "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &mockNotifierVehicleRepo{vehicle: tc.vehicle}
+			push := &mockNotifierPushService{title: new(string), body: new(string)}
+			notifier := newTestNotifier(push, repo)
+
+			plug := &models.Plug{Name: "Garage Plug", Type: tc.plugType, VehicleID: &vehicleID}
+			notifier.NotifyPlugUnavailable(context.Background(), plug)
+			notifier.Wait()
+
+			pushTitle, pushBody := push.GetTitleBody()
+			assert.Equal(t, tc.wantTitle, pushTitle)
+			assert.Equal(t, tc.wantBody, pushBody)
+		})
+	}
+}
+
+func TestChargeNotifier_NotifyPlugUnavailable_MaintenanceFallbackNoVehicle(t *testing.T) {
+	push := &mockNotifierPushService{title: new(string), body: new(string)}
+	notifier := newTestNotifier(push, nil)
+
+	plug := &models.Plug{Name: "Bench Plug", Type: models.PlugTypeMaintenance}
+	notifier.NotifyPlugUnavailable(context.Background(), plug)
+	notifier.Wait()
+
+	pushTitle, pushBody := push.GetTitleBody()
+	assert.Equal(t, "12V Charger Offline", pushTitle)
+	assert.Equal(t, "Bench Plug (12V maintenance charger) is unavailable", pushBody)
+}
+
+func TestChargeNotifier_NotifyShortfallProjected_Bodies(t *testing.T) {
+	tests := []struct {
+		name     string
+		vehicle  *models.Vehicle
+		wantBody string
+	}{
+		{
+			name:     "distinct range",
+			vehicle:  &models.Vehicle{Name: "Test Car", RangeMinMi: 100, RangeMaxMi: 150},
+			wantBody: "Test Car won't reach 80% by 07:00 - projected ~60% (~60-90mi)",
+		},
+		{
+			name:     "single range",
+			vehicle:  &models.Vehicle{Name: "Test Car", RangeMinMi: 100, RangeMaxMi: 100},
+			wantBody: "Test Car won't reach 80% by 07:00 - projected ~60% (~60mi)",
+		},
+		{
+			name:     "no range data",
+			vehicle:  &models.Vehicle{Name: "Test Car"},
+			wantBody: "Test Car won't reach 80% by 07:00 - projected ~60%",
+		},
+		{
+			name:     "vehicle not found",
+			vehicle:  nil,
+			wantBody: "Won't reach 80% by 07:00 - projected ~60%",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &mockNotifierVehicleRepo{vehicle: tc.vehicle}
+			push := &mockNotifierPushService{title: new(string), body: new(string)}
+			notifier := newTestNotifier(push, repo)
+
+			session := &models.ChargeSession{ID: "s1", VehicleID: "v1", UserID: testUserIDPtr, PlugID: testPlugIDPtr}
+			notifier.NotifyShortfallProjected(context.Background(), session, 60, 80, "07:00")
+			notifier.Wait()
+
+			pushTitle, pushBody := push.GetTitleBody()
+			assert.Equal(t, "Charging Shortfall", pushTitle)
+			assert.Equal(t, tc.wantBody, pushBody)
+		})
+	}
+}
+
+func TestChargeNotifier_NotifyShortfallProjected_NoPushService(t *testing.T) {
+	notifier := newTestNotifier(nil, &mockNotifierVehicleRepo{})
+
+	session := &models.ChargeSession{ID: "s1", VehicleID: "v1", UserID: testUserIDPtr, PlugID: testPlugIDPtr}
+	notifier.NotifyShortfallProjected(context.Background(), session, 60, 80, "07:00")
+	notifier.Wait()
+}
+
+func TestChargeNotifier_SendErrorsAreLoggedNotFatal(t *testing.T) {
+	vehicle := &models.Vehicle{
+		ID:                       "v1",
+		Name:                     "Test Car",
+		NotifyChargeStarted:      true,
+		NotifyChargeComplete:     true,
+		NotifyChargerOffline:     true,
+		NotifyMaintenanceOffline: true,
+	}
+	vehicleID := vehicle.ID
+	repo := &mockNotifierVehicleRepo{vehicle: vehicle}
+	notifier := newTestNotifier(&erroringPushService{}, repo)
+
+	session := &models.ChargeSession{ID: "s1", VehicleID: "v1", UserID: testUserIDPtr, PlugID: testPlugIDPtr, TargetPercent: 80}
+	plug := &models.Plug{Name: "Garage Plug", Type: models.PlugTypeCharging, VehicleID: &vehicleID}
+
+	notifier.NotifyChargeStarted(context.Background(), session)
+	notifier.NotifyChargeComplete(context.Background(), session, 80)
+	notifier.NotifyPlugUnavailable(context.Background(), plug)
+	notifier.NotifyShortfallProjected(context.Background(), session, 60, 80, "07:00")
+	notifier.Wait()
+}

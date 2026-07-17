@@ -160,6 +160,32 @@ describe("push utilities", () => {
       });
     });
 
+    it("returns null when subscribing fails and there is no existing subscription", async () => {
+      mockPushManager.getSubscription.mockResolvedValueOnce(null);
+      mockPushManager.subscribe.mockRejectedValueOnce(
+        new Error("subscription failed"),
+      );
+
+      const result = await subscribeToPush();
+      expect(result).toBeNull();
+      expect(mockPushManager.subscribe).toHaveBeenCalledTimes(1);
+    });
+
+    it("returns null when rotation fails after the browser rejects the old key", async () => {
+      const existingSub = {
+        endpoint: "https://push.example/old",
+        toJSON: () => ({ keys: { p256dh: "abc", auth: "xyz" } }),
+        unsubscribe: vi.fn().mockRejectedValue(new Error("unsubscribe failed")),
+      };
+      mockPushManager.getSubscription.mockResolvedValueOnce(existingSub);
+      mockPushManager.subscribe.mockRejectedValueOnce(
+        new Error("InvalidStateError"),
+      );
+
+      const result = await subscribeToPush();
+      expect(result).toBeNull();
+    });
+
     it("rotates the subscription when the browser rejects subscribing over the old key", async () => {
       const existingSub = {
         endpoint: "https://push.example/old",
@@ -377,6 +403,45 @@ describe("push utilities", () => {
         expect.objectContaining({
           method: "DELETE",
           body: JSON.stringify({ endpoint: "https://push.example/old" }),
+        }),
+      );
+    });
+
+    it("force-rotates when the browser returns the same still-expiring subscription", async () => {
+      const soon = Date.now() + 60 * 1000;
+      const expiringSub = {
+        endpoint: "https://push.example/old",
+        expirationTime: soon,
+        toJSON: () => ({ keys: { p256dh: "abc", auth: "xyz" } }),
+        unsubscribe: vi.fn().mockResolvedValue(true),
+      };
+      mockPushManager.getSubscription.mockResolvedValueOnce(expiringSub);
+
+      const rotatedSub = {
+        endpoint: "https://push.example/rotated",
+        expirationTime: null,
+        toJSON: () => ({ keys: { p256dh: "def", auth: "uvw" } }),
+        unsubscribe: vi.fn().mockResolvedValue(true),
+      };
+      // subscribe() with a matching key returns the existing (still expiring)
+      // subscription; only an explicit unsubscribe forces a fresh one.
+      mockPushManager.subscribe
+        .mockResolvedValueOnce(expiringSub)
+        .mockResolvedValueOnce(rotatedSub);
+
+      await ensurePushSubscription();
+
+      expect(expiringSub.unsubscribe).toHaveBeenCalled();
+      expect(mockPushManager.subscribe).toHaveBeenCalledTimes(2);
+      expect(global.fetch).toHaveBeenCalledWith(
+        "/api/push-subscriptions",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            endpoint: "https://push.example/rotated",
+            p256dhKey: "def",
+            authKey: "uvw",
+          }),
         }),
       );
     });

@@ -453,18 +453,24 @@ func TestPushService_SendNotification_SendError(t *testing.T) {
 	require.Len(t, all, 1, "subscription should NOT be removed on send error")
 }
 
+// failingRemovePushRepo reads subscriptions normally but fails every removal,
+// exercising the stale-prune error path.
+type failingRemovePushRepo struct {
+	mockPushRepo
+}
+
+func (f *failingRemovePushRepo) RemoveByEndpoint(_ context.Context, _ string) error {
+	return assert.AnError
+}
+
 func TestPushService_SendNotification_RemoveError(t *testing.T) {
-	repo := &mockPushRepo{}
+	repo := &failingRemovePushRepo{}
 	require.NoError(t, repo.Upsert(context.Background(), &models.PushSubscription{
 		ID:        "sub-1",
 		Endpoint:  "https://fcm.googleapis.com/fcm/send/test",
 		P256dhKey: testP256dh,
 		AuthKey:   testAuth,
 	}))
-
-	// Override RemoveByEndpoint to return error
-	origRemove := repo.removed
-	repo.removed = nil
 
 	client := &mockHTTPClient{
 		handler: func(r *http.Request) (*http.Response, error) {
@@ -474,10 +480,40 @@ func TestPushService_SendNotification_RemoveError(t *testing.T) {
 
 	ps := NewPushService(repo, "pub", "priv", client)
 	err := ps.SendNotification(context.Background(), "title", "body")
-	require.NoError(t, err) // RemoveByEndpoint error is logged, not returned
+	require.NoError(t, err, "RemoveByEndpoint error is logged, not returned")
+}
 
-	// Verify the subscription was still removed despite the error path being exercised
-	_ = origRemove
+func TestPushService_SendNotification_CancelledDuringSendDoesNotRetry(t *testing.T) {
+	repo := &mockPushRepo{}
+	require.NoError(t, repo.Upsert(context.Background(), &models.PushSubscription{
+		ID:        "sub-1",
+		Endpoint:  "https://fcm.googleapis.com/fcm/send/test",
+		P256dhKey: testP256dh,
+		AuthKey:   testAuth,
+	}))
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	var mu sync.Mutex
+	calls := 0
+	client := &mockHTTPClient{
+		handler: func(r *http.Request) (*http.Response, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			calls++
+			cancel()
+			return nil, context.Canceled
+		},
+	}
+
+	ps := NewPushService(repo, "pub", "priv", client)
+	ps.retryBaseDelay = time.Hour
+	err := ps.SendNotification(ctx, "title", "body")
+	require.Error(t, err)
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, 1, calls, "a transport error caused by cancellation must not be retried")
 }
 
 func TestPushService_UpsertSubscription(t *testing.T) {
