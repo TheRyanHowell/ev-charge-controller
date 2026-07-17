@@ -21,6 +21,7 @@ var (
 	ErrTargetOutOfRange           = errors.New("charge target must be between 0 and 100")
 	ErrTargetBelowStart           = errors.New("charge target must be higher than the starting battery level")
 	ErrVehicleConfigMissing       = errors.New("vehicle configuration is missing - please reselect your vehicle in Settings")
+	ErrVehicleHasNoBattery        = errors.New("this vehicle has no battery configured - EV charging is not available")
 	ErrTargetBelowCurrent         = errors.New("charge target must be higher than the current battery level")
 	ErrUserIDRequired             = errors.New("user ID is required")
 )

@@ -30,6 +30,24 @@ func TestSessionLifecycleService_StartSession_VehicleNotFound(t *testing.T) {
 	assert.Nil(t, session)
 }
 
+func TestSessionLifecycleService_StartSession_NoBatteryVehicle(t *testing.T) {
+	db := setupServiceTestDB(t)
+	sessRepo := repository.NewChargeSessionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	ctrl := newMockPlugCtrl()
+	notifier := NewChargeNotifier(context.Background(), nil, vehicleRepo, nil)
+	lock := newSessionLock()
+
+	service := NewSessionLifecycleService(sessRepo, sessRepo, vehicleRepo, nil, ctrl, sessRepo, notifier, lock)
+
+	// A generic (battery-less) vehicle only supports 12V maintenance charging.
+	insertRawVehicle(t, db, "no-battery", 0, 0, 0)
+
+	session, err := service.StartSession(context.Background(), testPlugID, "no-battery", 20, 80)
+	assert.ErrorIs(t, err, ErrVehicleHasNoBattery)
+	assert.Nil(t, session)
+}
+
 func TestSessionLifecycleService_StartSession_Success(t *testing.T) {
 	db := setupServiceTestDB(t)
 	sessRepo := repository.NewChargeSessionRepository(db)

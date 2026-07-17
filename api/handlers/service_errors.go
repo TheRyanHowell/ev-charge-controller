@@ -34,6 +34,7 @@ var serviceErrorMappings = []struct {
 	{services.ErrTargetBelowStart, problemSpec{http.StatusBadRequest, "about:blank#target-must-be-higher", "Bad Request", "Charge target must be higher than the starting battery level."}},
 	{services.ErrTargetBelowCurrent, problemSpec{http.StatusBadRequest, "about:blank#target-must-be-higher", "Bad Request", "Charge target must be higher than the current battery level."}},
 	{services.ErrVehicleConfigMissing, problemSpec{http.StatusBadRequest, "about:blank#vehicle-config-missing", "Bad Request", "Vehicle configuration is missing - please reselect your vehicle in Settings."}},
+	{services.ErrVehicleHasNoBattery, problemSpec{http.StatusBadRequest, "about:blank#vehicle-has-no-battery", "Bad Request", "This vehicle has no battery configured - EV charging is not available."}},
 	{services.ErrVehicleNotFound, problemSpec{http.StatusNotFound, "about:blank#vehicle-not-found", "Not Found", "Selected vehicle not found."}},
 }
 

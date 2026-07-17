@@ -602,8 +602,9 @@ func (s *SessionLifecycleService) validatePlugOwnership(ctx context.Context, plu
 	return nil
 }
 
-// validateVehicleExists checks that the vehicle exists and belongs to the current user.
-// When no user is in context (background workers), only checks vehicle exists.
+// validateVehicleExists checks that the vehicle exists, belongs to the current
+// user, and has a battery to charge. When no user is in context (background
+// workers), only the existence and battery checks apply.
 func (s *SessionLifecycleService) validateVehicleExists(ctx context.Context, vehicleID string) error {
 	vehicle, err := s.vehicleRepo.FindByID(ctx, vehicleID)
 	if err != nil {
@@ -611,6 +612,11 @@ func (s *SessionLifecycleService) validateVehicleExists(ctx context.Context, veh
 	}
 	if vehicle == nil {
 		return ErrVehicleNotFound
+	}
+	// Battery-less models (e.g. the generic catalog entry) only support 12V
+	// maintenance charging - an EV charge session cannot be started for them.
+	if vehicle.CapacityKwh <= 0 {
+		return ErrVehicleHasNoBattery
 	}
 	userID, ok := internal.UserIDFromContext(ctx)
 	if !ok {

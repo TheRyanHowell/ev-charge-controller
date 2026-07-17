@@ -2149,13 +2149,11 @@ func TestChargeSessionService_GetActive_VehicleConfigMissing(t *testing.T) {
 	service := NewChargeSessionService(context.Background(), repository.NewChargeSessionRepository(db), repository.NewVehicleRepository(db), nil, ctrl, nil, nil)
 	defer service.Shutdown()
 
-	// Create and activate session with zero-capacity vehicle
-	session, err := service.StartSession(context.Background(), testPlugID, "zero-vehicle", 30, 70)
-	require.NoError(t, err)
-	require.NotNil(t, session)
-
-	_, err = service.ActivatePending(context.Background(), session.ID)
-	require.NoError(t, err)
+	// Battery-less vehicles cannot start sessions (ErrVehicleHasNoBattery), but
+	// a session may pre-date a vehicle's config being lost - insert one directly
+	// to exercise the degraded view path.
+	startTotalKwh := 2.0
+	insertActiveSession(t, db, "zero-session", "zero-vehicle", 0, 0, 30, 70, &startTotalKwh, nil)
 
 	active, err := service.GetActive(context.Background())
 	require.NoError(t, err)

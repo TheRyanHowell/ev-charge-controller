@@ -30,6 +30,7 @@ func TestMapServiceError_KnownSentinels(t *testing.T) {
 		services.ErrTargetBelowStart:          http.StatusBadRequest,
 		services.ErrTargetBelowCurrent:        http.StatusBadRequest,
 		services.ErrVehicleConfigMissing:      http.StatusBadRequest,
+		services.ErrVehicleHasNoBattery:       http.StatusBadRequest,
 		services.ErrVehicleNotFound:           http.StatusNotFound,
 	}
 
